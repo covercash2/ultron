@@ -5,33 +5,46 @@ use serenity::{
 };
 use std::env;
 
+mod commands;
+
+use commands::{Command, Error};
+
 struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if msg.content == "!ping" {
-            if let Err(err) = msg.channel_id.say(&ctx.http, "hello").await {
-                println!("error sending message: {:?}", err);
-            }
-        } else if msg.content == "!about" {
-            if let Err(err) = msg
-                .channel_id
-                .say(&ctx.http, "https://github.com/covercash2/ultron")
-                .await
-            {
-                println!("error sending message: {:?}", err);
-            }
-        } else if msg.content.contains("ultron") {
-            if let Err(err) = msg
-		.channel_id.say(&ctx.http, "I am always listening")
-		.await
-	    {
-                println!("error sending message: {:?}", err);
-            }
-        } else {
-            println!("unexpected message: {:?}", msg);
-        }
+
+	match msg.content.parse() {
+	    Ok(Command::Ping) => {
+		if let Err(err) = msg.channel_id
+		    .say(&ctx.http, "hello")
+		    .await
+		{
+		    println!("error sending message: {:?}", err);
+		}
+	    },
+	    Ok(Command::About) => {
+		if let Err(err) = msg
+		    .channel_id
+		    .say(&ctx.http, "https://github.com/covercash2/ultron")
+		    .await
+		{
+		    println!("error sending message: {:?}", err);
+		}
+	    },
+	    Ok(Command::Announce) => {
+		if let Err(err) = msg
+		    .channel_id.say(&ctx.http, "I am always listening")
+		    .await
+		{
+		    println!("error sending message: {:?}", err);
+		}
+	    },
+	    Err(Error::UnknownCommand(s)) => {
+		println!("unable to parse command: {:?}", s);
+	    }
+	}
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
