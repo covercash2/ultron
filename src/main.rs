@@ -36,7 +36,7 @@ impl EventHandler for Handler {
 		    msg.channel_id,
 		    &ctx.http,
 		    "https://github.com/covercash2/ultron"
-		)
+		).await;
 	    },
 	    Ok(Command::Announce) => {
 		say(
