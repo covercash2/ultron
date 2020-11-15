@@ -10,8 +10,10 @@ use serenity::{
 use std::env;
 
 mod commands;
+mod error;
 
-use commands::{Command, Error};
+use commands::Command;
+use error::Error;
 
 struct Handler;
 

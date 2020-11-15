@@ -1,13 +1,11 @@
 use std::str::FromStr;
 
+use crate::error::Error;
+
 pub enum Command {
     Ping,
     About,
     Announce,
-}
-
-pub enum Error {
-    UnknownCommand(String),
 }
 
 impl FromStr for Command {
