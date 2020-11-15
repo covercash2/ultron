@@ -1,0 +1,11 @@
+[package]
+name = "ultron"
+version = "0.1.0"
+authors = ["Chris Overcash <covercash2@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serenity = { version = "0.9", default-features = false, features = ["client", "gateway", "rustls_backend", "model"] }
+tokio = { version = "0.2", features = ["macros"] }
