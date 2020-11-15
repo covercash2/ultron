@@ -1,5 +1,4 @@
 use log::*;
-use std::env;
 
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
@@ -12,9 +11,7 @@ use serenity::{
 use crate::commands::Command;
 use crate::error::{Result, Error};
 
-pub async fn run() -> Result<()> {
-    let token = env::var("DISCORD_TOKEN")?;
-
+pub async fn run<S: AsRef<str>>(token: S) -> Result<()> {
     let mut client = Client::builder(&token)
         .event_handler(Handler)
         .await
@@ -48,8 +45,8 @@ impl EventHandler for Handler {
 		    "I am always listening"
 		).await;
 	    },
-	    Err(Error::UnknownCommand(s)) => {
-		debug!("unable to parse command: {:?}", s);
+	    Err(err) => {
+		debug!("unable to parse command: {:?}", err);
 	    }
 	}
     }
