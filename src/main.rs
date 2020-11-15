@@ -1,3 +1,5 @@
+use serenity::http::Http;
+use serenity::model::id::ChannelId;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
@@ -11,35 +13,37 @@ use commands::{Command, Error};
 
 struct Handler;
 
+async fn say<T: AsRef<Http>>(
+    channel: ChannelId,
+    pipe: T,
+    msg: impl std::fmt::Display
+) {
+    if let Err(err) = channel.say(pipe, msg).await {
+	println!("error sending message: {:?}", err);
+    }
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
 
 	match msg.content.parse() {
 	    Ok(Command::Ping) => {
-		if let Err(err) = msg.channel_id
-		    .say(&ctx.http, "hello")
-		    .await
-		{
-		    println!("error sending message: {:?}", err);
-		}
+		say(msg.channel_id, &ctx.http, "hello").await;
 	    },
 	    Ok(Command::About) => {
-		if let Err(err) = msg
-		    .channel_id
-		    .say(&ctx.http, "https://github.com/covercash2/ultron")
-		    .await
-		{
-		    println!("error sending message: {:?}", err);
-		}
+		say(
+		    msg.channel_id,
+		    &ctx.http,
+		    "https://github.com/covercash2/ultron"
+		)
 	    },
 	    Ok(Command::Announce) => {
-		if let Err(err) = msg
-		    .channel_id.say(&ctx.http, "I am always listening")
-		    .await
-		{
-		    println!("error sending message: {:?}", err);
-		}
+		say(
+		    msg.channel_id,
+		    &ctx.http,
+		    "I am always listening"
+		).await;
 	    },
 	    Err(Error::UnknownCommand(s)) => {
 		println!("unable to parse command: {:?}", s);
