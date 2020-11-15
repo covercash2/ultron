@@ -14,13 +14,23 @@ impl EventHandler for Handler {
             if let Err(err) = msg.channel_id.say(&ctx.http, "hello").await {
                 println!("error sending message: {:?}", err);
             }
-        } else {
-            println!("unexpected message: {:?}", msg);
-        }
-        if msg.content.contains("ultron") {
-            if let Err(err) = msg.channel_id.say(&ctx.http, "I am always listening").await {
+        } else if msg.content == "!about" {
+            if let Err(err) = msg
+                .channel_id
+                .say(&ctx.http, "https://github.com/covercash2/ultron")
+                .await
+            {
                 println!("error sending message: {:?}", err);
             }
+        } else if msg.content.contains("ultron") {
+            if let Err(err) = msg
+		.channel_id.say(&ctx.http, "I am always listening")
+		.await
+	    {
+                println!("error sending message: {:?}", err);
+            }
+        } else {
+            println!("unexpected message: {:?}", msg);
         }
     }
 
