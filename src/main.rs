@@ -1,3 +1,5 @@
+use log::{debug, info, warn, error};
+use pretty_env_logger;
 use serenity::http::Http;
 use serenity::model::id::ChannelId;
 use serenity::{
@@ -19,7 +21,7 @@ async fn say<T: AsRef<Http>>(
     msg: impl std::fmt::Display
 ) {
     if let Err(err) = channel.say(pipe, msg).await {
-	println!("error sending message: {:?}", err);
+	error!("error sending message: {:?}", err);
     }
 }
 
@@ -46,18 +48,20 @@ impl EventHandler for Handler {
 		).await;
 	    },
 	    Err(Error::UnknownCommand(s)) => {
-		println!("unable to parse command: {:?}", s);
+		debug!("unable to parse command: {:?}", s);
 	    }
 	}
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 }
 
 #[tokio::main]
 async fn main() {
+    pretty_env_logger::init();
+
     let token = env::var("DISCORD_TOKEN").expect("unable load env discord token");
 
     let mut client = Client::builder(&token)
@@ -66,6 +70,6 @@ async fn main() {
         .expect("unable to create client");
 
     if let Err(err) = client.start().await {
-        println!("client error: {:?}", err);
+        error!("client error: {:?}", err);
     }
 }
