@@ -29,15 +29,17 @@ pub struct Handler {
 
 impl Handler {
     pub fn new(coin_sender: Sender<(u64, i64)>) -> Handler {
-	Handler { coin_sender }
+        Handler { coin_sender }
     }
 
-    pub async fn send_coins<U: Into<u64>>(&self, user: U, coin_num: i64) {
-	let user_id = user.into();
-	// TODO return error
-	// if let Err(err) = self.coin_sender.send((user_id, coin_num)).await {
-	//     error!("unable to send coins");
-	// }
+    pub async fn send_coins<U: Into<u64>>(&self, from_user: U, to_user: U, coin_num: i64) {
+	let from_user = from_user.into();
+	let to_user = to_user.into();
+        let mut sender = self.coin_sender.clone();
+        // TODO return error
+        if let Err(err) = sender.send((to_user, coin_num)).await {
+            error!("unable to send coins: {:?}", err);
+        }
     }
 }
 
@@ -50,8 +52,8 @@ impl EventHandler for Handler {
             .and_then(|command| command.process())
         {
             Ok(command_output) => {
-		say(msg.channel_id, &ctx.http, command_output).await;
-	    }
+                say(msg.channel_id, &ctx.http, command_output).await;
+            }
             Err(err) => {
                 debug!("unable to execute command: {:?}", err);
             }
@@ -59,22 +61,30 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-	match reaction.emoji.as_data().as_str() {
-	    "🪙" => {
-		// coin added
-		debug!("coin added");
-		let name = reaction.user(&ctx.http).await.unwrap().name;
-		debug!("user: {}", name);
+        match reaction.emoji.as_data().as_str() {
+            "🪙" => {
+                // coin added
+                debug!("coin added");
+                let name = reaction.user(&ctx.http).await.unwrap().name;
 
-		if let Some(id) = reaction.user_id {
-		    self.send_coins(id, 1);
-		} else {
-		    warn!("no user id")
-		}
+                if let Some(giver_id) = reaction.user_id {
+                    let author_id = reaction.message(&ctx.http).await.map(|message| {
+                        info!("{} giving {} a coin", name, message.author.name);
+                        message.author.id
+                    });
 
-	    },
-	    _ => {}
-	}
+                    match author_id {
+                        Ok(id) => {
+                            self.send_coins(giver_id, id, 1).await;
+                        }
+                        Err(err) => {
+                            warn!("no user id found: {:?}", err);
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {

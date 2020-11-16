@@ -1,3 +1,5 @@
+#![type_length_limit="1256579"]
+
 use log::error;
 use pretty_env_logger;
 
@@ -31,7 +33,14 @@ async fn main() {
 
     let bank_thread = tokio::task::spawn(bank_loop(Default::default(), receiver));
 
+    // tokio::task::spawn_blocking(move || async {
+    // 	if let Err(err) = discord::run(event_handler, discord_token).await {
+    // 	    error!("error running discord client: {:?}", err);
+    // 	}
+    // }).await.expect("error in main loop");
+
     if let Err(err) = discord::run(event_handler, discord_token).await {
 	error!("error running discord client: {:?}", err);
     }
+
 }
