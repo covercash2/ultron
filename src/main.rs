@@ -37,7 +37,7 @@ async fn main() {
     ));
 
     let _receipt_printer = tokio::task::spawn(async move {
-	if let Some(receipt) = receipt_receiver.recv().await {
+	while let Some(receipt) = receipt_receiver.recv().await {
 	    info!("receipt: {:?}", receipt);
 	}
     });
