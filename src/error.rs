@@ -1,8 +1,11 @@
-use std::env::VarError;
+use std::{env::VarError, io::Error as IoError};
+
+use serde_json::Error as JsonError;
 
 use hubcaps::Error as GithubError;
 
 use serenity::Error as DiscordError;
+use tokio::sync::mpsc::error::SendError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -11,8 +14,21 @@ pub enum Error {
     DiscordError(DiscordError),
     GithubError(GithubError),
     BadApiKey(VarError),
+    Json(JsonError),
+    Io(IoError),
     UnknownCommand(String),
-    Unexpected(String),
+}
+
+impl From<JsonError> for Error {
+    fn from(err: JsonError) -> Self {
+	Error::Json(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+	Error::Io(err)
+    }
 }
 
 impl From<DiscordError> for Error {
