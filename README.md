@@ -1,4 +1,4 @@
-#+title: ultron
+# ultron
 
 ultron represents a first look at the approaching AI singularity by responding to commands in our Discord channel.
 
