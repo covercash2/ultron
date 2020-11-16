@@ -9,9 +9,10 @@ use serenity::{
     prelude::*,
 };
 
+use tokio::sync::mpsc::Receiver;
 use tokio::sync::mpsc::Sender;
 
-use crate::coins::Transaction;
+use crate::coins::{Receipt, Transaction};
 use crate::commands::Command;
 use crate::error::{Error, Result};
 
@@ -26,14 +27,23 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
 
 pub struct Handler {
     coin_sender: Sender<Transaction>,
+    receipt_receiver: Receiver<Receipt>,
 }
 
 impl Handler {
-    pub fn new(coin_sender: Sender<Transaction>) -> Handler {
-        Handler { coin_sender }
+    pub fn new(coin_sender: Sender<Transaction>, receipt_receiver: Receiver<Receipt>) -> Handler {
+        Handler {
+            coin_sender,
+            receipt_receiver,
+        }
     }
 
-    pub async fn send_coins<U: Into<u64>>(&self, from_user: U, to_user: U, coin_num: i64) {
+    pub async fn send_coins<U: Into<u64>>(
+        &self,
+        from_user: U,
+        to_user: U,
+        coin_num: i64,
+    ) -> Result<()> {
         let from_user = from_user.into();
         let to_user = to_user.into();
         let amount = coin_num;
@@ -43,10 +53,7 @@ impl Handler {
             amount,
         };
         let mut sender = self.coin_sender.clone();
-        // TODO return error
-        if let Err(err) = sender.send(transaction).await {
-            error!("unable to send coins: {:?}", err);
-        }
+        sender.send(transaction).await.map_err(Into::into)
     }
 }
 
@@ -82,7 +89,9 @@ impl EventHandler for Handler {
 
                     match author_id {
                         Ok(id) => {
-                            self.send_coins(giver_id, id, 1).await;
+                            if let Err(err) = self.send_coins(giver_id, id, 1).await {
+				error!("error sending coins: {:?}", err);
+			    }
                         }
                         Err(err) => {
                             warn!("no user id found: {:?}", err);

@@ -7,6 +7,8 @@ use hubcaps::Error as GithubError;
 use serenity::Error as DiscordError;
 use tokio::sync::mpsc::error::SendError;
 
+use crate::coins::Transaction;
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
@@ -15,8 +17,15 @@ pub enum Error {
     GithubError(GithubError),
     BadApiKey(VarError),
     Json(JsonError),
+    TransactionSend(SendError<Transaction>),
     Io(IoError),
     UnknownCommand(String),
+}
+
+impl From<SendError<Transaction>> for Error {
+    fn from(err: SendError<Transaction>) -> Self {
+	Error::TransactionSend(err)
+    }
 }
 
 impl From<JsonError> for Error {
