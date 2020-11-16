@@ -11,6 +11,7 @@ use serenity::{
 
 use tokio::sync::mpsc::Sender;
 
+use crate::coins::Transaction;
 use crate::commands::Command;
 use crate::error::{Error, Result};
 
@@ -24,20 +25,26 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
 }
 
 pub struct Handler {
-    coin_sender: Sender<(u64, i64)>,
+    coin_sender: Sender<Transaction>,
 }
 
 impl Handler {
-    pub fn new(coin_sender: Sender<(u64, i64)>) -> Handler {
+    pub fn new(coin_sender: Sender<Transaction>) -> Handler {
         Handler { coin_sender }
     }
 
     pub async fn send_coins<U: Into<u64>>(&self, from_user: U, to_user: U, coin_num: i64) {
-	let from_user = from_user.into();
-	let to_user = to_user.into();
+        let from_user = from_user.into();
+        let to_user = to_user.into();
+        let amount = coin_num;
+        let transaction = Transaction {
+            to_user,
+            from_user,
+            amount,
+        };
         let mut sender = self.coin_sender.clone();
         // TODO return error
-        if let Err(err) = sender.send((to_user, coin_num)).await {
+        if let Err(err) = sender.send(transaction).await {
             error!("unable to send coins: {:?}", err);
         }
     }

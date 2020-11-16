@@ -3,7 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::{
     collections::HashMap,
-    fs::{File, OpenOptions},
+    fs::OpenOptions,
     io::{BufReader, Read},
 };
 
@@ -15,7 +15,12 @@ use serde_json;
 
 use crate::error::Result;
 
-type Transaction = (u64, i64);
+#[derive(Debug)]
+pub struct Transaction {
+    pub to_user: u64,
+    pub from_user: u64,
+    pub amount: i64,
+}
 
 pub async fn bank_loop(bank: Bank, mut transaction_receiver: Receiver<Transaction>) {
     debug!("bank loop started");

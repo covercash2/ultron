@@ -1,5 +1,3 @@
-#![type_length_limit="1256579"]
-
 use log::error;
 use pretty_env_logger;
 
@@ -14,7 +12,7 @@ mod github;
 
 mod tokens;
 
-use coins::{Bank, bank_loop};
+use coins::{bank_loop, Transaction};
 use discord::Handler;
 use tokens::load_token;
 
@@ -22,22 +20,16 @@ use tokens::load_token;
 async fn main() {
     pretty_env_logger::init();
 
-    let github_token = load_token(tokens::GITHUB_TOKEN)
+    let _github_token = load_token(tokens::GITHUB_TOKEN)
         .expect("unable to load github token");
     let discord_token = load_token(tokens::DISCORD_TOKEN)
         .expect("unable to load discord token");
 
-    let (sender, receiver): (Sender<(u64, i64)>, Receiver<(u64, i64)>) = channel(100);
+    let (sender, receiver): (Sender<Transaction>, Receiver<Transaction>) = channel(100);
 
     let event_handler = Handler::new(sender);
 
-    let bank_thread = tokio::task::spawn(bank_loop(Default::default(), receiver));
-
-    // tokio::task::spawn_blocking(move || async {
-    // 	if let Err(err) = discord::run(event_handler, discord_token).await {
-    // 	    error!("error running discord client: {:?}", err);
-    // 	}
-    // }).await.expect("error in main loop");
+    let _bank_thread = tokio::task::spawn(bank_loop(Default::default(), receiver));
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
 	error!("error running discord client: {:?}", err);
