@@ -12,6 +12,7 @@ pub enum Error {
     GithubError(GithubError),
     BadApiKey(VarError),
     UnknownCommand(String),
+    Unexpected(String),
 }
 
 impl From<DiscordError> for Error {

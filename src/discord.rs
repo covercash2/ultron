@@ -9,7 +9,7 @@ use serenity::{
 };
 
 use crate::commands::Command;
-use crate::error::{Result, Error};
+use crate::error::{Error, Result};
 
 pub async fn run<S: AsRef<str>>(token: S) -> Result<()> {
     let mut client = Client::builder(&token)
@@ -17,8 +17,7 @@ pub async fn run<S: AsRef<str>>(token: S) -> Result<()> {
         .await
         .expect("unable to create client");
 
-    client.start().await
-        .map_err(Error::from)
+    client.start().await.map_err(Error::from)
 }
 
 struct Handler;
@@ -26,29 +25,18 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-
-	match msg.content.parse() {
-	    Ok(Command::Ping) => {
-		say(msg.channel_id, &ctx.http, "hello").await;
-	    },
-	    Ok(Command::About) => {
-		say(
-		    msg.channel_id,
-		    &ctx.http,
-		    "https://github.com/covercash2/ultron"
-		).await;
-	    },
-	    Ok(Command::Announce) => {
-		say(
-		    msg.channel_id,
-		    &ctx.http,
-		    "I am always listening"
-		).await;
-	    },
-	    Err(err) => {
-		debug!("unable to parse command: {:?}", err);
+        match msg
+            .content
+            .parse::<Command>()
+            .and_then(|command| command.process())
+        {
+            Ok(command_output) => {
+		say(msg.channel_id, &ctx.http, command_output).await;
 	    }
-	}
+            Err(err) => {
+                debug!("unable to execute command: {:?}", err);
+            }
+        }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
@@ -56,12 +44,8 @@ impl EventHandler for Handler {
     }
 }
 
-async fn say<T: AsRef<Http>>(
-    channel: ChannelId,
-    pipe: T,
-    msg: impl std::fmt::Display
-) {
+async fn say<T: AsRef<Http>>(channel: ChannelId, pipe: T, msg: impl std::fmt::Display) {
     if let Err(err) = channel.say(pipe, msg).await {
-	error!("error sending message: {:?}", err);
+        error!("error sending message: {:?}", err);
     }
 }
