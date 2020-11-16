@@ -37,7 +37,7 @@ impl Handler {
         let from_user = from_user.into();
         let to_user = to_user.into();
         let amount = coin_num;
-        let transaction = Transaction {
+        let transaction = Transaction::Transfer {
             to_user,
             from_user,
             amount,
