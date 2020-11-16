@@ -65,7 +65,7 @@ impl Bank {
 		from_user, to_user, amount
 	    } => {
 		self.transfer(&from_user, &to_user, amount);
-		None
+		Some(self.get_balances(vec![from_user, to_user]))
 	    }
 	    Transaction::GetBalance { users } => {
 		Some(self.get_balances(users))
@@ -78,7 +78,7 @@ impl Bank {
         self.increment_balance(&to_user, amount);
     }
 
-    fn get_balances(&self, users: Vec<u64>) -> Receipt {
+    fn get_balances(&mut self, users: Vec<u64>) -> Receipt {
 	users.iter().map(|user| (*user, self.get_balance(user))).collect()
     }
 
