@@ -26,9 +26,9 @@ async fn main() {
 
     let (transaction_sender, transaction_receiver): (Sender<Transaction>, Receiver<Transaction>) =
         channel(100);
-    let (receipt_sender, mut receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
+    let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
-    let event_handler = Handler::new(transaction_sender);
+    let event_handler = Handler::new(transaction_sender, receipt_receiver);
 
     let _bank_thread = tokio::task::spawn(bank_loop(
         Default::default(),
@@ -36,11 +36,11 @@ async fn main() {
         receipt_sender,
     ));
 
-    let _receipt_printer = tokio::task::spawn(async move {
-	while let Some(receipt) = receipt_receiver.recv().await {
-	    info!("receipt: {:?}", receipt);
-	}
-    });
+    // let _receipt_printer = tokio::task::spawn(async move {
+    // 	while let Some(receipt) = receipt_receiver.recv().await {
+    // 	    info!("receipt: {:?}", receipt);
+    // 	}
+    // });
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
         error!("error running discord client: {:?}", err);

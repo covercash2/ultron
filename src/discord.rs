@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use log::*;
 
 use serenity::http::Http;
@@ -9,8 +11,7 @@ use serenity::{
     prelude::*,
 };
 
-use tokio::sync::mpsc::Receiver;
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{Mutex, mpsc::{Receiver, Sender}};
 
 use crate::coins::{Receipt, Transaction};
 use crate::commands::Command;
@@ -27,11 +28,12 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
 
 pub struct Handler {
     coin_sender: Sender<Transaction>,
-    receipt_receiver: Receiver<Receipt>,
+    receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
 }
 
 impl Handler {
     pub fn new(coin_sender: Sender<Transaction>, receipt_receiver: Receiver<Receipt>) -> Handler {
+	let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
         Handler {
             coin_sender,
             receipt_receiver,
@@ -53,7 +55,13 @@ impl Handler {
             amount,
         };
         let mut sender = self.coin_sender.clone();
-        sender.send(transaction).await.map_err(Into::into)
+        sender.send(transaction).await?;
+	let mut lock = self.receipt_receiver.lock().await;
+	if let Some(receipt) = lock.recv().await {
+	    receipt.iter().for_each(|entry| info!("entry: {:?}", entry));
+	}
+
+	Ok(())
     }
 }
 
