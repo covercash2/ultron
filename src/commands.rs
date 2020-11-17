@@ -14,13 +14,20 @@ pub const ANNOUNCE: &'static str = "I am always listening";
 type UserId = u64;
 type ChannelId = u64;
 
+/// All the possible server commands
 #[derive(Debug)]
 pub enum Command {
+    /// Print help message
     Help,
+    /// Ping the server
     Ping,
+    /// Print info about this bot
     About,
+    /// Announce that the bot is listening
     Announce,
+    /// Get all balances for accounts in the current channel
     GetAllBalances(u64),
+    /// Process a tip
     Tip {
         channel_id: ChannelId,
         from_user: UserId,
@@ -29,6 +36,7 @@ pub enum Command {
 }
 
 impl Command {
+    /// Parses messages from the [`serenity`] Discord API
     pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
         let content = message.message.content.as_str();
         let channel_id = message.message.channel_id;
@@ -47,6 +55,7 @@ impl Command {
         }
     }
 
+    /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: Reaction) -> Result<Self> {
 	let channel_id = *reaction.channel_id.as_u64();
 	let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
