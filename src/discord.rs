@@ -63,7 +63,11 @@ impl Handler {
     }
 
     /// Process the command, performing any necessary IO operations
-    pub async fn process_command(&self, context: &Context, command: Command) -> Result<Option<String>> {
+    pub async fn process_command(
+        &self,
+        context: &Context,
+        command: Command,
+    ) -> Result<Option<String>> {
         match command {
             Command::Help => Ok(Some(commands::HELP.to_owned())),
             Command::Ping => Ok(Some(commands::PING.to_owned())),
@@ -88,20 +92,24 @@ impl Handler {
                     ))
                 }
             }
-            Command::Tip { channel_id, from_user, to_user } => {
-		let mut sender = self.transaction_sender.clone();
-		let transaction = Transaction::Tip {
-		    channel_id,
-		    from_user,
-		    to_user
-		};
-		sender.send(transaction).await?;
-		let mut lock = self.receipt_receiver.lock().await;
-		if let Some(receipt) = lock.recv().await {
-		    info!("tip processed: {:?}", receipt);
-		}
-		Ok(None)
-	    }
+            Command::Tip {
+                channel_id,
+                from_user,
+                to_user,
+            } => {
+                let mut sender = self.transaction_sender.clone();
+                let transaction = Transaction::Tip {
+                    channel_id,
+                    from_user,
+                    to_user,
+                };
+                sender.send(transaction).await?;
+                let mut lock = self.receipt_receiver.lock().await;
+                if let Some(receipt) = lock.recv().await {
+                    info!("tip processed: {:?}", receipt);
+                }
+                Ok(None)
+            }
         }
     }
 }
@@ -124,17 +132,19 @@ impl EventHandler for Handler {
 
         let output = match self.process_command(&ctx, command).await {
             Ok(Some(output)) => output,
-	    Ok(None) => {
-		debug!("command finished with no output");
-		return;
-	    },
+            Ok(None) => {
+                debug!("command finished with no output");
+                return;
+            }
             Err(err) => {
                 error!("unable to process command: {:?}", err);
                 return;
             }
         };
 
-        say(msg.channel_id, &ctx.http, output).await;
+        if let Err(err) = say(msg.channel_id, &ctx.http, output).await {
+	    error!("error sending message: {:?}", err);
+	}
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -146,20 +156,20 @@ impl EventHandler for Handler {
             }
         };
 
-	// no reacts need output right now
+        // no reacts need output right now
         let output = match self.process_command(&ctx, command).await {
             Ok(Some(output)) => output,
-	    Ok(None) => {
-		debug!("command finished with no output");
-		return;
-	    },
+            Ok(None) => {
+                debug!("command finished with no output");
+                return;
+            }
             Err(err) => {
                 error!("unable to process command: {:?}", err);
                 return;
             }
         };
 
-	info!("react output: {}", output);
+        info!("react output: {}", output);
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
@@ -169,8 +179,11 @@ impl EventHandler for Handler {
 
 /// Use the [`serenity`] Discord API crate to send a message accross a channel
 // TODO return result
-async fn say<T: AsRef<Http>>(channel: ChannelId, pipe: T, msg: impl std::fmt::Display) {
-    if let Err(err) = channel.say(pipe, msg).await {
-        error!("error sending message: {:?}", err);
-    }
+async fn say<T: AsRef<Http>>(
+    channel: ChannelId,
+    pipe: T,
+    msg: impl std::fmt::Display,
+) -> Result<Message> {
+    channel.say(pipe, msg).await
+        .map_err(Into::into)
 }
