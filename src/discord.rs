@@ -69,32 +69,35 @@ impl Handler {
         context: &Context,
         transaction: Transaction,
     ) -> Result<Option<String>> {
-	let mut sender = self.transaction_sender.clone();
-	sender.send(transaction).await?;
-	let mut lock = self.receipt_receiver.lock().await;
-	if let Some(receipt) = lock.recv().await {
-	    match receipt.transaction {
-		Transaction::GetAllBalances(_user_id) => {
+        let mut sender = self.transaction_sender.clone();
+        sender.send(transaction).await?;
+        let mut lock = self.receipt_receiver.lock().await;
+        if let Some(mut receipt) = lock.recv().await {
+            match receipt.transaction {
+                Transaction::GetAllBalances(_user_id) => {
+                    receipt
+                        .account_results
+                        .sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
                     let mut output = String::new();
                     for (id, amount) in receipt.iter() {
                         let user_id: UserId = (*id).into();
                         let name = user_id.to_user(&context.http).await?.name;
-                        output.push_str(&format!("{:15}#{:06}\n", name, amount));
+                        output.push_str(&format!("`{:04}`🪙\t{}\n", amount, name));
                     }
                     Ok(Some(output))
-		}
-	        Transaction::Transfer { .. } => {
-		    debug!("transfer complete");
-		    Ok(None)
-		}
-	        Transaction::Tip { .. } => {
-		    debug!("tip complete");
-		    Ok(None)
-		}
-	    }
-	} else {
-	    Err(Error::TransactionReceipt)
-	}
+                }
+                Transaction::Transfer { .. } => {
+                    debug!("transfer complete");
+                    Ok(None)
+                }
+                Transaction::Tip { .. } => {
+                    debug!("tip complete");
+                    Ok(None)
+                }
+            }
+        } else {
+            Err(Error::TransactionReceipt)
+        }
     }
 
     /// Process the command, performing any necessary IO operations
@@ -108,9 +111,7 @@ impl Handler {
             Command::Ping => Ok(Some(commands::PING.to_owned())),
             Command::About => Ok(Some(commands::ABOUT.to_owned())),
             Command::Announce => Ok(Some(commands::ANNOUNCE.to_owned())),
-            Command::Coin(transaction) => {
-		self.send_transaction(context, transaction).await
-	    }
+            Command::Coin(transaction) => self.send_transaction(context, transaction).await,
         }
     }
 }
@@ -118,8 +119,8 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-	// channel for logging
-	let channel_id = msg.channel_id.clone();
+        // channel for logging
+        let channel_id = msg.channel_id.clone();
 
         let command = match Command::parse_message(&ctx, msg).await {
             Ok(command) => command,
