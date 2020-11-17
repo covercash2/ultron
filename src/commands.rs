@@ -5,6 +5,8 @@ use serenity::model::channel::Reaction;
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
 
+
+
 pub const HELP: &'static str = "!ping to say hello
 !about to show info about ultron
 mentioning ultron summons him";
@@ -60,7 +62,7 @@ impl Command {
 	};
 
 	match reaction.emoji.as_data().as_str() {
-            "🪙" => { // coin
+            "🪙" | "👍" => { // coin
 		let transaction = Transaction::Tip {
 		    channel_id,
 		    from_user,
