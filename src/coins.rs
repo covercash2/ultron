@@ -7,7 +7,7 @@ use std::{
     io::{BufReader, Read},
 };
 
-use log::{debug, error, info, warn};
+use log::*;
 use tokio::sync::mpsc::Receiver;
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,18 @@ use serde_json;
 use tokio::sync::mpsc::Sender;
 
 use crate::error::Result;
+
+mod ledger;
+
+use ledger::Ledger;
+
+/// This type is returned from [`Bank::process_transaction`].
+/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
+/// completes.
+pub type Receipt = Vec<(u64, i64)>;
+
+type ChannelId = u64;
+type UserId = u64;
 
 /// Interactions with the Bank are handled through transactions.
 /// These transactions are sent over channels in the [`bank_loop`]
@@ -24,19 +36,14 @@ pub enum Transaction {
     /// Transfer coins from one user to another
     Transfer {
 	// TODO channel id
-        from_user: u64,
-        to_user: u64,
+        from_user: UserId,
+        to_user: UserId,
         amount: i64,
     },
     /// Dump the account data
     // TODO channel id
-    GetAllBalances,
+    GetAllBalances(ChannelId),
 }
-
-/// This type is returned from [`Bank::process_transaction`].
-/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
-/// completes.
-pub type Receipt = Vec<(u64, i64)>;
 
 /// This function runs a loop that waits for transactions to come in on the
 /// `transaction_receiver` (see: [`tokio::sync::mpsc`]).
@@ -66,6 +73,7 @@ pub async fn bank_loop(
 #[derive(Serialize, Deserialize)]
 pub struct Bank {
     map: HashMap<u64, i64>,
+    ledgers: HashMap<ChannelId, Ledger>,
 }
 
 impl Default for Bank {
@@ -76,6 +84,7 @@ impl Default for Bank {
 
 impl Bank {
     /// Process transactions and return a [`Receipt`] if appropriate.
+    // TODO return result
     pub fn process_transaction(&mut self, transaction: &Transaction) -> Option<Receipt> {
         match transaction {
             Transaction::Transfer {
@@ -86,10 +95,13 @@ impl Bank {
                 self.transfer(&from_user, &to_user, *amount);
                 Some(self.get_balances(vec![*from_user, *to_user]))
             }
-	    Transaction::GetAllBalances => {
+	    Transaction::GetAllBalances(channel_id) => {
 		let receipt: Vec<(u64, i64)> = self.map.iter().map(|(id, amount)| {
 		    (id.clone(), amount.clone())
 		}).collect();
+
+		let ledger = self.get_or_create_ledger(channel_id);
+		let receipt = ledger.get_all_balances();
 
 		if receipt.is_empty() {
 		    warn!("no entries in bank");
@@ -99,6 +111,15 @@ impl Bank {
 		}
 	    }
         }
+    }
+
+    fn get_or_create_ledger(&mut self, channel_id: &ChannelId) -> &Ledger {
+	if self.ledgers.contains_key(channel_id) {
+	    return self.ledgers.get(channel_id).expect("weird error retrieving ledger");
+	}
+	info!("creating accounts for channel");
+	self.ledgers.insert(*channel_id, Ledger::default());
+	self.ledgers.get(channel_id).expect("unable to get the ledger that was just created")
     }
 
     fn transfer(&mut self, from_user: &u64, to_user: &u64, amount: i64) {
@@ -149,13 +170,17 @@ impl Bank {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-        let map = if contents.is_empty() {
-            HashMap::new()
-        } else {
-            serde_json::from_str(&contents)?
-        };
+	// TODO load accounts
+        // let map = if contents.is_empty() {
+        //     HashMap::new()
+        // } else {
+        //     serde_json::from_str(&contents)?
+        // };
 
-        return Ok(Bank { map });
+	let map = HashMap::new();
+	let ledgers = HashMap::new();
+
+        return Ok(Bank { map, ledgers });
     }
 
     /// Save account data

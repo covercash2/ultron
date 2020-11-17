@@ -84,9 +84,9 @@ impl Handler {
             Command::Ping => Ok(commands::PING.to_owned()),
             Command::About => Ok(commands::ABOUT.to_owned()),
             Command::Announce => Ok(commands::ANNOUNCE.to_owned()),
-            Command::GetAllBalances => {
+            Command::GetAllBalances(channel_id) => {
                 let mut sender = self.transaction_sender.clone();
-                let transaction = Transaction::GetAllBalances;
+                let transaction = Transaction::GetAllBalances(channel_id);
                 sender.send(transaction).await?;
                 let mut lock = self.receipt_receiver.lock().await;
                 if let Some(receipt) = lock.recv().await {

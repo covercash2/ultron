@@ -13,7 +13,7 @@ pub enum Command {
     Ping,
     About,
     Announce,
-    GetAllBalances,
+    GetAllBalances(u64),
 }
 
 impl Command {
@@ -28,19 +28,18 @@ impl Command {
     }
 
     pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
-	let content = message.message.content.as_str();
+        let content = message.message.content.as_str();
+        let channel_id = message.message.channel_id;
         match content {
             "!help" => Ok(Command::Help),
             "!ping" => Ok(Command::Ping),
             "!about" => Ok(Command::About),
-	    "!coins" => {
-		Ok(Command::GetAllBalances)
-	    }
+            "!coins" => Ok(Command::GetAllBalances(*channel_id.as_u64())),
             _ => {
                 if content.contains("ultron") {
                     Ok(Command::Announce)
                 } else {
-		    Err(Error::UnknownCommand(content.to_owned()))
+                    Err(Error::UnknownCommand(content.to_owned()))
                 }
             }
         }
@@ -52,6 +51,5 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_commands() {
-    }
+    fn test_commands() {}
 }
