@@ -129,6 +129,10 @@ impl Bank {
                 ledger.increment_balance(&from_user, 1);
                 let account_results = ledger.get_balances(vec![from_user, to_user]);
 
+                if let Err(err) = self.save().await {
+                    error!("unable to save ledger: {:?}", err);
+                }
+
                 Receipt {
                     transaction,
                     account_results,
