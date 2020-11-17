@@ -1,3 +1,6 @@
+use serenity::client::Context;
+use serenity::model::channel::Reaction;
+
 use crate::discord::DiscordMessage;
 use crate::error::{Error, Result};
 
@@ -8,12 +11,21 @@ pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
 pub const ANNOUNCE: &'static str = "I am always listening";
 
+type UserId = u64;
+type ChannelId = u64;
+
+#[derive(Debug)]
 pub enum Command {
     Help,
     Ping,
     About,
     Announce,
     GetAllBalances(u64),
+    Tip {
+        channel_id: ChannelId,
+        from_user: UserId,
+        to_user: UserId,
+    },
 }
 
 impl Command {
@@ -33,6 +45,28 @@ impl Command {
                 }
             }
         }
+    }
+
+    pub async fn parse_reaction(context: &Context, reaction: Reaction) -> Result<Self> {
+	let channel_id = *reaction.channel_id.as_u64();
+	let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
+	let from_user = match reaction.user_id {
+	    Some(id) => *id.as_u64(),
+	    None => return Err(Error::CommandParse("no user in reaction".to_owned()))
+	};
+
+	match reaction.emoji.as_data().as_str() {
+            "🪙" => { // coin
+		Ok(Command::Tip {
+		    channel_id,
+		    from_user,
+		    to_user,
+		})
+	    }
+	    _ => {
+		Err(Error::CommandParse("couldn't parse command from reaction".to_owned()))
+	    }
+	}
     }
 }
 

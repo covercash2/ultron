@@ -83,12 +83,12 @@ impl Handler {
         Ok(())
     }
 
-    pub async fn process_command(&self, context: &Context, command: Command) -> Result<String> {
+    pub async fn process_command(&self, context: &Context, command: Command) -> Result<Option<String>> {
         match command {
-            Command::Help => Ok(commands::HELP.to_owned()),
-            Command::Ping => Ok(commands::PING.to_owned()),
-            Command::About => Ok(commands::ABOUT.to_owned()),
-            Command::Announce => Ok(commands::ANNOUNCE.to_owned()),
+            Command::Help => Ok(Some(commands::HELP.to_owned())),
+            Command::Ping => Ok(Some(commands::PING.to_owned())),
+            Command::About => Ok(Some(commands::ABOUT.to_owned())),
+            Command::Announce => Ok(Some(commands::ANNOUNCE.to_owned())),
             Command::GetAllBalances(channel_id) => {
                 let mut sender = self.transaction_sender.clone();
                 let transaction = Transaction::GetAllBalances(channel_id);
@@ -101,13 +101,27 @@ impl Handler {
                         let name = user_id.to_user(&context.http).await?.name;
                         output.push_str(&format!("{:15}#{:06}\n", name, amount));
                     }
-                    Ok(output)
+                    Ok(Some(output))
                 } else {
                     Err(Error::CommandProcess(
                         "unable to process GetAllBalances command".to_owned(),
                     ))
                 }
             }
+            Command::Tip { channel_id, from_user, to_user } => {
+		let mut sender = self.transaction_sender.clone();
+		let transaction = Transaction::Tip {
+		    channel_id,
+		    from_user,
+		    to_user
+		};
+		sender.send(transaction).await?;
+		let mut lock = self.receipt_receiver.lock().await;
+		if let Some(receipt) = lock.recv().await {
+		    info!("tip processed: {:?}", receipt);
+		}
+		Ok(None)
+	    }
         }
     }
 }
@@ -129,7 +143,11 @@ impl EventHandler for Handler {
         };
 
         let output = match self.process_command(&ctx, command).await {
-            Ok(output) => output,
+            Ok(Some(output)) => output,
+	    Ok(None) => {
+		debug!("command finished with no output");
+		return;
+	    },
             Err(err) => {
                 error!("unable to process command: {:?}", err);
                 return;
@@ -140,34 +158,59 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-        match reaction.emoji.as_data().as_str() {
-            "🪙" => {
-                // coin added
-                debug!("coin added");
-                let name = reaction.user(&ctx.http).await.unwrap().name;
 
-                if let Some(giver_id) = reaction.user_id {
-                    let author_id = reaction.message(&ctx.http).await.map(|message| {
-                        info!("{} giving {} a coin", name, message.author.name);
-                        message.author.id
-                    });
-
-                    match author_id {
-                        Ok(id) => {
-                            if let Err(err) =
-                                self.send_coins(reaction.channel_id, giver_id, id, 1).await
-                            {
-                                error!("error sending coins: {:?}", err);
-                            }
-                        }
-                        Err(err) => {
-                            warn!("no user id found: {:?}", err);
-                        }
-                    }
-                }
+        let command = match Command::parse_reaction(&ctx, reaction).await {
+            Ok(command) => command,
+            Err(err) => {
+                warn!("unable to parse reaction: {:?}", err);
+                return;
             }
-            _ => {}
-        }
+        };
+
+	// no reacts need output right now
+        let output = match self.process_command(&ctx, command).await {
+            Ok(Some(output)) => output,
+	    Ok(None) => {
+		debug!("command finished with no output");
+		return;
+	    },
+            Err(err) => {
+                error!("unable to process command: {:?}", err);
+                return;
+            }
+        };
+
+	info!("react output: {}", output);
+
+        // match reaction.emoji.as_data().as_str() {
+        //     "🪙" => {
+        //         // coin added
+        //         debug!("coin added");
+
+        //         let name = reaction.user(&ctx.http).await.unwrap().name;
+
+        //         if let Some(giver_id) = reaction.user_id {
+        //             let author_id = reaction.message(&ctx.http).await.map(|message| {
+        //                 info!("{} giving {} a coin", name, message.author.name);
+        //                 message.author.id
+        //             });
+
+        //             match author_id {
+        //                 Ok(id) => {
+        //                     if let Err(err) =
+        //                         self.send_coins(reaction.channel_id, giver_id, id, 1).await
+        //                     {
+        //                         error!("error sending coins: {:?}", err);
+        //                     }
+        //                 }
+        //                 Err(err) => {
+        //                     warn!("no user id found: {:?}", err);
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     _ => {}
+        // }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {

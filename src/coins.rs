@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
 use log::*;
-use tokio::{prelude::*, fs::OpenOptions, sync::mpsc::{Receiver, Sender}};
+use tokio::{
+    fs::OpenOptions,
+    prelude::*,
+    sync::mpsc::{Receiver, Sender},
+};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -32,6 +36,11 @@ pub enum Transaction {
     },
     /// Dump the account data
     GetAllBalances(ChannelId),
+    Tip {
+        channel_id: ChannelId,
+        from_user: UserId,
+        to_user: UserId,
+    },
 }
 
 /// This type is returned from [`Bank::process_transaction`].
@@ -110,6 +119,21 @@ impl Bank {
                     account_results,
                 }
             }
+            Transaction::Tip {
+                channel_id,
+                from_user,
+                to_user,
+            } => {
+                let ledger = self.get_or_create_ledger_mut(&channel_id);
+                ledger.increment_balance(&to_user, 2);
+                ledger.increment_balance(&from_user, 1);
+                let account_results = ledger.get_balances(vec![from_user, to_user]);
+
+                Receipt {
+                    transaction,
+                    account_results,
+                }
+            }
         }
     }
 
@@ -143,21 +167,20 @@ impl Bank {
 
     /// Load saved account data
     pub async fn load() -> Result<Self> {
-	let mut file = OpenOptions::new()
-	    .read(true)
-	    .write(true)
-	    .create(true)
-	    .open(DATA_FILE)
-	    .await?;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(DATA_FILE)
+            .await?;
         let mut content_string = String::new();
-	file.read_to_string(&mut content_string).await?;
-	if content_string.is_empty() {
-	    let ledgers = HashMap::new();
-	    Ok(Bank { ledgers })
-	} else {
-	    serde_json::from_str(&content_string)
-		.map_err(Into::into)
-	}
+        file.read_to_string(&mut content_string).await?;
+        if content_string.is_empty() {
+            let ledgers = HashMap::new();
+            Ok(Bank { ledgers })
+        } else {
+            serde_json::from_str(&content_string).map_err(Into::into)
+        }
     }
 
     /// Save account data
