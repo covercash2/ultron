@@ -17,16 +17,6 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn process(&self) -> Result<String> {
-        Ok(match self {
-            Command::Help => HELP.to_owned(),
-            Command::Ping => PING.to_owned(),
-            Command::About => ABOUT.to_owned(),
-            Command::Announce => ANNOUNCE.to_owned(),
-            _ => todo!(),
-        })
-    }
-
     pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
         let content = message.message.content.as_str();
         let channel_id = message.message.channel_id;
