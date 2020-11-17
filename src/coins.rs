@@ -1,24 +1,18 @@
-use std::io::BufWriter;
-use std::io::Write;
-use std::path::Path;
-use std::{
-    collections::HashMap,
-    fs::OpenOptions,
-    io::{BufReader, Read},
-};
+use std::collections::HashMap;
 
 use log::*;
-use tokio::sync::mpsc::Receiver;
+use tokio::{prelude::*, fs::OpenOptions, sync::mpsc::{Receiver, Sender}};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
-use tokio::sync::mpsc::Sender;
 
 use crate::error::Result;
 
 mod ledger;
 
 use ledger::Ledger;
+
+const DATA_FILE: &'static str = "accounts.json";
 
 type ChannelId = u64;
 type UserId = u64;
@@ -46,12 +40,12 @@ pub enum Transaction {
 #[derive(Debug)]
 pub struct Receipt {
     transaction: Transaction,
-    account_results: Vec<Account>
+    account_results: Vec<Account>,
 }
 
 impl Receipt {
     pub fn iter(&self) -> impl Iterator<Item = &Account> {
-	self.account_results.iter()
+        self.account_results.iter()
     }
 }
 
@@ -69,11 +63,11 @@ pub async fn bank_loop(
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
 
-	let receipt = bank.process_transaction(transaction);
+        let receipt = bank.process_transaction(transaction).await;
 
-	if let Err(err) = output_sender.send(receipt).await {
-	    error!("error sending receipt: {:?}", err);
-	}
+        if let Err(err) = output_sender.send(receipt).await {
+            error!("error sending receipt: {:?}", err);
+        }
     }
     debug!("bank loop finished");
 }
@@ -81,19 +75,12 @@ pub async fn bank_loop(
 /// The main structure for storing account information.
 #[derive(Serialize, Deserialize)]
 pub struct Bank {
-    map: HashMap<u64, i64>,
     ledgers: HashMap<ChannelId, Ledger>,
-}
-
-impl Default for Bank {
-    fn default() -> Self {
-        Bank::load("accounts.json").expect("unable to load default accounts file")
-    }
 }
 
 impl Bank {
     /// Process a transaction and return a [`Receipt`]
-    pub fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
+    pub async fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
         match transaction {
             Transaction::Transfer {
                 channel_id,
@@ -103,15 +90,25 @@ impl Bank {
             } => {
                 let ledger = self.get_or_create_ledger_mut(&channel_id);
                 ledger.transfer(&from_user, &to_user, amount);
-		let account_results = ledger.get_balances(vec![from_user, to_user]);
+                let account_results = ledger.get_balances(vec![from_user, to_user]);
 
-		Receipt { transaction, account_results }
+                if let Err(err) = self.save().await {
+                    error!("unable to save ledger: {:?}", err);
+                }
+
+                Receipt {
+                    transaction,
+                    account_results,
+                }
             }
             Transaction::GetAllBalances(channel_id) => {
                 let ledger = self.get_or_create_ledger(&channel_id);
                 let account_results = ledger.get_all_balances();
 
-		Receipt { transaction, account_results }
+                Receipt {
+                    transaction,
+                    account_results,
+                }
             }
         }
     }
@@ -145,40 +142,27 @@ impl Bank {
     }
 
     /// Load saved account data
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true) // create the file if it doesn't exist
-            .open(path)?;
-        let mut buf_reader = BufReader::new(file);
-        let mut contents = String::new();
-        buf_reader.read_to_string(&mut contents)?;
-
-        // TODO load accounts
-        // let map = if contents.is_empty() {
-        //     HashMap::new()
-        // } else {
-        //     serde_json::from_str(&contents)?
-        // };
-
-        let map = HashMap::new();
-        let ledgers = HashMap::new();
-
-        return Ok(Bank { map, ledgers });
+    pub async fn load() -> Result<Self> {
+	let mut file = OpenOptions::new()
+	    .read(true)
+	    .write(true)
+	    .create(true)
+	    .open(DATA_FILE)
+	    .await?;
+        let mut content_string = String::new();
+	file.read_to_string(&mut content_string).await?;
+	if content_string.is_empty() {
+	    let ledgers = HashMap::new();
+	    Ok(Bank { ledgers })
+	} else {
+	    serde_json::from_str(&content_string)
+		.map_err(Into::into)
+	}
     }
 
     /// Save account data
-    pub fn save(&self) -> Result<()> {
-        let json = serde_json::to_string(self)?;
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            // TODO put this somewhere better
-            .open("accounts.json")?;
-        let mut buf_writer = BufWriter::new(file);
-        buf_writer.write_all(json.as_bytes())?;
-
-        Ok(())
+    pub async fn save(&self) -> Result<()> {
+        let json: String = serde_json::to_string(self)?;
+        tokio::fs::write(DATA_FILE, json).await.map_err(Into::into)
     }
 }

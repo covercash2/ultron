@@ -12,7 +12,7 @@ mod discord;
 
 mod tokens;
 
-use coins::{bank_loop, Receipt, Transaction};
+use coins::{bank_loop, Bank, Receipt, Transaction};
 use discord::Handler;
 use tokens::load_token;
 
@@ -28,11 +28,9 @@ async fn main() {
 
     let event_handler = Handler::new(transaction_sender, receipt_receiver);
 
-    let _bank_thread = tokio::task::spawn(bank_loop(
-        Default::default(),
-        transaction_receiver,
-        receipt_sender,
-    ));
+    let bank = Bank::load().await.expect("unable to load bank file");
+
+    let _bank_thread = tokio::task::spawn(bank_loop(bank, transaction_receiver, receipt_sender));
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
         error!("error running discord client: {:?}", err);
