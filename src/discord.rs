@@ -54,16 +54,19 @@ impl Handler {
         }
     }
 
-    pub async fn send_coins<U: Into<u64>>(
+    pub async fn send_coins<C: Into<u64>, U: Into<u64>>(
         &self,
+        channel_id: C,
         from_user: U,
         to_user: U,
         coin_num: i64,
     ) -> Result<()> {
+        let channel_id = channel_id.into();
         let from_user = from_user.into();
         let to_user = to_user.into();
         let amount = coin_num;
         let transaction = Transaction::Transfer {
+            channel_id,
             to_user,
             from_user,
             amount,
@@ -72,7 +75,9 @@ impl Handler {
         sender.send(transaction).await?;
         let mut lock = self.receipt_receiver.lock().await;
         if let Some(receipt) = lock.recv().await {
-            receipt.iter().for_each(|entry| debug!("entry: {:?}", entry));
+            receipt
+                .iter()
+                .for_each(|entry| debug!("entry: {:?}", entry));
         }
 
         Ok(())
@@ -94,7 +99,7 @@ impl Handler {
                     for (id, amount) in receipt.iter() {
                         let user_id: UserId = (*id).into();
                         let name = user_id.to_user(&context.http).await?.name;
-			output.push_str(&format!("{:15}#{:06}\n", name, amount));
+                        output.push_str(&format!("{:15}#{:06}\n", name, amount));
                     }
                     Ok(output)
                 } else {
@@ -115,23 +120,23 @@ impl EventHandler for Handler {
             message: msg.clone(),
         };
 
-	let command = match Command::parse_message(discord_message).await {
-	    Ok(command) => command,
-	    Err(err) => {
-		warn!("unable to parse command: {:?}", err);
-		return;
-	    }
-	};
+        let command = match Command::parse_message(discord_message).await {
+            Ok(command) => command,
+            Err(err) => {
+                warn!("unable to parse command: {:?}", err);
+                return;
+            }
+        };
 
-	let output = match self.process_command(&ctx, command).await {
-	    Ok(output) => output,
-	    Err(err) => {
-		error!("unable to process command: {:?}", err);
-		return;
-	    }
-	};
+        let output = match self.process_command(&ctx, command).await {
+            Ok(output) => output,
+            Err(err) => {
+                error!("unable to process command: {:?}", err);
+                return;
+            }
+        };
 
-	say(msg.channel_id, &ctx.http, output).await;
+        say(msg.channel_id, &ctx.http, output).await;
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -149,7 +154,9 @@ impl EventHandler for Handler {
 
                     match author_id {
                         Ok(id) => {
-                            if let Err(err) = self.send_coins(giver_id, id, 1).await {
+                            if let Err(err) =
+                                self.send_coins(reaction.channel_id, giver_id, id, 1).await
+                            {
                                 error!("error sending coins: {:?}", err);
                             }
                         }

@@ -35,13 +35,12 @@ type UserId = u64;
 pub enum Transaction {
     /// Transfer coins from one user to another
     Transfer {
-	// TODO channel id
+        channel_id: ChannelId,
         from_user: UserId,
         to_user: UserId,
         amount: i64,
     },
     /// Dump the account data
-    // TODO channel id
     GetAllBalances(ChannelId),
 }
 
@@ -63,8 +62,8 @@ pub async fn bank_loop(
                 error!("error sending receipt: {:?}", err);
             }
         } else {
-	    info!("no receipt for transaction: {:?}", transaction);
-	}
+            info!("no receipt for transaction: {:?}", transaction);
+        }
     }
     debug!("bank loop finished");
 }
@@ -88,38 +87,55 @@ impl Bank {
     pub fn process_transaction(&mut self, transaction: &Transaction) -> Option<Receipt> {
         match transaction {
             Transaction::Transfer {
+                channel_id,
                 from_user,
                 to_user,
                 amount,
             } => {
-                self.transfer(&from_user, &to_user, *amount);
-                Some(self.get_balances(vec![*from_user, *to_user]))
+                let ledger = self.get_or_create_ledger_mut(&channel_id);
+                ledger.transfer(&from_user, &to_user, *amount);
+                Some(ledger.get_balances(vec![*from_user, *to_user]))
             }
-	    Transaction::GetAllBalances(channel_id) => {
-		let receipt: Vec<(u64, i64)> = self.map.iter().map(|(id, amount)| {
-		    (id.clone(), amount.clone())
-		}).collect();
+            Transaction::GetAllBalances(channel_id) => {
+                let ledger = self.get_or_create_ledger(channel_id);
+                let receipt = ledger.get_all_balances();
 
-		let ledger = self.get_or_create_ledger(channel_id);
-		let receipt = ledger.get_all_balances();
-
-		if receipt.is_empty() {
-		    warn!("no entries in bank");
-		    None
-		} else {
-		    Some(receipt)
-		}
-	    }
+                if receipt.is_empty() {
+                    warn!("no entries in bank");
+                    None
+                } else {
+                    Some(receipt)
+                }
+            }
         }
     }
 
     fn get_or_create_ledger(&mut self, channel_id: &ChannelId) -> &Ledger {
-	if self.ledgers.contains_key(channel_id) {
-	    return self.ledgers.get(channel_id).expect("weird error retrieving ledger");
-	}
-	info!("creating accounts for channel");
-	self.ledgers.insert(*channel_id, Ledger::default());
-	self.ledgers.get(channel_id).expect("unable to get the ledger that was just created")
+        if self.ledgers.contains_key(channel_id) {
+            return self
+                .ledgers
+                .get(channel_id)
+                .expect("weird error retrieving ledger");
+        }
+        info!("creating accounts for channel");
+        self.ledgers.insert(*channel_id, Ledger::default());
+        self.ledgers
+            .get(channel_id)
+            .expect("unable to get the ledger that was just created")
+    }
+
+    fn get_or_create_ledger_mut(&mut self, channel_id: &ChannelId) -> &mut Ledger {
+        if self.ledgers.contains_key(channel_id) {
+            return self
+                .ledgers
+                .get_mut(channel_id)
+                .expect("weird error retrieving ledger");
+        }
+        info!("creating accounts for channel");
+        self.ledgers.insert(*channel_id, Ledger::default());
+        self.ledgers
+            .get_mut(channel_id)
+            .expect("unable to get the ledger that was just created")
     }
 
     fn transfer(&mut self, from_user: &u64, to_user: &u64, amount: i64) {
@@ -170,15 +186,15 @@ impl Bank {
         let mut contents = String::new();
         buf_reader.read_to_string(&mut contents)?;
 
-	// TODO load accounts
+        // TODO load accounts
         // let map = if contents.is_empty() {
         //     HashMap::new()
         // } else {
         //     serde_json::from_str(&contents)?
         // };
 
-	let map = HashMap::new();
-	let ledgers = HashMap::new();
+        let map = HashMap::new();
+        let ledgers = HashMap::new();
 
         return Ok(Bank { map, ledgers });
     }
