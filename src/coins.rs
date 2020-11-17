@@ -20,13 +20,9 @@ mod ledger;
 
 use ledger::Ledger;
 
-/// This type is returned from [`Bank::process_transaction`].
-/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
-/// completes.
-pub type Receipt = Vec<(u64, i64)>;
-
 type ChannelId = u64;
 type UserId = u64;
+type Account = (UserId, i64);
 
 /// Interactions with the Bank are handled through transactions.
 /// These transactions are sent over channels in the [`bank_loop`]
@@ -44,6 +40,21 @@ pub enum Transaction {
     GetAllBalances(ChannelId),
 }
 
+/// This type is returned from [`Bank::process_transaction`].
+/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
+/// completes.
+#[derive(Debug)]
+pub struct Receipt {
+    transaction: Transaction,
+    account_results: Vec<Account>
+}
+
+impl Receipt {
+    pub fn iter(&self) -> impl Iterator<Item = &Account> {
+	self.account_results.iter()
+    }
+}
+
 /// This function runs a loop that waits for transactions to come in on the
 /// `transaction_receiver` (see: [`tokio::sync::mpsc`]).
 /// If some `Receipt` value is returned from the transaction, it is sent across the
@@ -57,13 +68,12 @@ pub async fn bank_loop(
     debug!("bank loop started");
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
-        if let Some(receipt) = bank.process_transaction(&transaction) {
-            if let Err(err) = output_sender.send(receipt).await {
-                error!("error sending receipt: {:?}", err);
-            }
-        } else {
-            info!("no receipt for transaction: {:?}", transaction);
-        }
+
+	let receipt = bank.process_transaction(transaction);
+
+	if let Err(err) = output_sender.send(receipt).await {
+	    error!("error sending receipt: {:?}", err);
+	}
     }
     debug!("bank loop finished");
 }
@@ -82,9 +92,8 @@ impl Default for Bank {
 }
 
 impl Bank {
-    /// Process transactions and return a [`Receipt`] if appropriate.
-    // TODO return result
-    pub fn process_transaction(&mut self, transaction: &Transaction) -> Option<Receipt> {
+    /// Process a transaction and return a [`Receipt`]
+    pub fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
         match transaction {
             Transaction::Transfer {
                 channel_id,
@@ -93,19 +102,16 @@ impl Bank {
                 amount,
             } => {
                 let ledger = self.get_or_create_ledger_mut(&channel_id);
-                ledger.transfer(&from_user, &to_user, *amount);
-                Some(ledger.get_balances(vec![*from_user, *to_user]))
+                ledger.transfer(&from_user, &to_user, amount);
+		let account_results = ledger.get_balances(vec![from_user, to_user]);
+
+		Receipt { transaction, account_results }
             }
             Transaction::GetAllBalances(channel_id) => {
-                let ledger = self.get_or_create_ledger(channel_id);
-                let receipt = ledger.get_all_balances();
+                let ledger = self.get_or_create_ledger(&channel_id);
+                let account_results = ledger.get_all_balances();
 
-                if receipt.is_empty() {
-                    warn!("no entries in bank");
-                    None
-                } else {
-                    Some(receipt)
-                }
+		Receipt { transaction, account_results }
             }
         }
     }
