@@ -1,12 +1,12 @@
 use crate::discord::DiscordMessage;
 use crate::error::{Error, Result};
 
-const HELP: &'static str = "!ping to say hello
+pub const HELP: &'static str = "!ping to say hello
 !about to show info about ultron
 mentioning ultron summons him";
-const PING: &'static str = "hello";
-const ABOUT: &'static str = "https://github.com/covercash2/ultron";
-const ANNOUNCE: &'static str = "I am always listening";
+pub const PING: &'static str = "hello";
+pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
+pub const ANNOUNCE: &'static str = "I am always listening";
 
 pub enum Command {
     Help,

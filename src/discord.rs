@@ -5,6 +5,7 @@ use log::*;
 use serenity::http::Http;
 use serenity::model::channel::Reaction;
 use serenity::model::id::ChannelId;
+use serenity::model::id::UserId;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
@@ -17,6 +18,7 @@ use tokio::sync::{
 };
 
 use crate::coins::{Receipt, Transaction};
+use crate::commands;
 use crate::commands::Command;
 use crate::error::{Error, Result};
 
@@ -36,15 +38,18 @@ pub struct DiscordMessage<'a> {
 }
 
 pub struct Handler {
-    coin_sender: Sender<Transaction>,
+    transaction_sender: Sender<Transaction>,
     receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
 }
 
 impl Handler {
-    pub fn new(coin_sender: Sender<Transaction>, receipt_receiver: Receiver<Receipt>) -> Handler {
+    pub fn new(
+        transaction_sender: Sender<Transaction>,
+        receipt_receiver: Receiver<Receipt>,
+    ) -> Handler {
         let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
         Handler {
-            coin_sender,
+            transaction_sender,
             receipt_receiver,
         }
     }
@@ -63,14 +68,42 @@ impl Handler {
             from_user,
             amount,
         };
-        let mut sender = self.coin_sender.clone();
+        let mut sender = self.transaction_sender.clone();
         sender.send(transaction).await?;
         let mut lock = self.receipt_receiver.lock().await;
         if let Some(receipt) = lock.recv().await {
-            receipt.iter().for_each(|entry| info!("entry: {:?}", entry));
+            receipt.iter().for_each(|entry| debug!("entry: {:?}", entry));
         }
 
         Ok(())
+    }
+
+    pub async fn process_command(&self, context: &Context, command: Command) -> Result<String> {
+        match command {
+            Command::Help => Ok(commands::HELP.to_owned()),
+            Command::Ping => Ok(commands::PING.to_owned()),
+            Command::About => Ok(commands::ABOUT.to_owned()),
+            Command::Announce => Ok(commands::ANNOUNCE.to_owned()),
+            Command::GetAllBalances => {
+                let mut sender = self.transaction_sender.clone();
+                let transaction = Transaction::GetAllBalances;
+                sender.send(transaction).await?;
+                let mut lock = self.receipt_receiver.lock().await;
+                if let Some(receipt) = lock.recv().await {
+                    let mut output = String::new();
+                    for (id, amount) in receipt.iter() {
+                        let user_id: UserId = (*id).into();
+                        let name = user_id.to_user(&context.http).await?.name;
+			output.push_str(&format!("{:15}#{:06}\n", name, amount));
+                    }
+                    Ok(output)
+                } else {
+                    Err(Error::CommandProcess(
+                        "unable to process GetAllBalances command".to_owned(),
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -82,15 +115,23 @@ impl EventHandler for Handler {
             message: msg.clone(),
         };
 
-        let fut_res = Command::parse_message(discord_message)
-            .await
-            .and_then(|command| command.process())
-            .map(|output| say(msg.channel_id, &ctx.http, output));
+	let command = match Command::parse_message(discord_message).await {
+	    Ok(command) => command,
+	    Err(err) => {
+		warn!("unable to parse command: {:?}", err);
+		return;
+	    }
+	};
 
-        match fut_res {
-            Ok(fut) => fut.await,
-            Err(err) => error!("error processing message: {:?}", err),
-        }
+	let output = match self.process_command(&ctx, command).await {
+	    Ok(output) => output,
+	    Err(err) => {
+		error!("unable to process command: {:?}", err);
+		return;
+	    }
+	};
+
+	say(msg.channel_id, &ctx.http, output).await;
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -127,6 +168,7 @@ impl EventHandler for Handler {
     }
 }
 
+// TODO return result
 async fn say<T: AsRef<Http>>(channel: ChannelId, pipe: T, msg: impl std::fmt::Display) {
     if let Err(err) = channel.say(pipe, msg).await {
         error!("error sending message: {:?}", err);

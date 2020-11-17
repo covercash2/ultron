@@ -7,7 +7,7 @@ use std::{
     io::{BufReader, Read},
 };
 
-use log::{debug, error};
+use log::{debug, error, info, warn};
 use tokio::sync::mpsc::Receiver;
 
 use serde::{Deserialize, Serialize};
@@ -23,9 +23,7 @@ pub enum Transaction {
         to_user: u64,
         amount: i64,
     },
-    GetBalance {
-        users: Vec<u64>,
-    },
+    GetAllBalances,
 }
 
 pub type Receipt = Vec<(u64, i64)>;
@@ -38,11 +36,13 @@ pub async fn bank_loop(
     debug!("bank loop started");
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
-        if let Some(receipt) = bank.process_transaction(transaction) {
+        if let Some(receipt) = bank.process_transaction(&transaction) {
             if let Err(err) = output_sender.send(receipt).await {
                 error!("error sending receipt: {:?}", err);
             }
-        }
+        } else {
+	    info!("no receipt for transaction: {:?}", transaction);
+	}
     }
     debug!("bank loop finished");
 }
@@ -59,17 +59,28 @@ impl Default for Bank {
 }
 
 impl Bank {
-    pub fn process_transaction(&mut self, transaction: Transaction) -> Option<Receipt> {
+    pub fn process_transaction(&mut self, transaction: &Transaction) -> Option<Receipt> {
         match transaction {
             Transaction::Transfer {
                 from_user,
                 to_user,
                 amount,
             } => {
-                self.transfer(&from_user, &to_user, amount);
-                Some(self.get_balances(vec![from_user, to_user]))
+                self.transfer(&from_user, &to_user, *amount);
+                Some(self.get_balances(vec![*from_user, *to_user]))
             }
-            Transaction::GetBalance { users } => Some(self.get_balances(users)),
+	    Transaction::GetAllBalances => {
+		let receipt: Vec<(u64, i64)> = self.map.iter().map(|(id, amount)| {
+		    (id.clone(), amount.clone())
+		}).collect();
+
+		if receipt.is_empty() {
+		    warn!("no entries in bank");
+		    None
+		} else {
+		    Some(receipt)
+		}
+	    }
         }
     }
 

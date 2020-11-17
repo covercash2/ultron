@@ -1,3 +1,4 @@
+#![feature(async_closure)]
 use log::error;
 use pretty_env_logger;
 

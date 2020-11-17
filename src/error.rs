@@ -21,6 +21,7 @@ pub enum Error {
     Io(IoError),
     UnknownCommand(String),
     CommandParse(String),
+    CommandProcess(String),
 }
 
 impl From<SendError<Transaction>> for Error {
