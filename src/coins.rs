@@ -16,18 +16,33 @@ use tokio::sync::mpsc::Sender;
 
 use crate::error::Result;
 
+/// Interactions with the Bank are handled through transactions.
+/// These transactions are sent over channels in the [`bank_loop`]
+/// to be processed by [`Bank::process_transaction`].
 #[derive(Debug)]
 pub enum Transaction {
+    /// Transfer coins from one user to another
     Transfer {
+	// TODO channel id
         from_user: u64,
         to_user: u64,
         amount: i64,
     },
+    /// Dump the account data
+    // TODO channel id
     GetAllBalances,
 }
 
+/// This type is returned from [`Bank::process_transaction`].
+/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
+/// completes.
 pub type Receipt = Vec<(u64, i64)>;
 
+/// This function runs a loop that waits for transactions to come in on the
+/// `transaction_receiver` (see: [`tokio::sync::mpsc`]).
+/// If some `Receipt` value is returned from the transaction, it is sent across the
+/// `output_sender`.
+/// This loop runs until the `transaction_receiver`'s [`Sender`] sides are closed.
 pub async fn bank_loop(
     mut bank: Bank,
     mut transaction_receiver: Receiver<Transaction>,
@@ -47,6 +62,7 @@ pub async fn bank_loop(
     debug!("bank loop finished");
 }
 
+/// The main structure for storing account information.
 #[derive(Serialize, Deserialize)]
 pub struct Bank {
     map: HashMap<u64, i64>,
@@ -59,6 +75,7 @@ impl Default for Bank {
 }
 
 impl Bank {
+    /// Process transactions and return a [`Receipt`] if appropriate.
     pub fn process_transaction(&mut self, transaction: &Transaction) -> Option<Receipt> {
         match transaction {
             Transaction::Transfer {
@@ -96,7 +113,7 @@ impl Bank {
             .collect()
     }
 
-    /// get the balance of the user account or create it and initialize it with 0
+    /// Get the balance of the user account or create it and initialize it with 0
     pub fn get_balance(&mut self, user: &u64) -> i64 {
         match self.map.get(user) {
             Some(&amount) => amount,
@@ -107,8 +124,8 @@ impl Bank {
         }
     }
 
-    /// increment the user account by `amount`.
-    /// this function can be used to decrement the account by passing a negative number
+    /// Increment the user account by `amount`.
+    /// This function can be used to decrement the account by passing a negative number.
     pub fn increment_balance(&mut self, user: &u64, amount: i64) {
         match self.map.get_mut(user) {
             // TODO maybe check for overflows here
@@ -121,6 +138,7 @@ impl Bank {
         }
     }
 
+    /// Load saved account data
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = OpenOptions::new()
             .read(true)
@@ -140,6 +158,7 @@ impl Bank {
         return Ok(Bank { map });
     }
 
+    /// Save account data
     pub fn save(&self) -> Result<()> {
         let json = serde_json::to_string(self)?;
         let file = OpenOptions::new()
