@@ -1,5 +1,4 @@
-use std::str::FromStr;
-
+use crate::discord::DiscordMessage;
 use crate::error::{Error, Result};
 
 const HELP: &'static str = "!ping to say hello
@@ -14,6 +13,7 @@ pub enum Command {
     Ping,
     About,
     Announce,
+    GetAllBalances,
 }
 
 impl Command {
@@ -23,25 +23,35 @@ impl Command {
             Command::Ping => PING.to_owned(),
             Command::About => ABOUT.to_owned(),
             Command::Announce => ANNOUNCE.to_owned(),
+            _ => todo!(),
         })
     }
-}
 
-impl FromStr for Command {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s {
+    pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
+	let content = message.message.content.as_str();
+        match content {
             "!help" => Ok(Command::Help),
             "!ping" => Ok(Command::Ping),
             "!about" => Ok(Command::About),
+	    "!coins" => {
+		Ok(Command::GetAllBalances)
+	    }
             _ => {
-                if s.contains("ultron") {
+                if content.contains("ultron") {
                     Ok(Command::Announce)
                 } else {
-                    Err(Error::UnknownCommand(s.to_owned()))
+		    Err(Error::UnknownCommand(content.to_owned()))
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_commands() {
     }
 }

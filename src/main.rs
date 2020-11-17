@@ -1,5 +1,4 @@
 use log::error;
-use log::info;
 use pretty_env_logger;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -9,7 +8,6 @@ mod commands;
 mod error;
 
 mod discord;
-mod github;
 
 mod tokens;
 
@@ -21,7 +19,6 @@ use tokens::load_token;
 async fn main() {
     pretty_env_logger::init();
 
-    let _github_token = load_token(tokens::GITHUB_TOKEN).expect("unable to load github token");
     let discord_token = load_token(tokens::DISCORD_TOKEN).expect("unable to load discord token");
 
     let (transaction_sender, transaction_receiver): (Sender<Transaction>, Receiver<Transaction>) =
@@ -35,12 +32,6 @@ async fn main() {
         transaction_receiver,
         receipt_sender,
     ));
-
-    // let _receipt_printer = tokio::task::spawn(async move {
-    // 	while let Some(receipt) = receipt_receiver.recv().await {
-    // 	    info!("receipt: {:?}", receipt);
-    // 	}
-    // });
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
         error!("error running discord client: {:?}", err);

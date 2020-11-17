@@ -20,6 +20,7 @@ pub enum Error {
     TransactionSend(SendError<Transaction>),
     Io(IoError),
     UnknownCommand(String),
+    CommandParse(String),
 }
 
 impl From<SendError<Transaction>> for Error {

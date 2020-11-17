@@ -11,7 +11,10 @@ use serenity::{
     prelude::*,
 };
 
-use tokio::sync::{Mutex, mpsc::{Receiver, Sender}};
+use tokio::sync::{
+    mpsc::{Receiver, Sender},
+    Mutex,
+};
 
 use crate::coins::{Receipt, Transaction};
 use crate::commands::Command;
@@ -26,6 +29,12 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
     client.start().await.map_err(Error::from)
 }
 
+#[derive(Debug)]
+pub struct DiscordMessage<'a> {
+    pub context: &'a Http,
+    pub message: Message,
+}
+
 pub struct Handler {
     coin_sender: Sender<Transaction>,
     receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
@@ -33,7 +42,7 @@ pub struct Handler {
 
 impl Handler {
     pub fn new(coin_sender: Sender<Transaction>, receipt_receiver: Receiver<Receipt>) -> Handler {
-	let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
+        let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
         Handler {
             coin_sender,
             receipt_receiver,
@@ -56,29 +65,31 @@ impl Handler {
         };
         let mut sender = self.coin_sender.clone();
         sender.send(transaction).await?;
-	let mut lock = self.receipt_receiver.lock().await;
-	if let Some(receipt) = lock.recv().await {
-	    receipt.iter().for_each(|entry| info!("entry: {:?}", entry));
-	}
+        let mut lock = self.receipt_receiver.lock().await;
+        if let Some(receipt) = lock.recv().await {
+            receipt.iter().for_each(|entry| info!("entry: {:?}", entry));
+        }
 
-	Ok(())
+        Ok(())
     }
 }
 
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        match msg
-            .content
-            .parse::<Command>()
+        let discord_message = DiscordMessage {
+            context: &ctx.http,
+            message: msg.clone(),
+        };
+
+        let fut_res = Command::parse_message(discord_message)
+            .await
             .and_then(|command| command.process())
-        {
-            Ok(command_output) => {
-                say(msg.channel_id, &ctx.http, command_output).await;
-            }
-            Err(err) => {
-                debug!("unable to execute command: {:?}", err);
-            }
+            .map(|output| say(msg.channel_id, &ctx.http, output));
+
+        match fut_res {
+            Ok(fut) => fut.await,
+            Err(err) => error!("error processing message: {:?}", err),
         }
     }
 
@@ -98,8 +109,8 @@ impl EventHandler for Handler {
                     match author_id {
                         Ok(id) => {
                             if let Err(err) = self.send_coins(giver_id, id, 1).await {
-				error!("error sending coins: {:?}", err);
-			    }
+                                error!("error sending coins: {:?}", err);
+                            }
                         }
                         Err(err) => {
                             warn!("no user id found: {:?}", err);

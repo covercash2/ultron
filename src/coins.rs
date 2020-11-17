@@ -19,13 +19,13 @@ use crate::error::Result;
 #[derive(Debug)]
 pub enum Transaction {
     Transfer {
-	from_user: u64,
-	to_user: u64,
-	amount: i64,
+        from_user: u64,
+        to_user: u64,
+        amount: i64,
     },
     GetBalance {
-	users: Vec<u64>,
-    }
+        users: Vec<u64>,
+    },
 }
 
 pub type Receipt = Vec<(u64, i64)>;
@@ -33,16 +33,16 @@ pub type Receipt = Vec<(u64, i64)>;
 pub async fn bank_loop(
     mut bank: Bank,
     mut transaction_receiver: Receiver<Transaction>,
-    mut output_sender: Sender<Receipt>
+    mut output_sender: Sender<Receipt>,
 ) {
     debug!("bank loop started");
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
-	if let Some(receipt) = bank.process_transaction(transaction) {
-	    if let Err(err) = output_sender.send(receipt).await {
-		error!("error sending receipt");
-	    }
-	}
+        if let Some(receipt) = bank.process_transaction(transaction) {
+            if let Err(err) = output_sender.send(receipt).await {
+                error!("error sending receipt: {:?}", err);
+            }
+        }
     }
     debug!("bank loop finished");
 }
@@ -60,17 +60,17 @@ impl Default for Bank {
 
 impl Bank {
     pub fn process_transaction(&mut self, transaction: Transaction) -> Option<Receipt> {
-	match transaction {
-	    Transaction::Transfer  {
-		from_user, to_user, amount
-	    } => {
-		self.transfer(&from_user, &to_user, amount);
-		Some(self.get_balances(vec![from_user, to_user]))
-	    }
-	    Transaction::GetBalance { users } => {
-		Some(self.get_balances(users))
-	    }
-	}
+        match transaction {
+            Transaction::Transfer {
+                from_user,
+                to_user,
+                amount,
+            } => {
+                self.transfer(&from_user, &to_user, amount);
+                Some(self.get_balances(vec![from_user, to_user]))
+            }
+            Transaction::GetBalance { users } => Some(self.get_balances(users)),
+        }
     }
 
     fn transfer(&mut self, from_user: &u64, to_user: &u64, amount: i64) {
@@ -79,7 +79,10 @@ impl Bank {
     }
 
     fn get_balances(&mut self, users: Vec<u64>) -> Receipt {
-	users.iter().map(|user| (*user, self.get_balance(user))).collect()
+        users
+            .iter()
+            .map(|user| (*user, self.get_balance(user)))
+            .collect()
     }
 
     /// get the balance of the user account or create it and initialize it with 0
