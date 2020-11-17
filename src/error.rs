@@ -18,6 +18,7 @@ pub enum Error {
     BadApiKey(VarError),
     Json(JsonError),
     TransactionSend(SendError<Transaction>),
+    TransactionReceipt,
     Io(IoError),
     UnknownCommand(String),
     CommandParse(String),

@@ -1,6 +1,7 @@
 use serenity::client::Context;
 use serenity::model::channel::Reaction;
 
+use crate::coins::Transaction;
 use crate::discord::DiscordMessage;
 use crate::error::{Error, Result};
 
@@ -10,9 +11,6 @@ mentioning ultron summons him";
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
 pub const ANNOUNCE: &'static str = "I am always listening";
-
-type UserId = u64;
-type ChannelId = u64;
 
 /// All the possible server commands
 #[derive(Debug)]
@@ -25,26 +23,23 @@ pub enum Command {
     About,
     /// Announce that the bot is listening
     Announce,
-    /// Get all balances for accounts in the current channel
-    GetAllBalances(u64),
-    /// Process a tip
-    Tip {
-        channel_id: ChannelId,
-        from_user: UserId,
-        to_user: UserId,
-    },
+    /// Make a coin transaction
+    Coin(Transaction),
 }
 
 impl Command {
     /// Parses messages from the [`serenity`] Discord API
     pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
         let content = message.message.content.as_str();
-        let channel_id = message.message.channel_id;
+        let channel_id = *message.message.channel_id.as_u64();
         match content {
             "!help" => Ok(Command::Help),
             "!ping" => Ok(Command::Ping),
             "!about" => Ok(Command::About),
-            "!coins" => Ok(Command::GetAllBalances(*channel_id.as_u64())),
+            "!coins" => {
+		let transaction = Transaction::GetAllBalances(channel_id);
+		Ok(Command::Coin(transaction))
+	    },
             _ => {
                 if content.contains("ultron") {
                     Ok(Command::Announce)
@@ -66,11 +61,12 @@ impl Command {
 
 	match reaction.emoji.as_data().as_str() {
             "🪙" => { // coin
-		Ok(Command::Tip {
+		let transaction = Transaction::Tip {
 		    channel_id,
 		    from_user,
 		    to_user,
-		})
+		};
+		Ok(Command::Coin(transaction))
 	    }
 	    _ => {
 		Err(Error::CommandParse("couldn't parse command from reaction".to_owned()))

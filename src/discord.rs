@@ -62,6 +62,41 @@ impl Handler {
         }
     }
 
+    /// Send a transaction to the bank thread.
+    /// Returns output to say in chat.
+    pub async fn send_transaction(
+        &self,
+        context: &Context,
+        transaction: Transaction,
+    ) -> Result<Option<String>> {
+	let mut sender = self.transaction_sender.clone();
+	sender.send(transaction).await?;
+	let mut lock = self.receipt_receiver.lock().await;
+	if let Some(receipt) = lock.recv().await {
+	    match receipt.transaction {
+		Transaction::GetAllBalances(_user_id) => {
+                    let mut output = String::new();
+                    for (id, amount) in receipt.iter() {
+                        let user_id: UserId = (*id).into();
+                        let name = user_id.to_user(&context.http).await?.name;
+                        output.push_str(&format!("{:15}#{:06}\n", name, amount));
+                    }
+                    Ok(Some(output))
+		}
+	        Transaction::Transfer { .. } => {
+		    debug!("transfer complete");
+		    Ok(None)
+		}
+	        Transaction::Tip { .. } => {
+		    debug!("tip complete");
+		    Ok(None)
+		}
+	    }
+	} else {
+	    Err(Error::TransactionReceipt)
+	}
+    }
+
     /// Process the command, performing any necessary IO operations
     pub async fn process_command(
         &self,
@@ -73,43 +108,9 @@ impl Handler {
             Command::Ping => Ok(Some(commands::PING.to_owned())),
             Command::About => Ok(Some(commands::ABOUT.to_owned())),
             Command::Announce => Ok(Some(commands::ANNOUNCE.to_owned())),
-            Command::GetAllBalances(channel_id) => {
-                let mut sender = self.transaction_sender.clone();
-                let transaction = Transaction::GetAllBalances(channel_id);
-                sender.send(transaction).await?;
-                let mut lock = self.receipt_receiver.lock().await;
-                if let Some(receipt) = lock.recv().await {
-                    let mut output = String::new();
-                    for (id, amount) in receipt.iter() {
-                        let user_id: UserId = (*id).into();
-                        let name = user_id.to_user(&context.http).await?.name;
-                        output.push_str(&format!("{:15}#{:06}\n", name, amount));
-                    }
-                    Ok(Some(output))
-                } else {
-                    Err(Error::CommandProcess(
-                        "unable to process GetAllBalances command".to_owned(),
-                    ))
-                }
-            }
-            Command::Tip {
-                channel_id,
-                from_user,
-                to_user,
-            } => {
-                let mut sender = self.transaction_sender.clone();
-                let transaction = Transaction::Tip {
-                    channel_id,
-                    from_user,
-                    to_user,
-                };
-                sender.send(transaction).await?;
-                let mut lock = self.receipt_receiver.lock().await;
-                if let Some(receipt) = lock.recv().await {
-                    info!("tip processed: {:?}", receipt);
-                }
-                Ok(None)
-            }
+            Command::Coin(transaction) => {
+		self.send_transaction(context, transaction).await
+	    }
         }
     }
 }
@@ -143,8 +144,8 @@ impl EventHandler for Handler {
         };
 
         if let Err(err) = say(msg.channel_id, &ctx.http, output).await {
-	    error!("error sending message: {:?}", err);
-	}
+            error!("error sending message: {:?}", err);
+        }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
@@ -184,6 +185,5 @@ async fn say<T: AsRef<Http>>(
     pipe: T,
     msg: impl std::fmt::Display,
 ) -> Result<Message> {
-    channel.say(pipe, msg).await
-        .map_err(Into::into)
+    channel.say(pipe, msg).await.map_err(Into::into)
 }

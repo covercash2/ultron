@@ -48,8 +48,8 @@ pub enum Transaction {
 /// completes.
 #[derive(Debug)]
 pub struct Receipt {
-    transaction: Transaction,
-    account_results: Vec<Account>,
+    pub transaction: Transaction,
+    pub account_results: Vec<Account>,
 }
 
 impl Receipt {
