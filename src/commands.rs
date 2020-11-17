@@ -1,8 +1,8 @@
 use serenity::client::Context;
+use serenity::model::channel::Message;
 use serenity::model::channel::Reaction;
 
 use crate::coins::Transaction;
-use crate::discord::DiscordMessage;
 use crate::error::{Error, Result};
 
 pub const HELP: &'static str = "!ping to say hello
@@ -29,9 +29,9 @@ pub enum Command {
 
 impl Command {
     /// Parses messages from the [`serenity`] Discord API
-    pub async fn parse_message(message: DiscordMessage<'_>) -> Result<Self> {
-        let content = message.message.content.as_str();
-        let channel_id = *message.message.channel_id.as_u64();
+    pub async fn parse_message(context: &Context, message: Message) -> Result<Self> {
+        let content = message.content.as_str();
+        let channel_id = *message.channel_id.as_u64();
         match content {
             "!help" => Ok(Command::Help),
             "!ping" => Ok(Command::Ping),
@@ -41,9 +41,9 @@ impl Command {
 		Ok(Command::Coin(transaction))
 	    },
             _ => {
-                if content.contains("ultron") {
-                    Ok(Command::Announce)
-                } else {
+		if let Ok(true) = message.mentions_me(context).await {
+		    Ok(Command::Announce)
+		} else {
                     Err(Error::UnknownCommand(content.to_owned()))
                 }
             }

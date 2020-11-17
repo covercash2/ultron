@@ -118,12 +118,10 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        let discord_message = DiscordMessage {
-            context: &ctx.http,
-            message: msg.clone(),
-        };
+	// channel for logging
+	let channel_id = msg.channel_id.clone();
 
-        let command = match Command::parse_message(discord_message).await {
+        let command = match Command::parse_message(&ctx, msg).await {
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse command: {:?}", err);
@@ -143,7 +141,7 @@ impl EventHandler for Handler {
             }
         };
 
-        if let Err(err) = say(msg.channel_id, &ctx.http, output).await {
+        if let Err(err) = say(channel_id, &ctx.http, output).await {
             error!("error sending message: {:?}", err);
         }
     }
