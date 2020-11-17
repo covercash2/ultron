@@ -22,6 +22,7 @@ use crate::commands;
 use crate::commands::Command;
 use crate::error::{Error, Result};
 
+/// Run the main thread for the chat client.
 pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
     let mut client = Client::builder(&token)
         .event_handler(handler)
@@ -37,8 +38,15 @@ pub struct DiscordMessage<'a> {
     pub message: Message,
 }
 
+/// This struct is the main handler for the [`serenity`] Discord API crate.
+/// It communicates with the bank thread though the `transaction_sender` and
+/// `receipt_receiver` [`tokio::sync::mpsc`] channels.
+/// The `receipt_receiver` needs to be wrapped in a `Mutex` since [`Receiver`]s are not
+/// thread-safe; additionally, automatic reference counting ([`Arc`]) is used to get
+/// a mutable reference behind an immutable `Handler`.
 pub struct Handler {
     transaction_sender: Sender<Transaction>,
+    // receivers aren't thread safe, so we need some boxes here
     receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
 }
 
@@ -54,35 +62,7 @@ impl Handler {
         }
     }
 
-    pub async fn send_coins<C: Into<u64>, U: Into<u64>>(
-        &self,
-        channel_id: C,
-        from_user: U,
-        to_user: U,
-        coin_num: i64,
-    ) -> Result<()> {
-        let channel_id = channel_id.into();
-        let from_user = from_user.into();
-        let to_user = to_user.into();
-        let amount = coin_num;
-        let transaction = Transaction::Transfer {
-            channel_id,
-            to_user,
-            from_user,
-            amount,
-        };
-        let mut sender = self.transaction_sender.clone();
-        sender.send(transaction).await?;
-        let mut lock = self.receipt_receiver.lock().await;
-        if let Some(receipt) = lock.recv().await {
-            receipt
-                .iter()
-                .for_each(|entry| debug!("entry: {:?}", entry));
-        }
-
-        Ok(())
-    }
-
+    /// Process the command, performing any necessary IO operations
     pub async fn process_command(&self, context: &Context, command: Command) -> Result<Option<String>> {
         match command {
             Command::Help => Ok(Some(commands::HELP.to_owned())),
@@ -158,7 +138,6 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-
         let command = match Command::parse_reaction(&ctx, reaction).await {
             Ok(command) => command,
             Err(err) => {
@@ -181,36 +160,6 @@ impl EventHandler for Handler {
         };
 
 	info!("react output: {}", output);
-
-        // match reaction.emoji.as_data().as_str() {
-        //     "🪙" => {
-        //         // coin added
-        //         debug!("coin added");
-
-        //         let name = reaction.user(&ctx.http).await.unwrap().name;
-
-        //         if let Some(giver_id) = reaction.user_id {
-        //             let author_id = reaction.message(&ctx.http).await.map(|message| {
-        //                 info!("{} giving {} a coin", name, message.author.name);
-        //                 message.author.id
-        //             });
-
-        //             match author_id {
-        //                 Ok(id) => {
-        //                     if let Err(err) =
-        //                         self.send_coins(reaction.channel_id, giver_id, id, 1).await
-        //                     {
-        //                         error!("error sending coins: {:?}", err);
-        //                     }
-        //                 }
-        //                 Err(err) => {
-        //                     warn!("no user id found: {:?}", err);
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     _ => {}
-        // }
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
@@ -218,6 +167,7 @@ impl EventHandler for Handler {
     }
 }
 
+/// Use the [`serenity`] Discord API crate to send a message accross a channel
 // TODO return result
 async fn say<T: AsRef<Http>>(channel: ChannelId, pipe: T, msg: impl std::fmt::Display) {
     if let Err(err) = channel.say(pipe, msg).await {
