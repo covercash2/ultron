@@ -19,6 +19,7 @@ pub enum Error {
     Json(JsonError),
     TransactionSend(SendError<Transaction>),
     TransactionReceipt,
+    TransactionFailed(String),
     Io(IoError),
     UnknownCommand(String),
     CommandParse(String),

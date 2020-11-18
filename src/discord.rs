@@ -48,7 +48,7 @@ pub enum Output {
 
 impl From<String> for Output {
     fn from(s: String) -> Output {
-	Output::Say(s)
+        Output::Say(s)
     }
 }
 
@@ -78,10 +78,7 @@ impl Handler {
 
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
-    pub async fn send_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<Receipt> {
+    pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
         let mut sender = self.transaction_sender.clone();
         sender.send(transaction).await?;
         let mut lock = self.receipt_receiver.lock().await;
@@ -105,7 +102,7 @@ impl Handler {
             Command::Announce => Ok(Some(Output::Say(commands::ANNOUNCE.to_owned()))),
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
-		self.process_receipt(context, receipt).await
+                self.process_receipt(context, receipt).await
             }
         }
     }
@@ -133,23 +130,39 @@ impl Handler {
                 Ok(None)
             }
             Transaction::Tip { .. } => {
-                debug!("tip complete");
-                Ok(None)
-            }
-            Transaction::Daily { .. } => {
 		match receipt.status {
 		    TransactionStatus::Complete => {
-			debug!("daily complete");
+			debug!("tip complete");
 			Ok(None)
 		    }
-		    TransactionStatus::BadDailyRequest => {
-			// bad daily request
-			info!("bad daily request: {:?}", receipt);
+		    TransactionStatus::SelfTip => {
 			// TODO chastize
-			Ok(None)
+			Err(Error::TransactionFailed(format!("user tried to tip themselves: {:?}", receipt)))
 		    }
+                    _ => Err(Error::TransactionFailed(format!(
+                        "unexpected transaction status: {:?}",
+                        receipt
+                    ))),
 		}
-	    }
+            }
+            Transaction::Daily { .. } => {
+                match receipt.status {
+                    TransactionStatus::Complete => {
+                        debug!("daily complete");
+                        Ok(None)
+                    }
+                    TransactionStatus::BadDailyRequest => {
+                        // bad daily request
+                        info!("bad daily request: {:?}", receipt);
+                        // TODO chastize
+                        Ok(None)
+                    }
+                    _ => Err(Error::TransactionFailed(format!(
+                        "unexpected transaction status: {:?}",
+                        receipt
+                    ))),
+                }
+            }
         }
     }
 }
@@ -180,18 +193,18 @@ impl EventHandler for Handler {
             }
         };
 
-	match output {
-	    Output::Say(string) => {
-		if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
-		    error!("error sending message: {:?}", err);
-		}
-	    }
-	    Output::Help => {
-		if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
-		    error!("error sending help message: {:?}", err);
-		}
-	    }
-	}
+        match output {
+            Output::Say(string) => {
+                if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
+                    error!("error sending message: {:?}", err);
+                }
+            }
+            Output::Help => {
+                if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
+                    error!("error sending help message: {:?}", err);
+                }
+            }
+        }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {

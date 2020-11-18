@@ -80,6 +80,7 @@ pub struct Receipt {
 pub enum TransactionStatus {
     Complete,
     BadDailyRequest,
+    SelfTip,
 }
 
 impl Receipt {
@@ -158,20 +159,29 @@ impl Bank {
                 from_user,
                 to_user,
             } => {
-                let ledger = self.ledgers.get_or_create_mut(&channel_id);
-                ledger.increment_balance(&to_user, 2);
-                ledger.increment_balance(&from_user, 1);
-                let account_results = ledger.get_balances(vec![from_user, to_user]);
+		if from_user == to_user {
+		    let account_results = Vec::new();
+		    Receipt {
+			transaction,
+			account_results,
+			status: TransactionStatus::SelfTip,
+		    }
+		} else {
+		    let ledger = self.ledgers.get_or_create_mut(&channel_id);
+		    ledger.increment_balance(&to_user, 2);
+		    ledger.increment_balance(&from_user, 1);
+		    let account_results = ledger.get_balances(vec![from_user, to_user]);
 
-                if let Err(err) = self.ledgers.save().await {
-                    error!("unable to save ledger: {:?}", err);
-                }
+		    if let Err(err) = self.ledgers.save().await {
+			error!("unable to save ledger: {:?}", err);
+		    }
 
-                Receipt {
-                    transaction,
-                    account_results,
-                    status: TransactionStatus::Complete,
-                }
+		    Receipt {
+			transaction,
+			account_results,
+			status: TransactionStatus::Complete,
+		    }
+		}
             }
             Transaction::Daily {
                 channel_id,
