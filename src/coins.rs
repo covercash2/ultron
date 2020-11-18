@@ -1,3 +1,4 @@
+//! A simple economy database.
 use std::collections::HashMap;
 
 use chrono::Duration;
@@ -19,13 +20,16 @@ mod ledger;
 
 use ledger::Accounts;
 
-const DATA_FILE: &'static str = "accounts.json";
+/// The log file for the daily logins
+const DAILY_LOG_FILE: &str = "daily_log.json";
+/// The amount of coins to give to each user that asks once per day
 const DAILY_AMOUNT: i64 = 10;
 
 type ChannelId = u64;
 type UserId = u64;
 type Account = (UserId, i64);
 
+/// Get the next epoch for the daily allowances.
 fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
     if epoch < Utc::now() {
@@ -54,6 +58,7 @@ pub enum Transaction {
         from_user: UserId,
         to_user: UserId,
     },
+    /// Give some coins to a user once per day
     Daily {
         channel_id: ChannelId,
         user_id: UserId,
@@ -93,11 +98,6 @@ pub async fn bank_loop(
     mut transaction_receiver: Receiver<Transaction>,
     mut output_sender: Sender<Receipt>,
 ) {
-    let epoch = daily_epoch();
-
-    debug!("epoch: {:?}", epoch);
-    debug!("now: {:?}", Utc::now());
-
     debug!("bank loop started");
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
@@ -227,9 +227,14 @@ impl Bank {
     }
 }
 
+/// A log to keep track of who's logged in today and the next epoch when the daily
+/// time resets.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DailyLog {
+    /// The next time the logs will reset.
     epoch: DateTime<Utc>,
+    /// A map of channels and its users who have logged in.
+    /// As users log in to each channel, they are added to `channel_id->Vec<UserId>`
     map: HashMap<ChannelId, Vec<UserId>>,
 }
 
@@ -256,6 +261,7 @@ impl DailyLog {
 	}
     }
 
+    /// Get a channel's user log or create it if it doesn't exist
     fn get_or_create(&mut self, channel_id: &ChannelId) -> &mut Vec<UserId> {
         if self.map.contains_key(channel_id) {
             return self
@@ -270,17 +276,18 @@ impl DailyLog {
             .expect("unable to get daily log that was just created")
     }
 
+    /// Clear the user logs
     fn clear(&mut self) {
 	self.map.clear();
     }
 
-    /// Load saved account data
+    /// Load saved daily logs
     pub async fn load() -> Result<Self> {
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open(DATA_FILE)
+            .open(DAILY_LOG_FILE)
             .await?;
         let mut content_string = String::new();
         file.read_to_string(&mut content_string).await?;
@@ -293,9 +300,9 @@ impl DailyLog {
         }
     }
 
-    /// Save account data
+    /// Save daily user log
     pub async fn save(&self) -> Result<()> {
         let json: String = serde_json::to_string(self)?;
-        tokio::fs::write(DATA_FILE, json).await.map_err(Into::into)
+        tokio::fs::write(DAILY_LOG_FILE, json).await.map_err(Into::into)
     }
 }
