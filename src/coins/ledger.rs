@@ -3,8 +3,76 @@ use log::*;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json;
 
-#[derive(Serialize, Deserialize)]
+use tokio::{io::AsyncReadExt, fs::OpenOptions};
+
+use crate::error::Result;
+
+const DATA_FILE: &str = "accounts.json";
+
+type ChannelId = u64;
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Accounts {
+    ledgers: HashMap<u64, Ledger>,
+}
+
+impl Accounts {
+    /// Load saved account data
+    pub async fn load() -> Result<Self> {
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(DATA_FILE)
+            .await?;
+        let mut content_string = String::new();
+        file.read_to_string(&mut content_string).await?;
+        if content_string.is_empty() {
+            let ledgers = HashMap::new();
+            Ok(Accounts { ledgers })
+        } else {
+            serde_json::from_str(&content_string).map_err(Into::into)
+        }
+    }
+
+    /// Save account data
+    pub async fn save(&self) -> Result<()> {
+        let json: String = serde_json::to_string(self)?;
+        tokio::fs::write(DATA_FILE, json).await.map_err(Into::into)
+    }
+
+    pub fn get_or_create(&mut self, channel_id: &ChannelId) -> &Ledger {
+        if self.ledgers.contains_key(channel_id) {
+            return self
+                .ledgers
+                .get(channel_id)
+                .expect("weird error retrieving ledger");
+        }
+        info!("creating accounts for channel: {:?}", channel_id);
+        self.ledgers.insert(*channel_id, Ledger::default());
+        self.ledgers
+            .get(channel_id)
+            .expect("unable to get the ledger that was just created")
+    }
+
+    pub fn get_or_create_mut(&mut self, channel_id: &ChannelId) -> &mut Ledger {
+        if self.ledgers.contains_key(channel_id) {
+            return self
+                .ledgers
+                .get_mut(channel_id)
+                .expect("weird error retrieving ledger");
+        }
+        info!("creating accounts for channel: {:?}", channel_id);
+        self.ledgers.insert(*channel_id, Ledger::default());
+        self.ledgers
+            .get_mut(channel_id)
+            .expect("unable to get the ledger that was just created")
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Ledger {
     map: HashMap<u64, i64>,
 }

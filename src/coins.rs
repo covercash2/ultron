@@ -16,7 +16,7 @@ use crate::error::Result;
 
 mod ledger;
 
-use ledger::Ledger;
+use ledger::Accounts;
 
 const DATA_FILE: &'static str = "accounts.json";
 const DAILY_AMOUNT: i64 = 10;
@@ -106,11 +106,11 @@ pub async fn bank_loop(
 }
 
 /// The main structure for storing account information.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Bank {
-    ledgers: HashMap<ChannelId, Ledger>,
+    ledgers: Accounts,
     /// A map to keep track of which users have logged in today
-    daily_log: HashMap<ChannelId, Vec<UserId>>,
+    daily_log: DailyLog,
 }
 
 impl Bank {
@@ -123,7 +123,7 @@ impl Bank {
                 to_user,
                 amount,
             } => {
-                let ledger = self.get_or_create_ledger_mut(&channel_id);
+                let ledger = self.ledgers.get_or_create_mut(&channel_id);
                 ledger.transfer(&from_user, &to_user, amount);
                 let account_results = ledger.get_balances(vec![from_user, to_user]);
 
@@ -138,7 +138,7 @@ impl Bank {
                 }
             }
             Transaction::GetAllBalances(channel_id) => {
-                let ledger = self.get_or_create_ledger(&channel_id);
+                let ledger = self.ledgers.get_or_create(&channel_id);
                 let account_results = ledger.get_all_balances();
 
                 Receipt {
@@ -152,7 +152,7 @@ impl Bank {
                 from_user,
                 to_user,
             } => {
-                let ledger = self.get_or_create_ledger_mut(&channel_id);
+                let ledger = self.ledgers.get_or_create_mut(&channel_id);
                 ledger.increment_balance(&to_user, 2);
                 ledger.increment_balance(&from_user, 1);
                 let account_results = ledger.get_balances(vec![from_user, to_user]);
@@ -173,11 +173,10 @@ impl Bank {
                 timestamp,
             } => {
                 info!("unhandled timestamp: {:?}", timestamp);
-                let channel_log = self.get_or_create_daily_log(&channel_id);
+                let channel_log = self.daily_log.get_or_create(&channel_id);
                 if channel_log.contains(&user_id) {
                     // return bad user message
                     let account_results = vec![];
-                    let message = Some(String::from("already got your daily"));
 		    let status = TransactionStatus::BadDailyRequest;
 
                     Receipt {
@@ -190,7 +189,7 @@ impl Bank {
                     channel_log.push(user_id);
 
                     // award daily
-                    let ledger = self.get_or_create_ledger_mut(&channel_id);
+                    let ledger = self.ledgers.get_or_create_mut(&channel_id);
                     ledger.increment_balance(&user_id, DAILY_AMOUNT);
 
                     let account_results = ledger.get_balances(vec![user_id]);
@@ -206,46 +205,39 @@ impl Bank {
         }
     }
 
-    fn get_or_create_daily_log(&mut self, channel_id: &ChannelId) -> &mut Vec<UserId> {
-        if self.daily_log.contains_key(channel_id) {
+    /// Load saved account data
+    pub async fn load() -> Result<Self> {
+	let ledgers = Accounts::load().await?;
+	let daily_log = DailyLog::load().await?;
+
+	Ok(Bank { ledgers, daily_log })
+    }
+
+    /// Save account data
+    pub async fn save(&self) -> Result<()> {
+	self.ledgers.save().await?;
+	self.daily_log.save().await
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct DailyLog {
+    map: HashMap<ChannelId, Vec<UserId>>,
+}
+
+impl DailyLog {
+
+    fn get_or_create(&mut self, channel_id: &ChannelId) -> &mut Vec<UserId> {
+        if self.map.contains_key(channel_id) {
             return self
-                .daily_log
+                .map
                 .get_mut(channel_id)
                 .expect("weird error retrieving daily log");
         }
         info!("creating daily log for channel: {}", channel_id);
-        self.daily_log.insert(*channel_id, Vec::new());
-        self.daily_log
-            .get_mut(channel_id)
+        self.map.insert(*channel_id, Vec::new());
+        self.map.get_mut(channel_id)
             .expect("unable to get daily log that was just created")
-    }
-
-    fn get_or_create_ledger(&mut self, channel_id: &ChannelId) -> &Ledger {
-        if self.ledgers.contains_key(channel_id) {
-            return self
-                .ledgers
-                .get(channel_id)
-                .expect("weird error retrieving ledger");
-        }
-        info!("creating accounts for channel");
-        self.ledgers.insert(*channel_id, Ledger::default());
-        self.ledgers
-            .get(channel_id)
-            .expect("unable to get the ledger that was just created")
-    }
-
-    fn get_or_create_ledger_mut(&mut self, channel_id: &ChannelId) -> &mut Ledger {
-        if self.ledgers.contains_key(channel_id) {
-            return self
-                .ledgers
-                .get_mut(channel_id)
-                .expect("weird error retrieving ledger");
-        }
-        info!("creating accounts for channel");
-        self.ledgers.insert(*channel_id, Ledger::default());
-        self.ledgers
-            .get_mut(channel_id)
-            .expect("unable to get the ledger that was just created")
     }
 
     /// Load saved account data
@@ -259,9 +251,8 @@ impl Bank {
         let mut content_string = String::new();
         file.read_to_string(&mut content_string).await?;
         if content_string.is_empty() {
-            let ledgers = HashMap::new();
-            let daily_log = HashMap::new();
-            Ok(Bank { ledgers, daily_log })
+            let map = HashMap::new();
+            Ok(DailyLog { map })
         } else {
             serde_json::from_str(&content_string).map_err(Into::into)
         }

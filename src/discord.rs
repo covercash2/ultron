@@ -4,9 +4,7 @@ use log::*;
 
 use serenity::http::Http;
 use serenity::model::channel::Reaction;
-use serenity::model::id::ChannelId;
 use serenity::model::id::UserId;
-use serenity::utils::Colour;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
