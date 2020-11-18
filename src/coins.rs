@@ -10,6 +10,8 @@ use tokio::{
 use serde::{Deserialize, Serialize};
 use serde_json;
 
+use chrono::{DateTime, Utc};
+
 use crate::error::Result;
 
 mod ledger;
@@ -17,10 +19,15 @@ mod ledger;
 use ledger::Ledger;
 
 const DATA_FILE: &'static str = "accounts.json";
+const DAILY_AMOUNT: i64 = 10;
 
 type ChannelId = u64;
 type UserId = u64;
 type Account = (UserId, i64);
+
+fn daily_epoch() -> DateTime<Utc> {
+    Utc::today().and_hms(0, 0, 0)
+}
 
 /// Interactions with the Bank are handled through transactions.
 /// These transactions are sent over channels in the [`bank_loop`]
@@ -41,6 +48,11 @@ pub enum Transaction {
         from_user: UserId,
         to_user: UserId,
     },
+    Daily {
+        channel_id: ChannelId,
+        user_id: UserId,
+        timestamp: DateTime<Utc>,
+    },
 }
 
 /// This type is returned from [`Bank::process_transaction`].
@@ -50,6 +62,13 @@ pub enum Transaction {
 pub struct Receipt {
     pub transaction: Transaction,
     pub account_results: Vec<Account>,
+    pub status: TransactionStatus,
+}
+
+#[derive(Debug)]
+pub enum TransactionStatus {
+    Complete,
+    BadDailyRequest,
 }
 
 impl Receipt {
@@ -68,6 +87,11 @@ pub async fn bank_loop(
     mut transaction_receiver: Receiver<Transaction>,
     mut output_sender: Sender<Receipt>,
 ) {
+    let epoch = daily_epoch();
+
+    debug!("epoch: {:?}", epoch);
+    debug!("now: {:?}", Utc::now());
+
     debug!("bank loop started");
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
@@ -85,6 +109,8 @@ pub async fn bank_loop(
 #[derive(Serialize, Deserialize)]
 pub struct Bank {
     ledgers: HashMap<ChannelId, Ledger>,
+    /// A map to keep track of which users have logged in today
+    daily_log: HashMap<ChannelId, Vec<UserId>>,
 }
 
 impl Bank {
@@ -108,6 +134,7 @@ impl Bank {
                 Receipt {
                     transaction,
                     account_results,
+                    status: TransactionStatus::Complete,
                 }
             }
             Transaction::GetAllBalances(channel_id) => {
@@ -117,6 +144,7 @@ impl Bank {
                 Receipt {
                     transaction,
                     account_results,
+                    status: TransactionStatus::Complete,
                 }
             }
             Transaction::Tip {
@@ -136,9 +164,60 @@ impl Bank {
                 Receipt {
                     transaction,
                     account_results,
+                    status: TransactionStatus::Complete,
+                }
+            }
+            Transaction::Daily {
+                channel_id,
+                user_id,
+                timestamp,
+            } => {
+                info!("unhandled timestamp: {:?}", timestamp);
+                let channel_log = self.get_or_create_daily_log(&channel_id);
+                if channel_log.contains(&user_id) {
+                    // return bad user message
+                    let account_results = vec![];
+                    let message = Some(String::from("already got your daily"));
+		    let status = TransactionStatus::BadDailyRequest;
+
+                    Receipt {
+                        transaction,
+                        account_results,
+			status,
+                    }
+                } else {
+                    // TODO check time
+                    channel_log.push(user_id);
+
+                    // award daily
+                    let ledger = self.get_or_create_ledger_mut(&channel_id);
+                    ledger.increment_balance(&user_id, DAILY_AMOUNT);
+
+                    let account_results = ledger.get_balances(vec![user_id]);
+		    let status = TransactionStatus::Complete;
+
+                    Receipt {
+                        transaction,
+                        account_results,
+			status,
+                    }
                 }
             }
         }
+    }
+
+    fn get_or_create_daily_log(&mut self, channel_id: &ChannelId) -> &mut Vec<UserId> {
+        if self.daily_log.contains_key(channel_id) {
+            return self
+                .daily_log
+                .get_mut(channel_id)
+                .expect("weird error retrieving daily log");
+        }
+        info!("creating daily log for channel: {}", channel_id);
+        self.daily_log.insert(*channel_id, Vec::new());
+        self.daily_log
+            .get_mut(channel_id)
+            .expect("unable to get daily log that was just created")
     }
 
     fn get_or_create_ledger(&mut self, channel_id: &ChannelId) -> &Ledger {
@@ -181,7 +260,8 @@ impl Bank {
         file.read_to_string(&mut content_string).await?;
         if content_string.is_empty() {
             let ledgers = HashMap::new();
-            Ok(Bank { ledgers })
+            let daily_log = HashMap::new();
+            Ok(Bank { ledgers, daily_log })
         } else {
             serde_json::from_str(&content_string).map_err(Into::into)
         }

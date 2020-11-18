@@ -18,6 +18,7 @@ use tokio::sync::{
     Mutex,
 };
 
+use crate::coins::TransactionStatus;
 use crate::coins::{Receipt, Transaction};
 use crate::commands;
 use crate::commands::Command;
@@ -137,6 +138,20 @@ impl Handler {
                 debug!("tip complete");
                 Ok(None)
             }
+            Transaction::Daily { .. } => {
+		match receipt.status {
+		    TransactionStatus::Complete => {
+			debug!("daily complete");
+			Ok(None)
+		    }
+		    TransactionStatus::BadDailyRequest => {
+			// bad daily request
+			info!("bad daily request: {:?}", receipt);
+			// TODO chastize
+			Ok(None)
+		    }
+		}
+	    }
         }
     }
 }

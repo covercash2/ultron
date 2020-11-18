@@ -1,3 +1,5 @@
+use log::*;
+
 use serenity::client::Context;
 use serenity::model::channel::Message;
 use serenity::model::channel::Reaction;
@@ -39,6 +41,14 @@ impl Command {
                 let transaction = Transaction::GetAllBalances(channel_id);
                 Ok(Command::Coin(transaction))
             }
+	    "!daily" => {
+		info!("request daily");
+		let timestamp = message.timestamp;
+		let user_id = *message.author.id.as_u64();
+		let transaction = Transaction::Daily { channel_id, user_id, timestamp };
+
+		Ok(Command::Coin(transaction))
+	    }
             _ => {
                 if let Ok(true) = message.mentions_me(context).await {
                     Ok(Command::Announce)
