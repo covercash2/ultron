@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use chrono::Duration;
 use log::*;
 use tokio::{
     fs::OpenOptions,
@@ -26,7 +27,12 @@ type UserId = u64;
 type Account = (UserId, i64);
 
 fn daily_epoch() -> DateTime<Utc> {
-    Utc::today().and_hms(0, 0, 0)
+    let epoch = Utc::today().and_hms(0, 0, 0);
+    if epoch < Utc::now() {
+	epoch + Duration::days(1)
+    } else {
+	epoch
+    }
 }
 
 /// Interactions with the Bank are handled through transactions.
@@ -173,59 +179,82 @@ impl Bank {
                 timestamp,
             } => {
                 info!("unhandled timestamp: {:?}", timestamp);
-                let channel_log = self.daily_log.get_or_create(&channel_id);
-                if channel_log.contains(&user_id) {
-                    // return bad user message
-                    let account_results = vec![];
-		    let status = TransactionStatus::BadDailyRequest;
 
-                    Receipt {
-                        transaction,
-                        account_results,
-			status,
-                    }
-                } else {
-                    // TODO check time
-                    channel_log.push(user_id);
-
+		if self.daily_log.log_user(&channel_id, user_id) {
+		    // first log today
                     // award daily
+		    debug!("awarding daily to user{} on channel{}", user_id, channel_id);
                     let ledger = self.ledgers.get_or_create_mut(&channel_id);
                     ledger.increment_balance(&user_id, DAILY_AMOUNT);
 
                     let account_results = ledger.get_balances(vec![user_id]);
-		    let status = TransactionStatus::Complete;
+                    let status = TransactionStatus::Complete;
 
                     Receipt {
                         transaction,
                         account_results,
-			status,
+                        status,
                     }
-                }
+		} else {
+		    // user has already logged today
+                    // return bad user message
+		    debug!("rejecting daily request from user{} on channel{}", user_id, channel_id);
+                    let account_results = vec![];
+                    let status = TransactionStatus::BadDailyRequest;
+
+                    Receipt {
+                        transaction,
+                        account_results,
+                        status,
+                    }
+		}
             }
         }
     }
 
     /// Load saved account data
     pub async fn load() -> Result<Self> {
-	let ledgers = Accounts::load().await?;
-	let daily_log = DailyLog::load().await?;
+        let ledgers = Accounts::load().await?;
+        let daily_log = DailyLog::load().await?;
 
-	Ok(Bank { ledgers, daily_log })
+        Ok(Bank { ledgers, daily_log })
     }
 
     /// Save account data
     pub async fn save(&self) -> Result<()> {
-	self.ledgers.save().await?;
-	self.daily_log.save().await
+        self.ledgers.save().await?;
+        self.daily_log.save().await
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct DailyLog {
+    epoch: DateTime<Utc>,
     map: HashMap<ChannelId, Vec<UserId>>,
 }
 
 impl DailyLog {
+    /// Add `user_id` to the channel's daily log.
+    /// Return true if the user has not yet logged in today.
+    fn log_user(&mut self, channel_id: &ChannelId, user_id: UserId) -> bool {
+	// increment epoch if necessary
+	if Utc::now() > self.epoch {
+	    debug!("epoch has passed: {:?}", self.epoch);
+	    self.epoch = daily_epoch();
+	    self.clear();
+	    debug!("new epoch: {:?}", self.epoch);
+	}
+
+	let channel_log = self.get_or_create(channel_id);
+	if channel_log.contains(&user_id) {
+	    // bad user
+	    false
+	} else {
+	    // add to log
+	    channel_log.push(user_id);
+	    true
+	}
+    }
 
     fn get_or_create(&mut self, channel_id: &ChannelId) -> &mut Vec<UserId> {
         if self.map.contains_key(channel_id) {
@@ -236,8 +265,13 @@ impl DailyLog {
         }
         info!("creating daily log for channel: {}", channel_id);
         self.map.insert(*channel_id, Vec::new());
-        self.map.get_mut(channel_id)
+        self.map
+            .get_mut(channel_id)
             .expect("unable to get daily log that was just created")
+    }
+
+    fn clear(&mut self) {
+	self.map.clear();
     }
 
     /// Load saved account data
@@ -252,7 +286,8 @@ impl DailyLog {
         file.read_to_string(&mut content_string).await?;
         if content_string.is_empty() {
             let map = HashMap::new();
-            Ok(DailyLog { map })
+	    let epoch = daily_epoch();
+            Ok(DailyLog { map, epoch })
         } else {
             serde_json::from_str(&content_string).map_err(Into::into)
         }
