@@ -5,11 +5,8 @@ use serenity::model::channel::Reaction;
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
 
+const TIP_EMOJIS: &[&str] = &["🪙", "👍"];
 
-
-pub const HELP: &'static str = "!ping to say hello
-!about to show info about ultron
-mentioning ultron summons him";
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
 pub const ANNOUNCE: &'static str = "I am always listening";
@@ -39,13 +36,13 @@ impl Command {
             "!ping" => Ok(Command::Ping),
             "!about" => Ok(Command::About),
             "!coins" => {
-		let transaction = Transaction::GetAllBalances(channel_id);
-		Ok(Command::Coin(transaction))
-	    },
+                let transaction = Transaction::GetAllBalances(channel_id);
+                Ok(Command::Coin(transaction))
+            }
             _ => {
-		if let Ok(true) = message.mentions_me(context).await {
-		    Ok(Command::Announce)
-		} else {
+                if let Ok(true) = message.mentions_me(context).await {
+                    Ok(Command::Announce)
+                } else {
                     Err(Error::UnknownCommand(content.to_owned()))
                 }
             }
@@ -54,26 +51,27 @@ impl Command {
 
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: Reaction) -> Result<Self> {
-	let channel_id = *reaction.channel_id.as_u64();
-	let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
-	let from_user = match reaction.user_id {
-	    Some(id) => *id.as_u64(),
-	    None => return Err(Error::CommandParse("no user in reaction".to_owned()))
-	};
+        let channel_id = *reaction.channel_id.as_u64();
+        let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
+        let from_user = match reaction.user_id {
+            Some(id) => *id.as_u64(),
+            None => return Err(Error::CommandParse("no user in reaction".to_owned())),
+        };
 
-	match reaction.emoji.as_data().as_str() {
-            "🪙" | "👍" => { // coin
-		let transaction = Transaction::Tip {
-		    channel_id,
-		    from_user,
-		    to_user,
-		};
-		Ok(Command::Coin(transaction))
-	    }
-	    _ => {
-		Err(Error::CommandParse("couldn't parse command from reaction".to_owned()))
-	    }
-	}
+        match reaction.emoji.as_data().as_str() {
+            "🪙" | "👍" => {
+                // coin
+                let transaction = Transaction::Tip {
+                    channel_id,
+                    from_user,
+                    to_user,
+                };
+                Ok(Command::Coin(transaction))
+            }
+            _ => Err(Error::CommandParse(
+                "couldn't parse command from reaction".to_owned(),
+            )),
+        }
     }
 }
 
