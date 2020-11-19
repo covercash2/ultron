@@ -45,6 +45,7 @@ pub struct DiscordMessage<'a> {
 #[derive(Debug)]
 pub enum Output {
     Say(String),
+    DailyResponse,
     BadDailyResponse {
 	next_epoch: DateTime<Utc>,
     },
@@ -154,8 +155,7 @@ impl Handler {
                 match receipt.status {
                     TransactionStatus::Complete => {
                         debug!("daily complete");
-			let message = String::from("granted");
-                        Ok(Some(Output::Say(message)))
+                        Ok(Some(Output::DailyResponse))
                     }
                     TransactionStatus::BadDailyRequest { next_epoch } => {
                         // bad daily request
@@ -216,6 +216,12 @@ impl EventHandler for Handler {
 		debug!("responding to bad daily request: next epoch -- {:?}", next_epoch);
 		if let Err(err) = messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await {
 		    error!("error sending bad daily response message: {:?}", err);
+		}
+	    }
+            Output::DailyResponse => {
+		debug!("responding to daily request");
+		if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
+		    error!("error sending daily confirmation message: {:?}", err);
 		}
 	    }
         }

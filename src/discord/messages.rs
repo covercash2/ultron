@@ -58,6 +58,26 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .map_err(Into::into)
 }
 
+pub async fn daily_response(
+    channel: ChannelId,
+    pipe: &Http,
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::GOLD);
+
+                embed.description("Granted");
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
 pub async fn bad_daily_response(
     channel: ChannelId,
     pipe: &Http,
