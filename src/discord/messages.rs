@@ -28,6 +28,7 @@ pub async fn say<T: AsRef<Http>>(
 
 /// Build and send the help message.
 /// Return the message that gets sent.
+// TODO This is outside the scope of "discord". Probably belongs in commands.rs.
 pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {

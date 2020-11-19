@@ -33,9 +33,9 @@ type Account = (UserId, i64);
 fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
     if epoch < Utc::now() {
-	epoch + Duration::days(1)
+        epoch + Duration::days(1)
     } else {
-	epoch
+        epoch
     }
 }
 
