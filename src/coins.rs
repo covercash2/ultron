@@ -33,9 +33,9 @@ type Account = (UserId, i64);
 fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
     if epoch < Utc::now() {
-	epoch + Duration::days(1)
+        epoch + Duration::days(1)
     } else {
-	epoch
+        epoch
     }
 }
 
@@ -79,7 +79,7 @@ pub struct Receipt {
 #[derive(Debug)]
 pub enum TransactionStatus {
     Complete,
-    BadDailyRequest,
+    BadDailyRequest { next_epoch: DateTime<Utc> },
     SelfTip,
 }
 
@@ -159,29 +159,29 @@ impl Bank {
                 from_user,
                 to_user,
             } => {
-		if from_user == to_user {
-		    let account_results = Vec::new();
-		    Receipt {
-			transaction,
-			account_results,
-			status: TransactionStatus::SelfTip,
-		    }
-		} else {
-		    let ledger = self.ledgers.get_or_create_mut(&channel_id);
-		    ledger.increment_balance(&to_user, 2);
-		    ledger.increment_balance(&from_user, 1);
-		    let account_results = ledger.get_balances(vec![from_user, to_user]);
+                if from_user == to_user {
+                    let account_results = Vec::new();
+                    Receipt {
+                        transaction,
+                        account_results,
+                        status: TransactionStatus::SelfTip,
+                    }
+                } else {
+                    let ledger = self.ledgers.get_or_create_mut(&channel_id);
+                    ledger.increment_balance(&to_user, 2);
+                    ledger.increment_balance(&from_user, 1);
+                    let account_results = ledger.get_balances(vec![from_user, to_user]);
 
-		    if let Err(err) = self.ledgers.save().await {
-			error!("unable to save ledger: {:?}", err);
-		    }
+                    if let Err(err) = self.ledgers.save().await {
+                        error!("unable to save ledger: {:?}", err);
+                    }
 
-		    Receipt {
-			transaction,
-			account_results,
-			status: TransactionStatus::Complete,
-		    }
-		}
+                    Receipt {
+                        transaction,
+                        account_results,
+                        status: TransactionStatus::Complete,
+                    }
+                }
             }
             Transaction::Daily {
                 channel_id,
@@ -190,38 +190,43 @@ impl Bank {
             } => {
                 info!("unhandled timestamp: {:?}", timestamp);
 
-		if self.daily_log.log_user(&channel_id, user_id) {
-		    // first log today
+                if self.daily_log.log_user(&channel_id, user_id) {
+                    // first log today
                     // award daily
-		    debug!("awarding daily to user{} on channel{}", user_id, channel_id);
+                    debug!("awarding daily to user{} on channel{}", user_id, channel_id);
                     let ledger = self.ledgers.get_or_create_mut(&channel_id);
                     ledger.increment_balance(&user_id, DAILY_AMOUNT);
 
                     let account_results = ledger.get_balances(vec![user_id]);
                     let status = TransactionStatus::Complete;
 
-		    if let Err(err) = self.daily_log.save().await {
-			error!("error saving daily log: {:?}", err);
-		    }
+                    if let Err(err) = self.daily_log.save().await {
+                        error!("error saving daily log: {:?}", err);
+                    }
 
                     Receipt {
                         transaction,
                         account_results,
                         status,
                     }
-		} else {
-		    // user has already logged today
+                } else {
+                    // user has already logged today
                     // return bad user message
-		    debug!("rejecting daily request from user{} on channel{}", user_id, channel_id);
+                    debug!(
+                        "rejecting daily request from user{} on channel{}",
+                        user_id, channel_id
+                    );
                     let account_results = vec![];
-                    let status = TransactionStatus::BadDailyRequest;
+                    let status = TransactionStatus::BadDailyRequest {
+			next_epoch: self.daily_log.epoch.clone()
+		    };
 
                     Receipt {
                         transaction,
                         account_results,
                         status,
                     }
-		}
+                }
             }
         }
     }
@@ -256,23 +261,23 @@ impl DailyLog {
     /// Add `user_id` to the channel's daily log.
     /// Return true if the user has not yet logged in today.
     fn log_user(&mut self, channel_id: &ChannelId, user_id: UserId) -> bool {
-	// increment epoch if necessary
-	if Utc::now() > self.epoch {
-	    debug!("epoch has passed: {:?}", self.epoch);
-	    self.epoch = daily_epoch();
-	    self.clear();
-	    debug!("new epoch: {:?}", self.epoch);
-	}
+        // increment epoch if necessary
+        if Utc::now() > self.epoch {
+            debug!("epoch has passed: {:?}", self.epoch);
+            self.epoch = daily_epoch();
+            self.clear();
+            debug!("new epoch: {:?}", self.epoch);
+        }
 
-	let channel_log = self.get_or_create(channel_id);
-	if channel_log.contains(&user_id) {
-	    // bad user
-	    false
-	} else {
-	    // add to log
-	    channel_log.push(user_id);
-	    true
-	}
+        let channel_log = self.get_or_create(channel_id);
+        if channel_log.contains(&user_id) {
+            // bad user
+            false
+        } else {
+            // add to log
+            channel_log.push(user_id);
+            true
+        }
     }
 
     /// Get a channel's user log or create it if it doesn't exist
@@ -292,7 +297,7 @@ impl DailyLog {
 
     /// Clear the user logs
     fn clear(&mut self) {
-	self.map.clear();
+        self.map.clear();
     }
 
     /// Load saved daily logs
@@ -307,7 +312,7 @@ impl DailyLog {
         file.read_to_string(&mut content_string).await?;
         if content_string.is_empty() {
             let map = HashMap::new();
-	    let epoch = daily_epoch();
+            let epoch = daily_epoch();
             Ok(DailyLog { map, epoch })
         } else {
             serde_json::from_str(&content_string).map_err(Into::into)
@@ -317,6 +322,8 @@ impl DailyLog {
     /// Save daily user log
     pub async fn save(&self) -> Result<()> {
         let json: String = serde_json::to_string(self)?;
-        tokio::fs::write(DAILY_LOG_FILE, json).await.map_err(Into::into)
+        tokio::fs::write(DAILY_LOG_FILE, json)
+            .await
+            .map_err(Into::into)
     }
 }
