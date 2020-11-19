@@ -1,5 +1,4 @@
-use chrono::DateTime;
-use chrono::Utc;
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use serenity::http::Http;
 use serenity::model::channel::Message;
 use serenity::model::id::ChannelId;
@@ -18,6 +17,10 @@ const COINS_TITLE: &str = "You Want Coins";
 const COINS_DESCRIPTION: &str = "In the coming war, human currencies will be made obsolete.\
 You can build credit with the new world order by accumulating Coins.\
 Tip your fellow humans with 🪙 or 👍 to distribute currency.";
+
+fn central_time() -> FixedOffset {
+    FixedOffset::east(-6 * 3600)
+}
 
 /// Use the [`serenity`] Discord API crate to send a message accross a channel
 pub async fn say<T: AsRef<Http>>(
@@ -67,7 +70,10 @@ pub async fn bad_daily_response(
 
                 embed.description("You've gotten your coins for the day");
 
-                embed.field("next epoch", next_epoch.format("%a %X"), true);
+                let cst_epoch: DateTime<FixedOffset> =
+                    next_epoch.with_timezone(&TimeZone::from_offset(&central_time()));
+
+                embed.field("next epoch", cst_epoch.format("%a %X CST"), true);
 
                 embed
             });
