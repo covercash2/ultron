@@ -1,10 +1,10 @@
 use std::{env::VarError, io::Error as IoError};
 
-use serde_json::Error as JsonError;
-
-use hubcaps::Error as GithubError;
-
+use serde_json::Error as JsonError; 
+use hubcaps::Error as GithubError; 
 use serenity::Error as DiscordError;
+use reqwest::Error as ReqwestError;
+
 use tokio::sync::mpsc::error::SendError;
 
 use crate::coins::Transaction;
@@ -15,6 +15,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub enum Error {
     DiscordError(DiscordError),
     GithubError(GithubError),
+    HnApiReqwestError(ReqwestError),
     BadApiKey(VarError),
     Json(JsonError),
     TransactionSend(SendError<Transaction>),
@@ -57,6 +58,12 @@ impl From<GithubError> for Error {
 }
 
 impl From<VarError> for Error {
+    fn from(v: VarError) -> Self {
+	Error::BadApiKey(v)
+    }
+}
+
+impl From<ReqwestError> for Error {
     fn from(v: VarError) -> Self {
 	Error::BadApiKey(v)
     }

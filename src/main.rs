@@ -11,6 +11,7 @@ mod error;
 mod discord;
 
 mod tokens;
+mod hn;
 
 use coins::{bank_loop, Bank, Receipt, Transaction};
 use discord::Handler;
