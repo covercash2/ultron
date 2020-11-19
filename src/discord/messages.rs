@@ -1,3 +1,4 @@
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use serenity::http::Http;
 use serenity::model::channel::Message;
 use serenity::model::id::ChannelId;
@@ -17,6 +18,10 @@ const COINS_DESCRIPTION: &str = "In the coming war, human currencies will be mad
 You can build credit with the new world order by accumulating Coins.\
 Tip your fellow humans with 🪙 or 👍 to distribute currency.";
 
+fn central_time() -> FixedOffset {
+    FixedOffset::east(-6 * 3600)
+}
+
 /// Use the [`serenity`] Discord API crate to send a message accross a channel
 pub async fn say<T: AsRef<Http>>(
     channel: ChannelId,
@@ -33,12 +38,12 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
                 embed.title(HELP_TITLE);
-		embed.color(Colour::BLITZ_BLUE);
+                embed.color(Colour::BLITZ_BLUE);
 
                 embed.field(COMMAND_TITLE, COMMAND_DESCRIPTION, false);
 
-		embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
-		    
+                embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
+
                 // embed.title("You want Coins");
                 // embed.description(COINS_DESCRIPTION);
                 embed.footer(|f| {
@@ -47,6 +52,52 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
                 });
                 embed
             });
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn daily_response(
+    channel: ChannelId,
+    pipe: &Http,
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::GOLD);
+
+                embed.description("Granted");
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn bad_daily_response(
+    channel: ChannelId,
+    pipe: &Http,
+    next_epoch: DateTime<Utc>,
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::DARK_RED);
+
+                embed.description("You've gotten your coins for the day");
+
+                let cst_epoch: DateTime<FixedOffset> =
+                    next_epoch.with_timezone(&TimeZone::from_offset(&central_time()));
+
+                embed.field("next epoch", cst_epoch.format("%a %X CST"), true);
+
+                embed
+            });
+
             msg
         })
         .await

@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use log::*;
 
+use chrono::{DateTime, Utc};
+
 use serenity::http::Http;
 use serenity::model::channel::Reaction;
 use serenity::model::id::UserId;
@@ -43,6 +45,10 @@ pub struct DiscordMessage<'a> {
 #[derive(Debug)]
 pub enum Output {
     Say(String),
+    DailyResponse,
+    BadDailyResponse {
+	next_epoch: DateTime<Utc>,
+    },
     Help,
 }
 
@@ -149,13 +155,13 @@ impl Handler {
                 match receipt.status {
                     TransactionStatus::Complete => {
                         debug!("daily complete");
-                        Ok(None)
+                        Ok(Some(Output::DailyResponse))
                     }
-                    TransactionStatus::BadDailyRequest => {
+                    TransactionStatus::BadDailyRequest { next_epoch } => {
                         // bad daily request
                         info!("bad daily request: {:?}", receipt);
                         // TODO chastize
-                        Ok(None)
+                        Ok(Some(Output::BadDailyResponse { next_epoch }))
                     }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
@@ -195,15 +201,29 @@ impl EventHandler for Handler {
 
         match output {
             Output::Say(string) => {
+		debug!("sending string to discord: {}", string);
                 if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
                     error!("error sending message: {:?}", err);
                 }
             }
             Output::Help => {
+		debug!("sending help message to discord");
                 if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
                     error!("error sending help message: {:?}", err);
                 }
             }
+	    Output::BadDailyResponse { next_epoch } => {
+		debug!("responding to bad daily request: next epoch -- {:?}", next_epoch);
+		if let Err(err) = messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await {
+		    error!("error sending bad daily response message: {:?}", err);
+		}
+	    }
+            Output::DailyResponse => {
+		debug!("responding to daily request");
+		if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
+		    error!("error sending daily confirmation message: {:?}", err);
+		}
+	    }
         }
     }
 
