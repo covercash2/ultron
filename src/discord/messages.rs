@@ -67,7 +67,7 @@ pub async fn bad_daily_response(
 
                 embed.description("You've gotten your coins for the day");
 
-                embed.field("next epoch", next_epoch.format("%r"), true);
+                embed.field("next epoch", next_epoch.format("%a %X"), true);
 
                 embed
             });
