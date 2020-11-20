@@ -3,11 +3,12 @@ use log::*;
 use serenity::client::Context;
 use serenity::model::channel::Message;
 use serenity::model::channel::Reaction;
+use serenity::model::channel::ReactionType;
 
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
 
-const TIP_EMOJIS: &[&str] = &["🪙", "👍"];
+const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
 
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
@@ -121,20 +122,29 @@ impl Command {
             None => return Err(Error::CommandParse("no user in reaction".to_owned())),
         };
 
-        match reaction.emoji.as_data().as_str() {
-            "🪙" | "👍" => {
-                // coin
-                let transaction = Transaction::Tip {
-                    channel_id,
-                    from_user,
-                    to_user,
-                };
-                Ok(Command::Coin(transaction))
-            }
-            _ => Err(Error::CommandParse(
-                "couldn't parse command from reaction".to_owned(),
-            )),
-        }
+	let emoji_string: String = reaction_string(reaction.emoji)
+	    .ok_or(Error::CommandParse("no name found for custom emoji".to_owned()))?;
+
+	if TIP_EMOJIS.contains(&emoji_string.as_str()) {
+	    let transaction = Transaction::Tip {
+		channel_id,
+		from_user,
+		to_user,
+	    };
+	    Ok(Command::Coin(transaction))
+	} else {
+	    Err(Error::CommandParse(
+		"couldn't parse command from reaction".to_owned(),
+	    ))
+	}
+    }
+}
+
+fn reaction_string(reaction: ReactionType) -> Option<String> {
+    match reaction {
+	ReactionType::Unicode(string) => Some(string),
+	ReactionType::Custom { name, .. } => name,
+	_ => None
     }
 }
 
