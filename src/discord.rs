@@ -47,7 +47,14 @@ pub enum Output {
     Say(String),
     DailyResponse,
     BadDailyResponse {
-	next_epoch: DateTime<Utc>,
+        next_epoch: DateTime<Utc>,
+    },
+    TransferSuccess {
+	to_user: u64,
+	to_balance: i64,
+	from_user: u64,
+	from_balance: i64,
+        amount: i64,
     },
     Help,
 }
@@ -131,25 +138,57 @@ impl Handler {
                 }
                 Ok(Some(output.into()))
             }
-            Transaction::Transfer { .. } => {
+            Transaction::Transfer {
+                from_user,
+                to_user,
+                amount,
+                ..
+            } => {
                 debug!("transfer complete");
-                Ok(None)
+
+                let to_balance = *receipt
+                    .account_results
+                    .iter()
+                    .find(|(user_id, _balance)| user_id == &to_user)
+		    .map(|(_user_id, balance)| balance)
+                    .ok_or(Error::ReceiptProcess(
+                        "unable to find sender account in transaction receipt".to_owned(),
+                    ))?;
+		let from_balance = *receipt
+		    .account_results
+		    .iter()
+		    .find(|(user_id, _balance)| user_id == &from_user)
+		    .map(|(_user_id, balance)| balance)
+                    .ok_or(Error::ReceiptProcess(
+                        "unable to find receiver account in transaction receipt".to_owned(),
+                    ))?;
+
+                Ok(Some(Output::TransferSuccess {
+                    to_user,
+		    to_balance,
+                    from_user,
+		    from_balance,
+                    amount,
+                }))
             }
             Transaction::Tip { .. } => {
-		match receipt.status {
-		    TransactionStatus::Complete => {
-			debug!("tip complete");
-			Ok(None)
-		    }
-		    TransactionStatus::SelfTip => {
-			// TODO chastize
-			Err(Error::TransactionFailed(format!("user tried to tip themselves: {:?}", receipt)))
-		    }
+                match receipt.status {
+                    TransactionStatus::Complete => {
+                        debug!("tip complete");
+                        Ok(None)
+                    }
+                    TransactionStatus::SelfTip => {
+                        // TODO chastize
+                        Err(Error::TransactionFailed(format!(
+                            "user tried to tip themselves: {:?}",
+                            receipt
+                        )))
+                    }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
                         receipt
                     ))),
-		}
+                }
             }
             Transaction::Daily { .. } => {
                 match receipt.status {
@@ -201,29 +240,57 @@ impl EventHandler for Handler {
 
         match output {
             Output::Say(string) => {
-		debug!("sending string to discord: {}", string);
+                debug!("sending string to discord: {}", string);
                 if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
                     error!("error sending message: {:?}", err);
                 }
             }
             Output::Help => {
-		debug!("sending help message to discord");
+                debug!("sending help message to discord");
                 if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
                     error!("error sending help message: {:?}", err);
                 }
             }
-	    Output::BadDailyResponse { next_epoch } => {
-		debug!("responding to bad daily request: next epoch -- {:?}", next_epoch);
-		if let Err(err) = messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await {
-		    error!("error sending bad daily response message: {:?}", err);
-		}
-	    }
+            Output::BadDailyResponse { next_epoch } => {
+                debug!(
+                    "responding to bad daily request: next epoch -- {:?}",
+                    next_epoch
+                );
+                if let Err(err) =
+                    messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await
+                {
+                    error!("error sending bad daily response message: {:?}", err);
+                }
+            }
             Output::DailyResponse => {
-		debug!("responding to daily request");
-		if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
-		    error!("error sending daily confirmation message: {:?}", err);
-		}
-	    }
+                debug!("responding to daily request");
+                if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
+                    error!("error sending daily confirmation message: {:?}", err);
+                }
+            }
+            Output::TransferSuccess {
+		to_user,
+		to_balance,
+		from_user,
+		from_balance,
+                amount,
+            } => {
+                debug!("responding to successful coin transfer");
+
+                if let Err(err) = messages::transfer_success(
+                    channel_id,
+                    &ctx.http,
+                    to_user,
+		    to_balance,
+                    from_user,
+		    from_balance,
+                    amount,
+                )
+                .await
+                {
+                    error!("error sending transfer success message: {:?}", err);
+                }
+            }
         }
     }
 

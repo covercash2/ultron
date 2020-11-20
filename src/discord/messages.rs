@@ -22,6 +22,10 @@ fn central_time() -> FixedOffset {
     FixedOffset::east(-6 * 3600)
 }
 
+fn format_account(user_name: impl std::fmt::Display, amount: i64) -> String {
+    format!("`{:04}`🪙\t{}\n", amount, user_name)
+}
+
 /// Use the [`serenity`] Discord API crate to send a message accross a channel
 pub async fn say<T: AsRef<Http>>(
     channel: ChannelId,
@@ -58,10 +62,7 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .map_err(Into::into)
 }
 
-pub async fn daily_response(
-    channel: ChannelId,
-    pipe: &Http,
-) -> Result<Message> {
+pub async fn daily_response(channel: ChannelId, pipe: &Http) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
@@ -97,6 +98,41 @@ pub async fn bad_daily_response(
 
                 embed
             });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn transfer_success(
+    channel: ChannelId,
+    pipe: &Http,
+    from_user: u64,
+    from_balance: i64,
+    to_user: u64,
+    to_balance: i64,
+    amount: i64,
+) -> Result<Message> {
+    let from_user = pipe.get_user(from_user).await?;
+    let to_user = pipe.get_user(to_user).await?;
+
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+		embed.title("Done");
+		embed.color(Colour::FOOYOO);
+
+		embed.description(format!("{} coins were transfered.", amount));
+
+		let from_string = format_account(from_user.name, from_balance);
+		let to_string = format_account(to_user.name, to_balance);
+
+		embed.field("from", from_string, true);
+		embed.field("to", to_string, true);
+
+		embed
+	    });
 
             msg
         })
