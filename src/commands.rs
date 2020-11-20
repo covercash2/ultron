@@ -104,7 +104,10 @@ impl Command {
                             "for now you can only give one user coins".to_owned(),
                         ))
                     }
-                } else if let Ok(true) = message.mentions_me(context).await {
+		    
+                } else if let Some(args) = content.strip_prefix("!gamble") {
+		    parse_gamble(args)
+		} else if let Ok(true) = message.mentions_me(context).await {
                     Ok(Command::Announce)
                 } else {
                     Err(Error::UnknownCommand(content.to_owned()))
@@ -138,6 +141,14 @@ impl Command {
 	    ))
 	}
     }
+}
+
+fn parse_gamble<S: AsRef<str>>(args: S) -> Result<Command> {
+    let args = args.as_ref().trim();
+    if args == "all" {
+	debug!("gamble all command parsed");
+    }
+    Err(Error::CommandParse("parse gamble todo".to_owned()))
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
