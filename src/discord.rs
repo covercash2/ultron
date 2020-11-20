@@ -50,8 +50,10 @@ pub enum Output {
         next_epoch: DateTime<Utc>,
     },
     TransferSuccess {
-        to_user: u64,
-        from_user: u64,
+	to_user: u64,
+	to_balance: i64,
+	from_user: u64,
+	from_balance: i64,
         amount: i64,
     },
     Help,
@@ -144,9 +146,28 @@ impl Handler {
             } => {
                 debug!("transfer complete");
 
+                let to_balance = *receipt
+                    .account_results
+                    .iter()
+                    .find(|(user_id, _balance)| user_id == &to_user)
+		    .map(|(_user_id, balance)| balance)
+                    .ok_or(Error::ReceiptProcess(
+                        "unable to find sender account in transaction receipt".to_owned(),
+                    ))?;
+		let from_balance = *receipt
+		    .account_results
+		    .iter()
+		    .find(|(user_id, _balance)| user_id == &from_user)
+		    .map(|(_user_id, balance)| balance)
+                    .ok_or(Error::ReceiptProcess(
+                        "unable to find receiver account in transaction receipt".to_owned(),
+                    ))?;
+
                 Ok(Some(Output::TransferSuccess {
                     to_user,
+		    to_balance,
                     from_user,
+		    from_balance,
                     amount,
                 }))
             }
@@ -248,14 +269,24 @@ impl EventHandler for Handler {
                 }
             }
             Output::TransferSuccess {
-                to_user,
-                from_user,
+		to_user,
+		to_balance,
+		from_user,
+		from_balance,
                 amount,
             } => {
                 debug!("responding to successful coin transfer");
-                if let Err(err) =
-                    messages::transfer_success(channel_id, &ctx.http, to_user, from_user, amount)
-                        .await
+
+                if let Err(err) = messages::transfer_success(
+                    channel_id,
+                    &ctx.http,
+                    to_user,
+		    to_balance,
+                    from_user,
+		    from_balance,
+                    amount,
+                )
+                .await
                 {
                     error!("error sending transfer success message: {:?}", err);
                 }

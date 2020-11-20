@@ -22,6 +22,10 @@ fn central_time() -> FixedOffset {
     FixedOffset::east(-6 * 3600)
 }
 
+fn format_account(user_name: impl std::fmt::Display, amount: i64) -> String {
+    format!("`{:04}`🪙\t{}\n", amount, user_name)
+}
+
 /// Use the [`serenity`] Discord API crate to send a message accross a channel
 pub async fn say<T: AsRef<Http>>(
     channel: ChannelId,
@@ -105,10 +109,11 @@ pub async fn transfer_success(
     channel: ChannelId,
     pipe: &Http,
     from_user: u64,
+    from_balance: i64,
     to_user: u64,
+    to_balance: i64,
     amount: i64,
 ) -> Result<Message> {
-
     let from_user = pipe.get_user(from_user).await?;
     let to_user = pipe.get_user(to_user).await?;
 
@@ -120,8 +125,11 @@ pub async fn transfer_success(
 
 		embed.description(format!("{} coins were transfered.", amount));
 
-		embed.field("from", from_user.name, true);
-		embed.field("to", to_user.name, true);
+		let from_string = format_account(from_user.name, from_balance);
+		let to_string = format_account(to_user.name, to_balance);
+
+		embed.field("from", from_string, true);
+		embed.field("to", to_string, true);
 
 		embed
 	    });
