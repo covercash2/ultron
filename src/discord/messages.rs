@@ -58,10 +58,7 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .map_err(Into::into)
 }
 
-pub async fn daily_response(
-    channel: ChannelId,
-    pipe: &Http,
-) -> Result<Message> {
+pub async fn daily_response(channel: ChannelId, pipe: &Http) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
@@ -97,6 +94,37 @@ pub async fn bad_daily_response(
 
                 embed
             });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn transfer_success(
+    channel: ChannelId,
+    pipe: &Http,
+    from_user: u64,
+    to_user: u64,
+    amount: i64,
+) -> Result<Message> {
+
+    let from_user = pipe.get_user(from_user).await?;
+    let to_user = pipe.get_user(to_user).await?;
+
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+		embed.title("Done");
+		embed.color(Colour::FOOYOO);
+
+		embed.description(format!("{} coins were transfered.", amount));
+
+		embed.field("from", from_user.name, true);
+		embed.field("to", to_user.name, true);
+
+		embed
+	    });
 
             msg
         })
