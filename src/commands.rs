@@ -7,6 +7,7 @@ use serenity::model::channel::ReactionType;
 
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
+use crate::gambling::{Gamble, Game};
 
 const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
 
@@ -27,6 +28,7 @@ pub enum Command {
     Announce,
     /// Make a coin transaction
     Coin(Transaction),
+    Gamble(Gamble),
 }
 
 impl Command {
@@ -104,10 +106,9 @@ impl Command {
                             "for now you can only give one user coins".to_owned(),
                         ))
                     }
-		    
                 } else if let Some(args) = content.strip_prefix("!gamble") {
-		    parse_gamble(args)
-		} else if let Ok(true) = message.mentions_me(context).await {
+                    parse_gamble(channel_id, *message.author.id.as_u64(), args)
+                } else if let Ok(true) = message.mentions_me(context).await {
                     Ok(Command::Announce)
                 } else {
                     Err(Error::UnknownCommand(content.to_owned()))
@@ -125,37 +126,54 @@ impl Command {
             None => return Err(Error::CommandParse("no user in reaction".to_owned())),
         };
 
-	let emoji_string: String = reaction_string(reaction.emoji)
-	    .ok_or(Error::CommandParse("no name found for custom emoji".to_owned()))?;
+        let emoji_string: String = reaction_string(reaction.emoji).ok_or(Error::CommandParse(
+            "no name found for custom emoji".to_owned(),
+        ))?;
 
-	if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-	    let transaction = Transaction::Tip {
-		channel_id,
-		from_user,
-		to_user,
-	    };
-	    Ok(Command::Coin(transaction))
-	} else {
-	    Err(Error::CommandParse(
-		"couldn't parse command from reaction".to_owned(),
-	    ))
-	}
+        if TIP_EMOJIS.contains(&emoji_string.as_str()) {
+            let transaction = Transaction::Tip {
+                channel_id,
+                from_user,
+                to_user,
+            };
+            Ok(Command::Coin(transaction))
+        } else {
+            Err(Error::CommandParse(
+                "couldn't parse command from reaction".to_owned(),
+            ))
+        }
     }
 }
 
-fn parse_gamble<S: AsRef<str>>(args: S) -> Result<Command> {
+fn parse_gamble<S: AsRef<str>>(channel_id: u64, user_id: u64, args: S) -> Result<Command> {
     let args = args.as_ref().trim();
     if args == "all" {
-	debug!("gamble all command parsed");
+        debug!("gamble all command parsed");
+	todo!()
+    } else if let Ok(amount) = args.parse::<i64>() {
+        if amount > 0 {
+            debug!("gamble amount: {}", amount);
+            let gamble = Gamble {
+                channel_id,
+                user_id,
+                amount,
+                game: Game::DiceRoll(10),
+            };
+	    Ok(Command::Gamble(gamble))
+        } else {
+            debug!("some cheeky fuck entered a negative number: {}", amount);
+	    Err(Error::CommandParse(format!("negative gamble amount: {}", amount)))
+        }
+    } else {
+	Err(Error::CommandParse(format!("unable to parse gamble args: {}", args)))
     }
-    Err(Error::CommandParse("parse gamble todo".to_owned()))
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
     match reaction {
-	ReactionType::Unicode(string) => Some(string),
-	ReactionType::Custom { name, .. } => name,
-	_ => None
+        ReactionType::Unicode(string) => Some(string),
+        ReactionType::Custom { name, .. } => name,
+        _ => None,
     }
 }
 

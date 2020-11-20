@@ -18,11 +18,10 @@ use tokio::sync::{
     Mutex,
 };
 
-use crate::coins::TransactionStatus;
-use crate::coins::{Receipt, Transaction};
-use crate::commands;
-use crate::commands::Command;
+use crate::coins::{Receipt, Transaction, TransactionStatus};
+use crate::commands::{self, Command};
 use crate::error::{Error, Result};
+use crate::gambling::{Gamble, Game};
 
 mod messages;
 
@@ -121,6 +120,11 @@ impl Handler {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
             }
+	    Command::Gamble(gamble) => {
+		debug!("processing gamble command: {:?}", gamble);
+
+		todo!()
+	    }
         }
     }
 

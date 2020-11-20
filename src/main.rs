@@ -9,7 +9,7 @@ mod commands;
 mod error;
 
 mod discord;
-
+mod gambling;
 mod tokens;
 
 use coins::{bank_loop, Bank, Receipt, Transaction};
