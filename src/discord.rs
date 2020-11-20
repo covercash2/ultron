@@ -72,6 +72,8 @@ impl From<String> for Output {
 /// thread-safe; additionally, automatic reference counting ([`Arc`]) is used to get
 /// a mutable reference behind an immutable `Handler`.
 pub struct Handler {
+    /// ultron's user id
+    user_id: Arc<Mutex<Option<UserId>>>,
     transaction_sender: Sender<Transaction>,
     // receivers aren't thread safe, so we need some boxes here
     receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
@@ -83,7 +85,9 @@ impl Handler {
         receipt_receiver: Receiver<Receipt>,
     ) -> Handler {
         let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
+	let user_id = Default::default();
         Handler {
+	    user_id,
             transaction_sender,
             receipt_receiver,
         }
@@ -215,6 +219,14 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
+
+	if let Some(user_id) = self.user_id.lock().await.as_ref() {
+	    if &msg.author.id == user_id {
+		debug!("ignoring message sent by ultron");
+		return;
+	    }
+	}
+
         // channel for logging
         let channel_id = msg.channel_id.clone();
 
@@ -320,6 +332,9 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
+
+	// set user id for ultron
+	self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
     }
 }
