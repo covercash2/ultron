@@ -1558,6 +1558,7 @@ dependencies = [
  "hubcaps",
  "log",
  "pretty_env_logger",
+ "rand",
  "serde",
  "serde_json",
  "serenity",

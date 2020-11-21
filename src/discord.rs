@@ -13,16 +13,12 @@ use serenity::{
     prelude::*,
 };
 
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
-};
+use tokio::sync::Mutex;
 
-use crate::coins::TransactionStatus;
-use crate::coins::{Receipt, Transaction};
-use crate::commands;
-use crate::commands::Command;
+use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
+use crate::commands::{self, Command};
 use crate::error::{Error, Result};
+use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
 
 mod messages;
 
@@ -50,12 +46,14 @@ pub enum Output {
         next_epoch: DateTime<Utc>,
     },
     TransferSuccess {
-	to_user: u64,
-	to_balance: i64,
-	from_user: u64,
-	from_balance: i64,
+        to_user: u64,
+        to_balance: i64,
+        from_user: u64,
+        from_balance: i64,
         amount: i64,
     },
+    Gamble(GambleOutput),
+    BetTooHigh { amount: i64, player_balance: i64 },
     Help,
 }
 
@@ -74,41 +72,59 @@ impl From<String> for Output {
 pub struct Handler {
     /// ultron's user id
     user_id: Arc<Mutex<Option<UserId>>>,
-    transaction_sender: Sender<Transaction>,
-    // receivers aren't thread safe, so we need some boxes here
-    receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
+    transaction_sender: TransactionSender,
 }
 
 impl Handler {
-    pub fn new(
-        transaction_sender: Sender<Transaction>,
-        receipt_receiver: Receiver<Receipt>,
-    ) -> Handler {
-        let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
-	let user_id = Default::default();
+    pub fn new(transaction_sender: TransactionSender) -> Handler {
+        let user_id = Default::default();
         Handler {
-	    user_id,
+            user_id,
             transaction_sender,
-            receipt_receiver,
+        }
+    }
+
+    async fn ultron_id(&self) -> Result<u64> {
+        if let Some(id) = self.user_id.lock().await.as_ref() {
+            Ok(*id.as_u64())
+        } else {
+            Err(Error::ServerState("ultron's id is not loaded".to_owned()))
+        }
+    }
+
+    async fn get_user_balance(&self, channel_id: u64, user_id: u64) -> Result<i64> {
+        let transaction = Transaction::GetUserBalance {
+            channel_id,
+            user_id,
+        };
+
+        let receipt = self.send_transaction(transaction).await?;
+
+        if let TransactionStatus::Complete = receipt.status {
+            receipt
+                .iter()
+                .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
+                .ok_or(Error::ReceiptProcess(format!(
+                    "no balance found for user: {:?}",
+                    receipt
+                )))
+        } else {
+            Err(Error::TransactionFailed(
+                "error getting user balance from bank".to_owned(),
+            ))
         }
     }
 
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
-        let mut sender = self.transaction_sender.clone();
-        sender.send(transaction).await?;
-        let mut lock = self.receipt_receiver.lock().await;
-        if let Some(receipt) = lock.recv().await {
-            Ok(receipt)
-        } else {
-            Err(Error::TransactionReceipt)
-        }
+        self.transaction_sender.send_transaction(transaction).await
     }
 
     /// Process the command, performing any necessary IO operations
     pub async fn process_command(
         &self,
+        channel_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -120,6 +136,89 @@ impl Handler {
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
+            }
+            Command::Gamble(mut gamble) => {
+                // gamble
+                // .play()
+                // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
+                //     .map_err(Into::into)
+
+                let ultron_id = self.ultron_id().await?;
+                let user_id = gamble.player_id;
+
+                let player_balance = self.get_user_balance(channel_id, user_id).await?;
+                let amount = gamble.amount;
+
+                if player_balance < amount {
+                    // error
+		    return Ok(Some(Output::BetTooHigh { player_balance, amount }));
+                }
+
+                let gamble_output = gamble.play()?;
+
+                match &gamble_output {
+                    GambleOutput::DiceRoll {
+                        player_id,
+                        amount,
+                        state,
+                        ..
+                    } => {
+                        match state {
+                            GambleState::Win(_) => {
+                                let from_user = ultron_id;
+                                let to_user = *player_id;
+                                let amount = *amount;
+                                let transaction = Transaction::Transfer {
+                                    channel_id,
+                                    from_user,
+                                    to_user,
+                                    amount,
+                                };
+
+                                let receipt = self.send_transaction(transaction).await?;
+                                match receipt.status {
+                                    TransactionStatus::Complete => {
+                                        Ok(Some(Output::Gamble(gamble_output)))
+                                    }
+                                    _ => Err(Error::ReceiptProcess(format!(
+                                        "invalid transaction status: {:?}",
+                                        receipt
+                                    ))),
+                                }
+                            }
+                            GambleState::Lose(_) => {
+                                let from_user = *player_id;
+                                let to_user = ultron_id;
+                                let amount = *amount;
+                                let transaction = Transaction::Transfer {
+                                    channel_id,
+                                    from_user,
+                                    to_user,
+                                    amount,
+                                };
+
+                                let receipt = self.send_transaction(transaction).await?;
+                                match receipt.status {
+                                    TransactionStatus::Complete => {
+                                        Ok(Some(Output::Gamble(gamble_output)))
+                                    }
+                                    _ => Err(Error::ReceiptProcess(format!(
+                                        "invalid transaction status: {:?}",
+                                        receipt
+                                    ))),
+                                }
+                            }
+                            GambleState::Draw => {
+                                // no transaction necessary
+                                Ok(Some(Output::Gamble(gamble_output)))
+                            }
+                            GambleState::Waiting => {
+                                // invalid state
+                                Err(Error::GambleError(GambleError::InvalidState(state.clone())))
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -154,24 +253,24 @@ impl Handler {
                     .account_results
                     .iter()
                     .find(|(user_id, _balance)| user_id == &to_user)
-		    .map(|(_user_id, balance)| balance)
+                    .map(|(_user_id, balance)| balance)
                     .ok_or(Error::ReceiptProcess(
                         "unable to find sender account in transaction receipt".to_owned(),
                     ))?;
-		let from_balance = *receipt
-		    .account_results
-		    .iter()
-		    .find(|(user_id, _balance)| user_id == &from_user)
-		    .map(|(_user_id, balance)| balance)
+                let from_balance = *receipt
+                    .account_results
+                    .iter()
+                    .find(|(user_id, _balance)| user_id == &from_user)
+                    .map(|(_user_id, balance)| balance)
                     .ok_or(Error::ReceiptProcess(
                         "unable to find receiver account in transaction receipt".to_owned(),
                     ))?;
 
                 Ok(Some(Output::TransferSuccess {
                     to_user,
-		    to_balance,
+                    to_balance,
                     from_user,
-		    from_balance,
+                    from_balance,
                     amount,
                 }))
             }
@@ -212,6 +311,12 @@ impl Handler {
                     ))),
                 }
             }
+            Transaction::GetUserBalance { .. } => {
+                // TODO raw balance query response
+                Err(Error::ReceiptProcess(
+                    "no message implementation ready for user balance".to_owned(),
+                ))
+            }
         }
     }
 }
@@ -219,16 +324,21 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-
-	if let Some(user_id) = self.user_id.lock().await.as_ref() {
-	    if &msg.author.id == user_id {
-		debug!("ignoring message sent by ultron");
-		return;
-	    }
-	}
+        match self.ultron_id().await {
+            Ok(user_id) => {
+                if &msg.author.id == &user_id {
+                    debug!("ignoring message sent by ultron");
+                    return;
+                }
+            }
+            Err(err) => {
+                error!("could not get ultron's id: {:?}", err);
+            }
+        }
 
         // channel for logging
         let channel_id = msg.channel_id.clone();
+        let author_id = *msg.author.id.as_u64();
 
         let command = match Command::parse_message(&ctx, msg).await {
             Ok(command) => command,
@@ -238,7 +348,10 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(&ctx, command).await {
+        let output = match self
+            .process_command(*channel_id.as_u64(), &ctx, command)
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -281,10 +394,10 @@ impl EventHandler for Handler {
                 }
             }
             Output::TransferSuccess {
-		to_user,
-		to_balance,
-		from_user,
-		from_balance,
+                to_user,
+                to_balance,
+                from_user,
+                from_balance,
                 amount,
             } => {
                 debug!("responding to successful coin transfer");
@@ -292,10 +405,10 @@ impl EventHandler for Handler {
                 if let Err(err) = messages::transfer_success(
                     channel_id,
                     &ctx.http,
-                    to_user,
-		    to_balance,
                     from_user,
-		    from_balance,
+                    from_balance,
+                    to_user,
+                    to_balance,
                     amount,
                 )
                 .await
@@ -303,10 +416,39 @@ impl EventHandler for Handler {
                     error!("error sending transfer success message: {:?}", err);
                 }
             }
+            Output::Gamble(gamble_output) => {
+                debug!("responding to gamble");
+
+                let player_balance =
+                    match self.get_user_balance(*channel_id.as_u64(), author_id).await {
+                        Ok(balance) => balance,
+                        Err(err) => {
+                            error!(
+                                "error retrieving user balance after gamble finished: {:?}",
+                                err
+                            );
+                            return;
+                        }
+                    };
+
+                if let Err(err) =
+                    messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output)
+                        .await
+                {
+                    error!("error sending gamble output: {:?}", err);
+                }
+            }
+            Output::BetTooHigh { amount, player_balance } => {
+		if let Err(err) = messages::bet_too_high(channel_id, &ctx.http, player_balance, amount).await {
+		    error!("error sending 'bet too high' message: {:?}", err);
+		}
+	    }
         }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+        let channel_id = *reaction.channel_id.as_u64();
+
         let command = match Command::parse_reaction(&ctx, reaction).await {
             Ok(command) => command,
             Err(err) => {
@@ -316,7 +458,7 @@ impl EventHandler for Handler {
         };
 
         // no reacts need output right now
-        let output = match self.process_command(&ctx, command).await {
+        let output = match self.process_command(channel_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -332,9 +474,8 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-
-	// set user id for ultron
-	self.user_id.lock().await.replace(ready.user.id);
+        // set user id for ultron
+        self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
     }
 }

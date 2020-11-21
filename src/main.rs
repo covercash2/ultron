@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+use coins::TransactionSender;
 use log::error;
 use pretty_env_logger;
 
@@ -9,7 +10,7 @@ mod commands;
 mod error;
 
 mod discord;
-
+mod gambling;
 mod tokens;
 
 use coins::{bank_loop, Bank, Receipt, Transaction};
@@ -26,7 +27,9 @@ async fn main() {
         channel(100);
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
-    let event_handler = Handler::new(transaction_sender, receipt_receiver);
+    let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
+
+    let event_handler = Handler::new(bank_channel);
 
     let bank = Bank::load().await.expect("unable to load bank file");
 

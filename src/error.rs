@@ -8,6 +8,7 @@ use serenity::Error as DiscordError;
 use tokio::sync::mpsc::error::SendError;
 
 use crate::coins::Transaction;
+use crate::gambling::Error as GambleError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -24,6 +25,9 @@ pub enum Error {
     UnknownCommand(String),
     CommandParse(String),
     ReceiptProcess(String),
+    GambleError(GambleError),
+    ServerState(String),
+    MessageBuild(String),
 }
 
 impl From<SendError<Transaction>> for Error {
@@ -59,5 +63,11 @@ impl From<GithubError> for Error {
 impl From<VarError> for Error {
     fn from(v: VarError) -> Self {
 	Error::BadApiKey(v)
+    }
+}
+
+impl From<GambleError> for Error {
+    fn from(err: GambleError) -> Self {
+	Error::GambleError(err)
     }
 }
