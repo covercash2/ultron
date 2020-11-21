@@ -153,12 +153,8 @@ fn parse_gamble<S: AsRef<str>>(channel_id: u64, user_id: u64, args: S) -> Result
     } else if let Ok(amount) = args.parse::<i64>() {
         if amount > 0 {
             debug!("gamble amount: {}", amount);
-            let gamble = Gamble {
-                channel_id,
-                user_id,
-                amount,
-                game: Game::DiceRoll(10),
-            };
+	    let game = Game::DiceRoll(10);
+	    let gamble = Gamble::new(channel_id, user_id, amount, game);
 	    Ok(Command::Gamble(gamble))
         } else {
             debug!("some cheeky fuck entered a negative number: {}", amount);

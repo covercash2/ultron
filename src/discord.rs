@@ -21,7 +21,7 @@ use tokio::sync::{
 use crate::coins::{Receipt, Transaction, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
-use crate::gambling::{Gamble, Game};
+use crate::gambling::State as GambleState;
 
 mod messages;
 
@@ -92,6 +92,14 @@ impl Handler {
         }
     }
 
+    async fn ultron_id(&self) -> Result<u64> {
+	if let Some(id) = self.user_id.lock().await.as_ref() {
+	    Ok(*id.as_u64())
+	} else {
+	    Err(Error::ServerState("ultron's id is not loaded".to_owned()))
+	}
+    }
+
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
@@ -108,6 +116,7 @@ impl Handler {
     /// Process the command, performing any necessary IO operations
     pub async fn process_command(
         &self,
+	channel_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -120,10 +129,51 @@ impl Handler {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
             }
-	    Command::Gamble(gamble) => {
+	    Command::Gamble(mut gamble) => {
 		debug!("processing gamble command: {:?}", gamble);
 
-		todo!()
+		let new_state = gamble.play()?;
+
+		match *new_state {
+		    GambleState::Win(amount) => {
+			debug!("player won: {}", amount);
+			// to player
+			let to_user = gamble.user_id;
+			// from ultron
+			let from_user = self.ultron_id().await?;
+			let transaction = Transaction::Transfer {
+			    channel_id,
+			    to_user,
+			    from_user,
+			    amount,
+			};
+			let receipt = self.send_transaction(transaction).await?;
+			self.process_receipt(context, receipt).await
+		    },
+		    GambleState::Lose(amount) => {
+			debug!("player lost: -{}", amount);
+			// from player
+			let from_user = gamble.user_id;
+			// to ultron
+			let to_user = self.ultron_id().await?;
+			let transaction = Transaction::Transfer {
+			    channel_id,
+			    to_user,
+			    from_user,
+			    amount,
+			};
+			let receipt = self.send_transaction(transaction).await?;
+			self.process_receipt(context, receipt).await
+		    },
+		    GambleState::Draw => {
+			debug!("game is a draw");
+			Ok(None)
+		    }
+		    GambleState::Waiting => {
+			debug!("game is now waiting for input");
+			Ok(None)
+		    }
+		}
 	    }
         }
     }
@@ -242,7 +292,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(&ctx, command).await {
+        let output = match self.process_command(*channel_id.as_u64(), &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -296,10 +346,10 @@ impl EventHandler for Handler {
                 if let Err(err) = messages::transfer_success(
                     channel_id,
                     &ctx.http,
-                    to_user,
-		    to_balance,
                     from_user,
 		    from_balance,
+                    to_user,
+		    to_balance,
                     amount,
                 )
                 .await
@@ -311,6 +361,8 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
+	let channel_id = *reaction.channel_id.as_u64();
+
         let command = match Command::parse_reaction(&ctx, reaction).await {
             Ok(command) => command,
             Err(err) => {
@@ -320,7 +372,7 @@ impl EventHandler for Handler {
         };
 
         // no reacts need output right now
-        let output = match self.process_command(&ctx, command).await {
+        let output = match self.process_command(channel_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
