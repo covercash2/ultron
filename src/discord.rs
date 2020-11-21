@@ -130,20 +130,23 @@ impl Handler {
                 Ok(None)
             }
             Transaction::Tip { .. } => {
-		match receipt.status {
-		    TransactionStatus::Complete => {
-			debug!("tip complete");
-			Ok(None)
-		    }
-		    TransactionStatus::SelfTip => {
-			// TODO chastize
-			Err(Error::TransactionFailed(format!("user tried to tip themselves: {:?}", receipt)))
-		    }
+                match receipt.status {
+                    TransactionStatus::Complete => {
+                        debug!("tip complete");
+                        Ok(None)
+                    }
+                    TransactionStatus::SelfTip => {
+                        // TODO chastize
+                        Err(Error::TransactionFailed(format!(
+                            "user tried to tip themselves: {:?}",
+                            receipt
+                        )))
+                    }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
                         receipt
                     ))),
-		}
+                }
             }
             Transaction::Daily { .. } => {
                 match receipt.status {

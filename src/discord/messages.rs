@@ -34,12 +34,12 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
                 embed.title(HELP_TITLE);
-		embed.color(Colour::BLITZ_BLUE);
+                embed.color(Colour::BLITZ_BLUE);
 
                 embed.field(COMMAND_TITLE, COMMAND_DESCRIPTION, false);
 
-		embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
-		    
+                embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
+
                 // embed.title("You want Coins");
                 // embed.description(COINS_DESCRIPTION);
                 embed.footer(|f| {

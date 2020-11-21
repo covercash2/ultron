@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use tokio::{io::AsyncReadExt, fs::OpenOptions};
+use tokio::{fs::OpenOptions, io::AsyncReadExt};
 
 use crate::error::Result;
 
@@ -125,8 +125,8 @@ impl Ledger {
 
 impl Default for Ledger {
     fn default() -> Self {
-	return Ledger {
-	    map: HashMap::new(),
-	}
+        return Ledger {
+            map: HashMap::new(),
+        };
     }
 }

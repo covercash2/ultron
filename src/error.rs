@@ -1,9 +1,9 @@
 use std::{env::VarError, io::Error as IoError};
 
-use serde_json::Error as JsonError; 
-use hubcaps::Error as GithubError; 
-use serenity::Error as DiscordError;
+use hubcaps::Error as GithubError;
 use reqwest::Error as ReqwestError;
+use serde_json::Error as JsonError;
+use serenity::Error as DiscordError;
 
 use tokio::sync::mpsc::error::SendError;
 
@@ -29,42 +29,42 @@ pub enum Error {
 
 impl From<SendError<Transaction>> for Error {
     fn from(err: SendError<Transaction>) -> Self {
-	Error::TransactionSend(err)
+        Error::TransactionSend(err)
     }
 }
 
 impl From<JsonError> for Error {
     fn from(err: JsonError) -> Self {
-	Error::Json(err)
+        Error::Json(err)
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
-	Error::Io(err)
+        Error::Io(err)
     }
 }
 
 impl From<DiscordError> for Error {
     fn from(err: DiscordError) -> Self {
-	Error::DiscordError(err)
+        Error::DiscordError(err)
     }
 }
 
 impl From<GithubError> for Error {
     fn from(err: GithubError) -> Self {
-	Error::GithubError(err)
+        Error::GithubError(err)
     }
 }
 
 impl From<VarError> for Error {
     fn from(v: VarError) -> Self {
-	Error::BadApiKey(v)
+        Error::BadApiKey(v)
     }
 }
 
 impl From<ReqwestError> for Error {
     fn from(v: VarError) -> Self {
-	Error::BadApiKey(v)
+        Error::BadApiKey(v)
     }
 }

@@ -13,7 +13,6 @@ pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
 pub const ANNOUNCE: &'static str = "I am always listening";
 
-
 /// All the possible server commands
 #[derive(Debug)]
 pub enum Command {
@@ -48,7 +47,11 @@ impl Command {
                 info!("request daily");
                 let timestamp = message.timestamp;
                 let user_id = *message.author.id.as_u64();
-                let transaction = Transaction::Daily { channel_id, user_id, timestamp };
+                let transaction = Transaction::Daily {
+                    channel_id,
+                    user_id,
+                    timestamp,
+                };
 
                 Ok(Command::Coin(transaction))
             }

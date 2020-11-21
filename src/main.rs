@@ -10,8 +10,8 @@ mod error;
 
 mod discord;
 
-mod tokens;
 mod hn;
+mod tokens;
 
 use coins::{bank_loop, Bank, Receipt, Transaction};
 use discord::Handler;
