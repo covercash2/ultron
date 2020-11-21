@@ -21,7 +21,7 @@ use tokio::sync::{
 use crate::coins::{Receipt, Transaction, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
-use crate::gambling::GambleOutput;
+use crate::gambling::{Error as GambleError, State as GambleState, GambleOutput};
 
 mod messages;
 
@@ -153,10 +153,59 @@ impl Handler {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
             }
-            Command::Gamble(mut gamble) => gamble
-                .play()
-                .map(|gamble_output| Some(Output::Gamble(gamble_output)))
-                .map_err(Into::into),
+            Command::Gamble(mut gamble) => {
+		// gamble
+                // .play()
+                // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
+                //     .map_err(Into::into)
+
+		let ultron_id = self.ultron_id().await?;
+
+		let gamble_output = gamble.play()?;
+
+		match &gamble_output {
+		    GambleOutput::DiceRoll { player_id, amount, state, .. } => {
+			match state {
+			    GambleState::Win(_) => {
+				let from_user = ultron_id;
+				let to_user = *player_id;
+				let amount = *amount;
+				let transaction = Transaction::Transfer {
+				    channel_id,
+				    from_user,
+				    to_user,
+				    amount,
+				};
+
+				let receipt = self.send_transaction(transaction).await?;
+				self.process_receipt(context, receipt).await
+			    }
+			    GambleState::Lose(_) => {
+				let from_user = *player_id;
+				let to_user = ultron_id;
+				let amount = *amount;
+				let transaction = Transaction::Transfer {
+				    channel_id,
+				    from_user,
+				    to_user,
+				    amount,
+				};
+
+				let receipt = self.send_transaction(transaction).await?;
+				self.process_receipt(context, receipt).await
+			    }
+			    GambleState::Draw => {
+				// no transaction necessary
+				Ok(Some(Output::Gamble(gamble_output)))
+			    }
+			    GambleState::Waiting => {
+				// invalid state
+				Err(Error::GambleError(GambleError::InvalidState(state.clone())))
+			    }
+			}
+		    }
+		}
+	    }
         }
     }
 
@@ -248,10 +297,7 @@ impl Handler {
                     ))),
                 }
             }
-            Transaction::GetUserBalance {
-                channel_id,
-                user_id,
-            } => {
+            Transaction::GetUserBalance { .. } => {
                 // TODO raw balance query response
                 Err(Error::ReceiptProcess(
                     "no message implementation ready for user balance".to_owned(),
