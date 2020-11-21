@@ -4,7 +4,8 @@ use serenity::model::channel::Message;
 use serenity::model::id::ChannelId;
 use serenity::utils::Colour;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::gambling::{GambleOutput, State as GambleState};
 
 const HELP_TITLE: &str = "What ULTRON can do for you";
 const COMMAND_TITLE: &str = "Inputs";
@@ -120,19 +121,187 @@ pub async fn transfer_success(
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
-		embed.title("Done");
-		embed.color(Colour::FOOYOO);
+                embed.title("Done");
+                embed.color(Colour::FOOYOO);
 
-		embed.description(format!("{} coins were transfered.", amount));
+                embed.description(format!("{} coins were transfered.", amount));
 
-		let from_string = format_account(from_user.name, from_balance);
-		let to_string = format_account(to_user.name, to_balance);
+                let from_string = format_account(from_user.name, from_balance);
+                let to_string = format_account(to_user.name, to_balance);
 
-		embed.field("from", from_string, true);
-		embed.field("to", to_string, true);
+                embed.field("from", from_string, true);
+                embed.field("to", to_string, true);
 
-		embed
-	    });
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn gamble_output(
+    channel: ChannelId,
+    pipe: &Http,
+    player_balance: i64,
+    gamble_output: GambleOutput,
+) -> Result<Message> {
+    match gamble_output {
+        GambleOutput::DiceRoll {
+            player_id,
+            amount,
+            house_roll,
+            player_roll,
+            state,
+        } => match state {
+            GambleState::Win(amount) => {
+                dice_roll_win(
+                    channel,
+                    pipe,
+                    player_id,
+                    house_roll,
+                    player_roll,
+                    amount,
+                    player_balance,
+                )
+                .await
+            }
+            GambleState::Lose(amount) => {
+                dice_roll_lose(
+                    channel,
+                    pipe,
+                    player_id,
+                    house_roll,
+                    player_roll,
+                    amount,
+                    player_balance,
+                )
+                .await
+            }
+            GambleState::Draw => {
+                dice_roll_draw(channel, pipe, player_id, house_roll, player_roll).await
+            }
+            GambleState::Waiting => Err(Error::MessageBuild(
+                "waiting state not supported for any gamble actions".to_owned(),
+            )),
+        },
+    }
+}
+
+async fn dice_roll_win(
+    channel: ChannelId,
+    pipe: &Http,
+    player_id: u64,
+    house_roll: u32,
+    player_roll: u32,
+    amount: i64,
+    player_balance: i64,
+) -> Result<Message> {
+    let player_name = pipe.get_user(player_id).await?.name;
+
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::GOLD);
+                embed.title("Winner!");
+
+                embed.description(format!(
+                    "You have bested chance and earned {}🪙. You now have {}🪙",
+                    amount, player_balance
+                ));
+
+                let player_roll_string = format!("{} rolled a {}", player_name, player_roll);
+                let house_roll_string = format!("The house rolled a {}", house_roll);
+
+                embed.field(player_name, player_roll_string, true);
+                embed.field("ULTRON", house_roll_string, true);
+
+                embed.field(
+                    "There is more to be won",
+                    "You may find the odds in your favor if you try once more",
+                    false,
+                );
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+async fn dice_roll_lose(
+    channel: ChannelId,
+    pipe: &Http,
+    player_id: u64,
+    house_roll: u32,
+    player_roll: u32,
+    amount: i64,
+    player_balance: i64,
+) -> Result<Message> {
+    let player_name = pipe.get_user(player_id).await?.name;
+
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::DARK_RED);
+                embed.title("You Lose");
+
+                embed.description(format!(
+                    "You lost {}🪙, and now your account is valued at {}🪙",
+                    amount, player_balance
+                ));
+
+                let player_roll_string = format!("{} rolled a {}", player_name, player_roll);
+                let house_roll_string = format!("The house rolled a {}", house_roll);
+
+                embed.field(player_name, player_roll_string, true);
+                embed.field("ULTRON", house_roll_string, true);
+
+                embed.field(
+                    "Do not lose heart",
+                    "You may find the odds in your favor if you try once more",
+                    false,
+                );
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+async fn dice_roll_draw(
+    channel: ChannelId,
+    pipe: &Http,
+    player_id: u64,
+    house_roll: u32,
+    player_roll: u32,
+) -> Result<Message> {
+    let player_name = pipe.get_user(player_id).await?.name;
+
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::FADED_PURPLE);
+                embed.title("Draw");
+
+                embed.description(format!("Chaos has decided that there is no winner."));
+
+                let player_roll_string = format!("{} rolled a {}", player_name, player_roll);
+                let house_roll_string = format!("The house rolled a {}", house_roll);
+
+                embed.field(player_name, player_roll_string, true);
+                embed.field("ULTRON", house_roll_string, true);
+
+                embed.field("This is but a momentary setback", "You may try again.", false);
+
+                embed
+            });
 
             msg
         })

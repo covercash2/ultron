@@ -27,6 +27,7 @@ pub enum Error {
     ReceiptProcess(String),
     GambleError(GambleError),
     ServerState(String),
+    MessageBuild(String),
 }
 
 impl From<SendError<Transaction>> for Error {
