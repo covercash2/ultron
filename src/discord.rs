@@ -101,6 +101,29 @@ impl Handler {
         }
     }
 
+    async fn get_user_balance(&self, channel_id: u64, user_id: u64) -> Result<i64> {
+        let transaction = Transaction::GetUserBalance {
+            channel_id,
+            user_id,
+        };
+
+        let receipt = self.send_transaction(transaction).await?;
+
+        if let TransactionStatus::Complete = receipt.status {
+            receipt
+                .iter()
+                .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
+                .ok_or(Error::ReceiptProcess(format!(
+                    "no balance found for user: {:?}",
+                    receipt
+                )))
+        } else {
+            Err(Error::TransactionFailed(
+                "error getting user balance from bank".to_owned(),
+            ))
+        }
+    }
+
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
@@ -225,6 +248,15 @@ impl Handler {
                     ))),
                 }
             }
+            Transaction::GetUserBalance {
+                channel_id,
+                user_id,
+            } => {
+                // TODO raw balance query response
+                Err(Error::ReceiptProcess(
+                    "no message implementation ready for user balance".to_owned(),
+                ))
+            }
         }
     }
 }
@@ -232,15 +264,21 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        if let Some(user_id) = self.user_id.lock().await.as_ref() {
-            if &msg.author.id == user_id {
-                debug!("ignoring message sent by ultron");
-                return;
-            }
-        }
+	match self.ultron_id().await {
+	    Ok(user_id) => {
+		if &msg.author.id == &user_id {
+		    debug!("ignoring message sent by ultron");
+		    return;
+		}
+	    }
+	    Err(err) => {
+		error!("could not get ultron's id: {:?}", err);
+	    }
+	}
 
         // channel for logging
         let channel_id = msg.channel_id.clone();
+	let author_id = *msg.author.id.as_u64();
 
         let command = match Command::parse_message(&ctx, msg).await {
             Ok(command) => command,
@@ -321,11 +359,23 @@ impl EventHandler for Handler {
             Output::Gamble(gamble_output) => {
                 debug!("responding to gamble");
 
-		// TODO get user balance
-		let player_balance = -1;
+                let player_balance = match self
+                    .get_user_balance(*channel_id.as_u64(), author_id)
+                    .await
+                {
+                    Ok(balance) => balance,
+                    Err(err) => {
+                        error!(
+                            "error retrieving user balance after gamble finished: {:?}",
+                            err
+                        );
+                        return;
+                    }
+                };
 
                 if let Err(err) =
-                    messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output).await
+                    messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output)
+                        .await
                 {
                     error!("error sending gamble output: {:?}", err);
                 }

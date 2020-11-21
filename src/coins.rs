@@ -53,6 +53,10 @@ pub enum Transaction {
     },
     /// Dump the account data
     GetAllBalances(ChannelId),
+    GetUserBalance {
+        channel_id: ChannelId,
+        user_id: UserId,
+    },
     Tip {
         channel_id: ChannelId,
         from_user: UserId,
@@ -218,14 +222,29 @@ impl Bank {
                     );
                     let account_results = vec![];
                     let status = TransactionStatus::BadDailyRequest {
-			next_epoch: self.daily_log.epoch.clone()
-		    };
+                        next_epoch: self.daily_log.epoch.clone(),
+                    };
 
                     Receipt {
                         transaction,
                         account_results,
                         status,
                     }
+                }
+            }
+            Transaction::GetUserBalance {
+                channel_id,
+                user_id,
+            } => {
+                let ledger = self.ledgers.get_or_create_mut(&channel_id);
+                let balance = ledger.get_balance(&user_id);
+                let account_results = vec![(user_id, balance)];
+                let status = TransactionStatus::Complete;
+
+                Receipt {
+                    transaction,
+                    account_results,
+                    status,
                 }
             }
         }
