@@ -13,12 +13,9 @@ use serenity::{
     prelude::*,
 };
 
-use tokio::sync::{
-    mpsc::{Receiver, Sender},
-    Mutex,
-};
+use tokio::sync::Mutex;
 
-use crate::coins::{Receipt, Transaction, TransactionStatus};
+use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
@@ -74,22 +71,17 @@ impl From<String> for Output {
 pub struct Handler {
     /// ultron's user id
     user_id: Arc<Mutex<Option<UserId>>>,
-    transaction_sender: Sender<Transaction>,
-    // receivers aren't thread safe, so we need some boxes here
-    receipt_receiver: Arc<Mutex<Receiver<Receipt>>>,
+    transaction_sender: TransactionSender,
 }
 
 impl Handler {
     pub fn new(
-        transaction_sender: Sender<Transaction>,
-        receipt_receiver: Receiver<Receipt>,
+	transaction_sender: TransactionSender,
     ) -> Handler {
-        let receipt_receiver = Arc::new(Mutex::new(receipt_receiver));
         let user_id = Default::default();
         Handler {
             user_id,
             transaction_sender,
-            receipt_receiver,
         }
     }
 
@@ -127,14 +119,7 @@ impl Handler {
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
-        let mut sender = self.transaction_sender.clone();
-        sender.send(transaction).await?;
-        let mut lock = self.receipt_receiver.lock().await;
-        if let Some(receipt) = lock.recv().await {
-            Ok(receipt)
-        } else {
-            Err(Error::TransactionReceipt)
-        }
+	self.transaction_sender.send_transaction(transaction).await
     }
 
     /// Process the command, performing any necessary IO operations

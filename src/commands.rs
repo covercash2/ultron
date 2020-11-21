@@ -107,7 +107,7 @@ impl Command {
                         ))
                     }
                 } else if let Some(args) = content.strip_prefix("!gamble") {
-                    parse_gamble(channel_id, *message.author.id.as_u64(), args)
+                    parse_gamble(context, channel_id, *message.author.id.as_u64(), args).await
                 } else if let Ok(true) = message.mentions_me(context).await {
                     Ok(Command::Announce)
                 } else {
@@ -145,23 +145,29 @@ impl Command {
     }
 }
 
-fn parse_gamble<S: AsRef<str>>(channel_id: u64, user_id: u64, args: S) -> Result<Command> {
+async fn parse_gamble<S: AsRef<str>>(channel_id: u64, user_id: u64, args: S) -> Result<Command> {
     let args = args.as_ref().trim();
     if args == "all" {
         debug!("gamble all command parsed");
-	todo!()
+        todo!()
     } else if let Ok(amount) = args.parse::<i64>() {
         if amount > 0 {
             debug!("gamble amount: {}", amount);
-	    let game = Game::DiceRoll(10);
-	    let gamble = Gamble::new(channel_id, user_id, amount, game);
-	    Ok(Command::Gamble(gamble))
+            let game = Game::DiceRoll(10);
+            let gamble = Gamble::new(channel_id, user_id, amount, game);
+            Ok(Command::Gamble(gamble))
         } else {
             debug!("some cheeky fuck entered a negative number: {}", amount);
-	    Err(Error::CommandParse(format!("negative gamble amount: {}", amount)))
+            Err(Error::CommandParse(format!(
+                "negative gamble amount: {}",
+                amount
+            )))
         }
     } else {
-	Err(Error::CommandParse(format!("unable to parse gamble args: {}", args)))
+        Err(Error::CommandParse(format!(
+            "unable to parse gamble args: {}",
+            args
+        )))
     }
 }
 

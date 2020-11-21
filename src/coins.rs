@@ -17,8 +17,10 @@ use chrono::{DateTime, Utc};
 use crate::error::Result;
 
 mod ledger;
+mod transaction;
 
 use ledger::Accounts;
+pub use transaction::{Transaction, TransactionStatus, TransactionSender};
 
 /// The log file for the daily logins
 const DAILY_LOG_FILE: &str = "daily_log.json";
@@ -39,37 +41,6 @@ fn daily_epoch() -> DateTime<Utc> {
     }
 }
 
-/// Interactions with the Bank are handled through transactions.
-/// These transactions are sent over channels in the [`bank_loop`]
-/// to be processed by [`Bank::process_transaction`].
-#[derive(Debug)]
-pub enum Transaction {
-    /// Transfer coins from one user to another
-    Transfer {
-        channel_id: ChannelId,
-        from_user: UserId,
-        to_user: UserId,
-        amount: i64,
-    },
-    /// Dump the account data
-    GetAllBalances(ChannelId),
-    GetUserBalance {
-        channel_id: ChannelId,
-        user_id: UserId,
-    },
-    Tip {
-        channel_id: ChannelId,
-        from_user: UserId,
-        to_user: UserId,
-    },
-    /// Give some coins to a user once per day
-    Daily {
-        channel_id: ChannelId,
-        user_id: UserId,
-        timestamp: DateTime<Utc>,
-    },
-}
-
 /// This type is returned from [`Bank::process_transaction`].
 /// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
 /// completes.
@@ -78,13 +49,6 @@ pub struct Receipt {
     pub transaction: Transaction,
     pub account_results: Vec<Account>,
     pub status: TransactionStatus,
-}
-
-#[derive(Debug)]
-pub enum TransactionStatus {
-    Complete,
-    BadDailyRequest { next_epoch: DateTime<Utc> },
-    SelfTip,
 }
 
 impl Receipt {
