@@ -107,7 +107,7 @@ impl Command {
                         ))
                     }
                 } else if let Some(args) = content.strip_prefix("!gamble") {
-                    parse_gamble(context, channel_id, *message.author.id.as_u64(), args).await
+                    parse_gamble(channel_id, *message.author.id.as_u64(), args).await
                 } else if let Ok(true) = message.mentions_me(context).await {
                     Ok(Command::Announce)
                 } else {

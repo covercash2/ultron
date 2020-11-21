@@ -13,7 +13,7 @@ pub struct Gamble {
     pub player_id: u64,
     pub amount: i64,
     pub game: Game,
-    state: State
+    state: State,
 }
 
 #[derive(Debug)]
@@ -32,43 +32,38 @@ pub enum State {
 #[derive(Debug)]
 pub enum GambleOutput {
     DiceRoll {
-	player_id: u64,
-	amount: i64,
-	house_roll: u32,
-	player_roll: u32,
-	state: State,
-    }
+        player_id: u64,
+        amount: i64,
+        house_roll: u32,
+        player_roll: u32,
+        state: State,
+    },
 }
 
 impl Gamble {
     pub fn new(channel_id: u64, player_id: u64, amount: i64, game: Game) -> Self {
-	let state = State::Waiting;
+        let state = State::Waiting;
 
-	Gamble {
-	    channel_id,
-	    player_id,
-	    amount,
-	    game,
-	    state
-	}
+        Gamble {
+            channel_id,
+            player_id,
+            amount,
+            game,
+            state,
+        }
     }
 
     pub fn play(&mut self) -> Result<GambleOutput> {
-	match self.game {
-	    Game::DiceRoll(sides) => {
-		match self.state {
-		    State::Waiting => {
-			let output = play_dice(self.player_id, self.amount, sides);
-			Ok(output)
-		    }
-		    _ => {
-			Err(Error::InvalidState(self.state.clone()))
-		    }
-		}
-	    },
-	}
+        match self.game {
+            Game::DiceRoll(sides) => match self.state {
+                State::Waiting => {
+                    let output = play_dice(self.player_id, self.amount, sides);
+                    Ok(output)
+                }
+                _ => Err(Error::InvalidState(self.state.clone())),
+            },
+        }
     }
-
 }
 
 fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
@@ -78,11 +73,11 @@ fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
     let house_roll = rng.gen_range(0, sides);
 
     let state = if player_roll > house_roll {
-	State::Win(amount)
+        State::Win(amount)
     } else if player_roll == house_roll {
-	State::Draw
+        State::Draw
     } else {
-	State::Lose(amount)
+        State::Lose(amount)
     };
 
     GambleOutput::DiceRoll {
@@ -90,14 +85,12 @@ fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
         amount,
         house_roll,
         player_roll,
-	state
+        state,
     }
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
-    fn test_dice_roll() {
-	
-    }
+    fn test_dice_roll() {}
 }

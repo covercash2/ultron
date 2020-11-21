@@ -53,6 +53,7 @@ pub enum Output {
         amount: i64,
     },
     Gamble(GambleOutput),
+    BetTooHigh { amount: i64, player_balance: i64 },
     Help,
 }
 
@@ -75,9 +76,7 @@ pub struct Handler {
 }
 
 impl Handler {
-    pub fn new(
-	transaction_sender: TransactionSender,
-    ) -> Handler {
+    pub fn new(transaction_sender: TransactionSender) -> Handler {
         let user_id = Default::default();
         Handler {
             user_id,
@@ -119,7 +118,7 @@ impl Handler {
     /// Send a transaction to the bank thread.
     /// Returns output to say in chat.
     pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
-	self.transaction_sender.send_transaction(transaction).await
+        self.transaction_sender.send_transaction(transaction).await
     }
 
     /// Process the command, performing any necessary IO operations
@@ -145,6 +144,15 @@ impl Handler {
                 //     .map_err(Into::into)
 
                 let ultron_id = self.ultron_id().await?;
+                let user_id = gamble.player_id;
+
+                let player_balance = self.get_user_balance(channel_id, user_id).await?;
+                let amount = gamble.amount;
+
+                if player_balance < amount {
+                    // error
+		    return Ok(Some(Output::BetTooHigh { player_balance, amount }));
+                }
 
                 let gamble_output = gamble.play()?;
 
@@ -430,6 +438,11 @@ impl EventHandler for Handler {
                     error!("error sending gamble output: {:?}", err);
                 }
             }
+            Output::BetTooHigh { amount, player_balance } => {
+		if let Err(err) = messages::bet_too_high(channel_id, &ctx.http, player_balance, amount).await {
+		    error!("error sending 'bet too high' message: {:?}", err);
+		}
+	    }
         }
     }
 

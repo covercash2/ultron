@@ -141,6 +141,30 @@ pub async fn transfer_success(
         .map_err(Into::into)
 }
 
+pub async fn bet_too_high(
+    channel: ChannelId,
+    pipe: &Http,
+    player_balance: i64,
+    amount: i64,
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.title("Not Enough");
+                embed.color(Colour::ORANGE);
+
+		embed.description(format!("You haven't enough coins to bet {}🪙. You only have {}🪙", amount, player_balance));
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+    
+}
+
 pub async fn gamble_output(
     channel: ChannelId,
     pipe: &Http,
