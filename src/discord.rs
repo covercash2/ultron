@@ -21,7 +21,7 @@ use tokio::sync::{
 use crate::coins::{Receipt, Transaction, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
-use crate::gambling::{Error as GambleError, State as GambleState, GambleOutput};
+use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
 
 mod messages;
 
@@ -154,58 +154,79 @@ impl Handler {
                 self.process_receipt(context, receipt).await
             }
             Command::Gamble(mut gamble) => {
-		// gamble
+                // gamble
                 // .play()
                 // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
                 //     .map_err(Into::into)
 
-		let ultron_id = self.ultron_id().await?;
+                let ultron_id = self.ultron_id().await?;
 
-		let gamble_output = gamble.play()?;
+                let gamble_output = gamble.play()?;
 
-		match &gamble_output {
-		    GambleOutput::DiceRoll { player_id, amount, state, .. } => {
-			match state {
-			    GambleState::Win(_) => {
-				let from_user = ultron_id;
-				let to_user = *player_id;
-				let amount = *amount;
-				let transaction = Transaction::Transfer {
-				    channel_id,
-				    from_user,
-				    to_user,
-				    amount,
-				};
+                match &gamble_output {
+                    GambleOutput::DiceRoll {
+                        player_id,
+                        amount,
+                        state,
+                        ..
+                    } => {
+                        match state {
+                            GambleState::Win(_) => {
+                                let from_user = ultron_id;
+                                let to_user = *player_id;
+                                let amount = *amount;
+                                let transaction = Transaction::Transfer {
+                                    channel_id,
+                                    from_user,
+                                    to_user,
+                                    amount,
+                                };
 
-				let receipt = self.send_transaction(transaction).await?;
-				self.process_receipt(context, receipt).await
-			    }
-			    GambleState::Lose(_) => {
-				let from_user = *player_id;
-				let to_user = ultron_id;
-				let amount = *amount;
-				let transaction = Transaction::Transfer {
-				    channel_id,
-				    from_user,
-				    to_user,
-				    amount,
-				};
+                                let receipt = self.send_transaction(transaction).await?;
+                                match receipt.status {
+                                    TransactionStatus::Complete => {
+                                        Ok(Some(Output::Gamble(gamble_output)))
+                                    }
+                                    _ => Err(Error::ReceiptProcess(format!(
+                                        "invalid transaction status: {:?}",
+                                        receipt
+                                    ))),
+                                }
+                            }
+                            GambleState::Lose(_) => {
+                                let from_user = *player_id;
+                                let to_user = ultron_id;
+                                let amount = *amount;
+                                let transaction = Transaction::Transfer {
+                                    channel_id,
+                                    from_user,
+                                    to_user,
+                                    amount,
+                                };
 
-				let receipt = self.send_transaction(transaction).await?;
-				self.process_receipt(context, receipt).await
-			    }
-			    GambleState::Draw => {
-				// no transaction necessary
-				Ok(Some(Output::Gamble(gamble_output)))
-			    }
-			    GambleState::Waiting => {
-				// invalid state
-				Err(Error::GambleError(GambleError::InvalidState(state.clone())))
-			    }
-			}
-		    }
-		}
-	    }
+                                let receipt = self.send_transaction(transaction).await?;
+                                match receipt.status {
+                                    TransactionStatus::Complete => {
+                                        Ok(Some(Output::Gamble(gamble_output)))
+                                    }
+                                    _ => Err(Error::ReceiptProcess(format!(
+                                        "invalid transaction status: {:?}",
+                                        receipt
+                                    ))),
+                                }
+                            }
+                            GambleState::Draw => {
+                                // no transaction necessary
+                                Ok(Some(Output::Gamble(gamble_output)))
+                            }
+                            GambleState::Waiting => {
+                                // invalid state
+                                Err(Error::GambleError(GambleError::InvalidState(state.clone())))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -310,21 +331,21 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-	match self.ultron_id().await {
-	    Ok(user_id) => {
-		if &msg.author.id == &user_id {
-		    debug!("ignoring message sent by ultron");
-		    return;
-		}
-	    }
-	    Err(err) => {
-		error!("could not get ultron's id: {:?}", err);
-	    }
-	}
+        match self.ultron_id().await {
+            Ok(user_id) => {
+                if &msg.author.id == &user_id {
+                    debug!("ignoring message sent by ultron");
+                    return;
+                }
+            }
+            Err(err) => {
+                error!("could not get ultron's id: {:?}", err);
+            }
+        }
 
         // channel for logging
         let channel_id = msg.channel_id.clone();
-	let author_id = *msg.author.id.as_u64();
+        let author_id = *msg.author.id.as_u64();
 
         let command = match Command::parse_message(&ctx, msg).await {
             Ok(command) => command,
@@ -405,19 +426,17 @@ impl EventHandler for Handler {
             Output::Gamble(gamble_output) => {
                 debug!("responding to gamble");
 
-                let player_balance = match self
-                    .get_user_balance(*channel_id.as_u64(), author_id)
-                    .await
-                {
-                    Ok(balance) => balance,
-                    Err(err) => {
-                        error!(
-                            "error retrieving user balance after gamble finished: {:?}",
-                            err
-                        );
-                        return;
-                    }
-                };
+                let player_balance =
+                    match self.get_user_balance(*channel_id.as_u64(), author_id).await {
+                        Ok(balance) => balance,
+                        Err(err) => {
+                            error!(
+                                "error retrieving user balance after gamble finished: {:?}",
+                                err
+                            );
+                            return;
+                        }
+                    };
 
                 if let Err(err) =
                     messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output)
