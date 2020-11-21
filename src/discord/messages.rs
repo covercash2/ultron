@@ -12,6 +12,7 @@ const COMMAND_TITLE: &str = "Inputs";
 const COMMAND_DESCRIPTION: &str = "!ping to say hello
 !about to show info about ULTRON
 !coins to show the worth of this channel's members
+!gamble <#> to gamble with your coins
 Mention me by name and I will make myself known";
 
 const COINS_TITLE: &str = "You Want Coins";
