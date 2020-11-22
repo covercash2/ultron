@@ -13,7 +13,6 @@ const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
 
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
-pub const ANNOUNCE: &'static str = "I am always listening";
 
 /// All the possible server commands
 #[derive(Debug)]
@@ -24,8 +23,6 @@ pub enum Command {
     Ping,
     /// Print info about this bot
     About,
-    /// Announce that the bot is listening
-    Announce,
     /// Make a coin transaction
     Coin(Transaction),
     Gamble(Gamble),
@@ -34,7 +31,7 @@ pub enum Command {
 
 impl Command {
     /// Parses messages from the [`serenity`] Discord API
-    pub async fn parse_message(context: &Context, message: Message) -> Result<Self> {
+    pub async fn parse_message(message: Message) -> Result<Self> {
         let content = message.content.as_str();
         let channel_id = *message.channel_id.as_u64();
 

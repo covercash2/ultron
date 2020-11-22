@@ -132,7 +132,6 @@ impl Handler {
             Command::Help => Ok(Some(Output::Help)),
             Command::Ping => Ok(Some(Output::Say(commands::PING.to_owned()))),
             Command::About => Ok(Some(Output::Say(commands::ABOUT.to_owned()))),
-            Command::Announce => Ok(Some(Output::Say(commands::ANNOUNCE.to_owned()))),
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
@@ -164,7 +163,7 @@ impl Handler {
                         ..
                     } => {
                         match state {
-                            GambleState::Win(_) => {
+                            GambleState::Win => {
                                 let from_user = ultron_id;
                                 let to_user = *player_id;
                                 let amount = *amount;
@@ -186,7 +185,7 @@ impl Handler {
                                     ))),
                                 }
                             }
-                            GambleState::Lose(_) => {
+                            GambleState::Lose => {
                                 let from_user = *player_id;
                                 let to_user = ultron_id;
                                 let amount = *amount;
@@ -344,7 +343,7 @@ impl EventHandler for Handler {
         let channel_id = msg.channel_id.clone();
         let author_id = *msg.author.id.as_u64();
 
-        let command = match Command::parse_message(&ctx, msg).await {
+        let command = match Command::parse_message(msg).await {
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse command: {:?}", err);

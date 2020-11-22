@@ -180,7 +180,7 @@ pub async fn gamble_output(
             player_roll,
             state,
         } => match state {
-            GambleState::Win(amount) => {
+            GambleState::Win => {
                 dice_roll_win(
                     channel,
                     pipe,
@@ -192,7 +192,7 @@ pub async fn gamble_output(
                 )
                 .await
             }
-            GambleState::Lose(amount) => {
+            GambleState::Lose => {
                 dice_roll_lose(
                     channel,
                     pipe,
