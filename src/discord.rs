@@ -220,6 +220,10 @@ impl Handler {
                     }
                 }
             }
+            Command::None => {
+		debug!("no command parsed");
+		Ok(None)
+	    }
         }
     }
 
