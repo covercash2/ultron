@@ -151,6 +151,35 @@ impl Bank {
                     }
                 }
             }
+            Transaction::Untip {
+                channel_id,
+                from_user,
+                to_user,
+            } => {
+                if from_user == to_user {
+                    let account_results = Vec::new();
+                    Receipt {
+                        transaction,
+                        account_results,
+                        status: TransactionStatus::SelfTip, // TODO new error type?
+                    }
+                } else {
+                    let ledger = self.ledgers.get_or_create_mut(&channel_id);
+                    ledger.increment_balance(&to_user, -2);
+                    ledger.increment_balance(&from_user, -1);
+                    let account_results = ledger.get_balances(vec![from_user, to_user]);
+
+                    if let Err(err) = self.ledgers.save().await {
+                        error!("unable to save ledger: {:?}", err);
+                    }
+
+                    Receipt {
+                        transaction,
+                        account_results,
+                        status: TransactionStatus::Complete,
+                    }
+                }
+            }
             Transaction::Daily {
                 channel_id,
                 user_id,

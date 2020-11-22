@@ -62,6 +62,11 @@ pub enum Transaction {
         from_user: UserId,
         to_user: UserId,
     },
+    Untip {
+        channel_id: ChannelId,
+        from_user: UserId,
+        to_user: UserId,
+    },
     /// Give some coins to a user once per day
     Daily {
         channel_id: ChannelId,

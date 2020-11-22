@@ -296,6 +296,18 @@ impl Handler {
                     ))),
                 }
             }
+	    Transaction::Untip { .. } => {
+		match receipt.status {
+                    TransactionStatus::Complete => {
+                        debug!("untip complete");
+                        Ok(None)
+                    }
+                    _ => Err(Error::TransactionFailed(format!(
+                        "unexpected transaction status: {:?}",
+                        receipt
+                    ))),
+		}
+	    }
             Transaction::Daily { .. } => {
                 match receipt.status {
                     TransactionStatus::Complete => {
@@ -474,6 +486,33 @@ impl EventHandler for Handler {
         };
 
         info!("react output: {:?}", output);
+    }
+
+    async fn reaction_remove(&self, context: Context, reaction: Reaction) {
+	let channel_id = *reaction.channel_id.as_u64();
+
+	let command = match Command::parse_reaction(&context, reaction).await {
+	    Ok(Command::Coin(Transaction::Tip { channel_id, to_user, from_user })) => {
+		let transaction = Transaction::Untip { channel_id, to_user, from_user };
+		Command::Coin(transaction)
+	    },
+	    Ok(command) => {
+		error!("unexpectedly parsed reaction remove command: {:?}", command);
+		return;
+	    }
+	    Err(err) => {
+		debug!("unable to parse reaction: {:?}", err);
+		return;
+	    }
+	};
+
+	let _output = match self.process_command(channel_id, &context, command).await {
+	    Ok(receipt) => receipt,
+	    Err(err) => {
+		error!("unable to process command: {:?}", err);
+		return;
+	    }
+	};
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
