@@ -139,7 +139,7 @@ impl Command {
     }
 
     /// Parses an emoji reaction from the [`serenity`] Discord API
-    pub async fn parse_reaction(context: &Context, reaction: Reaction) -> Result<Self> {
+    pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let channel_id = *reaction.channel_id.as_u64();
         let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user = match reaction.user_id {
@@ -147,7 +147,7 @@ impl Command {
             None => return Err(Error::CommandParse("no user in reaction".to_owned())),
         };
 
-        let emoji_string: String = reaction_string(reaction.emoji).ok_or(Error::CommandParse(
+        let emoji_string: String = reaction_string(reaction.emoji.clone()).ok_or(Error::CommandParse(
             "no name found for custom emoji".to_owned(),
         ))?;
 
