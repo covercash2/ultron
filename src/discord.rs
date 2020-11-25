@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 
 use serenity::http::Http;
 use serenity::model::channel::Reaction;
+use serenity::model::id::GuildId;
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
@@ -125,6 +126,7 @@ impl Handler {
     pub async fn process_command(
         &self,
         channel_id: u64,
+	guild_id: Option<GuildId>,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -134,7 +136,7 @@ impl Handler {
             Command::About => Ok(Some(Output::Say(commands::ABOUT.to_owned()))),
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
-                self.process_receipt(context, receipt).await
+                self.process_receipt(context, receipt, guild_id).await
             }
             Command::Gamble(mut gamble) => {
                 // gamble
@@ -229,6 +231,7 @@ impl Handler {
         &self,
         context: &Context,
         mut receipt: Receipt,
+	guild_id: Option<GuildId>
     ) -> Result<Option<Output>> {
         match receipt.transaction {
             Transaction::GetAllBalances(_user_id) => {
@@ -238,7 +241,11 @@ impl Handler {
                 let mut output = String::new();
                 for (id, amount) in receipt.iter() {
                     let user_id: UserId = (*id).into();
-                    let name = user_id.to_user(&context.http).await?.name;
+                    let user = user_id.to_user(&context.http).await?;
+		    let name = match guild_id {
+			Some(guild) => user.nick_in(&context.http, guild).await.unwrap_or(user.name),
+			None => user.name,
+		    };
                     output.push_str(&format!("`{:04}`🪙\t{}\n", amount, name));
                 }
                 Ok(Some(output.into()))
@@ -367,7 +374,7 @@ impl EventHandler for Handler {
         };
 
         let output = match self
-            .process_command(*channel_id.as_u64(), &ctx, command)
+            .process_command(*channel_id.as_u64(), msg.guild_id, &ctx, command)
             .await
         {
             Ok(Some(output)) => output,
@@ -467,7 +474,7 @@ impl EventHandler for Handler {
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let channel_id = *reaction.channel_id.as_u64();
 
-        let command = match Command::parse_reaction(&ctx, reaction).await {
+        let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse reaction: {:?}", err);
@@ -476,7 +483,7 @@ impl EventHandler for Handler {
         };
 
         // no reacts need output right now
-        let output = match self.process_command(channel_id, &ctx, command).await {
+        let output = match self.process_command(channel_id, reaction.guild_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -494,7 +501,7 @@ impl EventHandler for Handler {
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
 	let channel_id = *reaction.channel_id.as_u64();
 
-	let command = match Command::parse_reaction(&context, reaction).await {
+	let command = match Command::parse_reaction(&context, &reaction).await {
 	    Ok(Command::Coin(Transaction::Tip { channel_id, to_user, from_user })) => {
 		let transaction = Transaction::Untip { channel_id, to_user, from_user };
 		Command::Coin(transaction)
@@ -509,7 +516,7 @@ impl EventHandler for Handler {
 	    }
 	};
 
-	let _output = match self.process_command(channel_id, &context, command).await {
+	let _output = match self.process_command(channel_id, reaction.guild_id, &context, command).await {
 	    Ok(receipt) => receipt,
 	    Err(err) => {
 		error!("unable to process command: {:?}", err);
