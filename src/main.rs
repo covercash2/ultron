@@ -1,9 +1,10 @@
 #![feature(async_closure)]
 use coins::TransactionSender;
 use log::error;
-use pretty_env_logger;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+
+mod logger;
 
 mod coins;
 mod commands;
@@ -19,7 +20,7 @@ use tokens::load_token;
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::init();
+    logger::init();
 
     let discord_token = load_token(tokens::DISCORD_TOKEN).expect("unable to load discord token");
 

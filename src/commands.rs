@@ -13,7 +13,6 @@ const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
 
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
-pub const ANNOUNCE: &'static str = "I am always listening";
 
 /// All the possible server commands
 #[derive(Debug)]
@@ -24,96 +23,118 @@ pub enum Command {
     Ping,
     /// Print info about this bot
     About,
-    /// Announce that the bot is listening
-    Announce,
     /// Make a coin transaction
     Coin(Transaction),
     Gamble(Gamble),
+    None,
 }
 
 impl Command {
     /// Parses messages from the [`serenity`] Discord API
-    pub async fn parse_message(context: &Context, message: Message) -> Result<Self> {
+    pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
         let channel_id = *message.channel_id.as_u64();
-        match content {
-            "!help" => Ok(Command::Help),
-            "!ping" => Ok(Command::Ping),
-            "!about" => Ok(Command::About),
-            "!coins" => {
-                let transaction = Transaction::GetAllBalances(channel_id);
-                Ok(Command::Coin(transaction))
+
+        let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
+            args.split(' ').collect()
+        } else {
+            // command doesn't start with the control char
+            return Ok(Command::None);
+        };
+
+        let command_str: &str = match args.get(0) {
+            Some(command_str) => command_str,
+            None => return Ok(Command::None), // content == '!'
+        };
+
+        let user_id = *message.author.id.as_u64();
+
+        match args.len() {
+            1 => match command_str {
+                "help" => Ok(Command::Help),
+                "ping" => Ok(Command::Ping),
+                "about" => Ok(Command::About),
+                "coins" => {
+                    let transaction = Transaction::GetAllBalances(channel_id);
+                    Ok(Command::Coin(transaction))
+                }
+                "daily" => {
+                    info!("request daily");
+                    let timestamp = message.timestamp;
+                    let user_id = *message.author.id.as_u64();
+                    let transaction = Transaction::Daily {
+                        channel_id,
+                        user_id,
+                        timestamp,
+                    };
+
+                    Ok(Command::Coin(transaction))
+                }
+                _ => Err(Error::UnknownCommand(format!(
+                    "unknown command: {}",
+                    command_str
+                ))),
+            },
+            2 => {
+                let arg = args
+                    .get(1)
+                    .ok_or(Error::CommandParse(format!("expected 2 args: {:?}", args)))?;
+                match command_str {
+                    "gamble" => parse_gamble(channel_id, user_id, arg).await,
+                    _ => Err(Error::UnknownCommand(format!(
+                        "unknown 2 arg command: {}",
+                        content
+                    ))),
+                }
             }
-            "!daily" => {
-                info!("request daily");
-                let timestamp = message.timestamp;
-                let user_id = *message.author.id.as_u64();
-                let transaction = Transaction::Daily {
+            3 => {
+                let (_, args) = args.split_at(1);
+
+                if command_str != "give" {
+                    return Err(Error::UnknownCommand(format!(
+                        "unknown 3 arg command: {:?}",
+                        content
+                    )));
+                }
+
+                let to_user = if message.mentions.len() == 1 {
+                    *message.mentions[0].id.as_u64()
+                } else if message.mentions.len() == 0 {
+                    return Err(Error::CommandParse(
+                        "no users mentioned in give command".to_owned(),
+                    ));
+                } else {
+                    return Err(Error::CommandParse(
+                        "for now you can only give one user coins".to_owned(),
+                    ));
+                };
+                let from_user = user_id;
+                let amount = args
+                    .get(1)
+                    .ok_or(Error::CommandParse(
+                        "unable to get amount argument".to_owned(),
+                    ))
+                    .and_then(|arg| {
+                        arg.parse::<i64>().map_err(|err| {
+                            Error::CommandParse(format!(
+                                "command should end with amount: {}\n{:?}",
+                                content, err
+                            ))
+                        })
+                    })?;
+
+                let transaction = Transaction::Transfer {
                     channel_id,
-                    user_id,
-                    timestamp,
+                    from_user,
+                    to_user,
+                    amount,
                 };
 
                 Ok(Command::Coin(transaction))
             }
-            _ => {
-                if let Some(args) = content.strip_prefix("!give") {
-                    // get the last word
-                    let amount: i64 = args
-                        .rsplitn(2, ' ')
-                        // advance iterator
-                        //(see: https://doc.rust-lang.org/std/primitive.str.html#method.rsplit_once)
-                        .next()
-                        .ok_or(Error::CommandParse(format!(
-                            "give command should have arguments: {}",
-                            content
-                        )))
-                        .and_then(|amount_str| {
-                            debug!("parsing amount str: \"{}\"", amount_str);
-                            amount_str.parse::<i64>().map_err(|err| {
-                                Error::CommandParse(format!(
-                                    "command should end with amount: {}\n{:?}",
-                                    content, err
-                                ))
-                            })
-                        })?;
-
-                    if amount < 0 {
-                        return Err(Error::CommandParse(format!(
-                            "bad negative amount entered: {}",
-                            amount
-                        )));
-                    }
-
-                    let from_user = *message.author.id.as_u64();
-
-                    if message.mentions.len() == 1 {
-                        let to_user = *message.mentions[0].id.as_u64();
-                        let transaction = Transaction::Transfer {
-                            channel_id,
-                            from_user,
-                            to_user,
-                            amount,
-                        };
-
-                        Ok(Command::Coin(transaction))
-                    } else if message.mentions.len() == 0 {
-                        Err(Error::CommandParse(
-                            "no users mentioned in give command".to_owned(),
-                        ))
-                    } else {
-                        Err(Error::CommandParse(
-                            "for now you can only give one user coins".to_owned(),
-                        ))
-                    }
-                } else if let Some(args) = content.strip_prefix("!gamble") {
-                    parse_gamble(channel_id, *message.author.id.as_u64(), args).await
-                } else if let Ok(true) = message.mentions_me(context).await {
-                    Ok(Command::Announce)
-                } else {
-                    Err(Error::UnknownCommand(content.to_owned()))
-                }
-            }
+	    _ => {
+		Err(Error::UnknownCommand(format!("command has too many args: {}", content)))
+	    }
         }
     }
 

@@ -24,8 +24,8 @@ pub enum Game {
 #[derive(Debug, Clone, PartialEq)]
 pub enum State {
     Waiting,
-    Win(i64),
-    Lose(i64),
+    Win,
+    Lose,
     Draw,
 }
 
@@ -73,11 +73,11 @@ fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
     let house_roll = rng.gen_range(0, sides);
 
     let state = if player_roll > house_roll {
-        State::Win(amount)
+        State::Win
     } else if player_roll == house_roll {
         State::Draw
     } else {
-        State::Lose(amount)
+        State::Lose
     };
 
     GambleOutput::DiceRoll {

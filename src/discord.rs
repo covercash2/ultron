@@ -132,7 +132,6 @@ impl Handler {
             Command::Help => Ok(Some(Output::Help)),
             Command::Ping => Ok(Some(Output::Say(commands::PING.to_owned()))),
             Command::About => Ok(Some(Output::Say(commands::ABOUT.to_owned()))),
-            Command::Announce => Ok(Some(Output::Say(commands::ANNOUNCE.to_owned()))),
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt).await
@@ -164,7 +163,7 @@ impl Handler {
                         ..
                     } => {
                         match state {
-                            GambleState::Win(_) => {
+                            GambleState::Win => {
                                 let from_user = ultron_id;
                                 let to_user = *player_id;
                                 let amount = *amount;
@@ -186,7 +185,7 @@ impl Handler {
                                     ))),
                                 }
                             }
-                            GambleState::Lose(_) => {
+                            GambleState::Lose => {
                                 let from_user = *player_id;
                                 let to_user = ultron_id;
                                 let amount = *amount;
@@ -220,6 +219,9 @@ impl Handler {
                     }
                 }
             }
+            Command::None => {
+		Ok(None)
+	    }
         }
     }
 
@@ -293,6 +295,18 @@ impl Handler {
                     ))),
                 }
             }
+	    Transaction::Untip { .. } => {
+		match receipt.status {
+                    TransactionStatus::Complete => {
+                        debug!("untip complete");
+                        Ok(None)
+                    }
+                    _ => Err(Error::TransactionFailed(format!(
+                        "unexpected transaction status: {:?}",
+                        receipt
+                    ))),
+		}
+	    }
             Transaction::Daily { .. } => {
                 match receipt.status {
                     TransactionStatus::Complete => {
@@ -340,7 +354,11 @@ impl EventHandler for Handler {
         let channel_id = msg.channel_id.clone();
         let author_id = *msg.author.id.as_u64();
 
-        let command = match Command::parse_message(&ctx, msg).await {
+        let command = match Command::parse_message(&msg).await {
+	    Ok(Command::None) => {
+		debug!("no command parsed: {:?}", msg.content);
+		return;
+	    }
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse command: {:?}", err);
@@ -471,6 +489,33 @@ impl EventHandler for Handler {
         };
 
         info!("react output: {:?}", output);
+    }
+
+    async fn reaction_remove(&self, context: Context, reaction: Reaction) {
+	let channel_id = *reaction.channel_id.as_u64();
+
+	let command = match Command::parse_reaction(&context, reaction).await {
+	    Ok(Command::Coin(Transaction::Tip { channel_id, to_user, from_user })) => {
+		let transaction = Transaction::Untip { channel_id, to_user, from_user };
+		Command::Coin(transaction)
+	    },
+	    Ok(command) => {
+		error!("unexpectedly parsed reaction remove command: {:?}", command);
+		return;
+	    }
+	    Err(err) => {
+		debug!("unable to parse reaction: {:?}", err);
+		return;
+	    }
+	};
+
+	let _output = match self.process_command(channel_id, &context, command).await {
+	    Ok(receipt) => receipt,
+	    Err(err) => {
+		error!("unable to process command: {:?}", err);
+		return;
+	    }
+	};
     }
 
     async fn ready(&self, _: Context, ready: Ready) {

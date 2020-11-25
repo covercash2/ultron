@@ -12,6 +12,7 @@ const COMMAND_TITLE: &str = "Inputs";
 const COMMAND_DESCRIPTION: &str = "!ping to say hello
 !about to show info about ULTRON
 !coins to show the worth of this channel's members
+!gamble <#> to gamble with your coins
 Mention me by name and I will make myself known";
 
 const COINS_TITLE: &str = "You Want Coins";
@@ -179,7 +180,7 @@ pub async fn gamble_output(
             player_roll,
             state,
         } => match state {
-            GambleState::Win(amount) => {
+            GambleState::Win => {
                 dice_roll_win(
                     channel,
                     pipe,
@@ -191,7 +192,7 @@ pub async fn gamble_output(
                 )
                 .await
             }
-            GambleState::Lose(amount) => {
+            GambleState::Lose => {
                 dice_roll_lose(
                     channel,
                     pipe,
