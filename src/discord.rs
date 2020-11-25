@@ -220,7 +220,6 @@ impl Handler {
                 }
             }
             Command::None => {
-		debug!("no command parsed");
 		Ok(None)
 	    }
         }
@@ -355,7 +354,11 @@ impl EventHandler for Handler {
         let channel_id = msg.channel_id.clone();
         let author_id = *msg.author.id.as_u64();
 
-        let command = match Command::parse_message(msg).await {
+        let command = match Command::parse_message(&msg).await {
+	    Ok(Command::None) => {
+		debug!("no command parsed: {:?}", msg.content);
+		return;
+	    }
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse command: {:?}", err);

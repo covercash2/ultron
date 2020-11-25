@@ -31,7 +31,7 @@ pub enum Command {
 
 impl Command {
     /// Parses messages from the [`serenity`] Discord API
-    pub async fn parse_message(message: Message) -> Result<Self> {
+    pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
         let channel_id = *message.channel_id.as_u64();
 
