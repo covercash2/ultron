@@ -7,6 +7,7 @@ pub enum Error {
     InvalidState(State),
 }
 
+/// Parameters for a betting game.
 #[derive(Debug)]
 pub struct Gamble {
     pub channel_id: u64,
@@ -16,11 +17,14 @@ pub struct Gamble {
     state: State,
 }
 
+/// Different games that are supported
 #[derive(Debug)]
 pub enum Game {
+    /// Rolls two dice with a specified number of sides
     DiceRoll(u32),
 }
 
+/// The state of the game
 #[derive(Debug, Clone, PartialEq)]
 pub enum State {
     Waiting,
@@ -41,6 +45,8 @@ pub enum GambleOutput {
 }
 
 impl Gamble {
+    /// Create a new Gamble object.
+    /// The initial state is set to `State::Waiting`
     pub fn new(channel_id: u64, player_id: u64, amount: i64, game: Game) -> Self {
         let state = State::Waiting;
 
@@ -53,6 +59,7 @@ impl Gamble {
         }
     }
 
+    /// Play the game a return the results
     pub fn play(&mut self) -> Result<GambleOutput> {
         match self.game {
             Game::DiceRoll(sides) => match self.state {
@@ -87,10 +94,4 @@ fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
         player_roll,
         state,
     }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_dice_roll() {}
 }
