@@ -9,8 +9,6 @@ This project makes use of rust and its package manager cargo. https://www.rust-l
 ```sh
 # Find your discord token using https://discordpy.readthedocs.io/en/latest/discord.html
 export DISCORD_TOKEN=<discord_token_here>
-# (Optional) Enable debug logs.
-# export RUST_LOG=ultron=debug
 
 cargo run
 ```
