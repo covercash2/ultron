@@ -234,7 +234,14 @@ impl Handler {
 	guild_id: Option<GuildId>
     ) -> Result<Option<Output>> {
         match receipt.transaction {
-            Transaction::GetAllBalances(_user_id) => {
+            Transaction::GetAllBalances(_channel_id) => {
+
+		if receipt.account_results.is_empty() {
+		    return Ok(Some(Output::Say(
+			"Coin transactions have yet to occur on this channel".to_owned()
+		    )));
+		}
+
                 receipt
                     .account_results
                     .sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
