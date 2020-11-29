@@ -7,6 +7,7 @@ use serenity::model::channel::ReactionType;
 use crate::chat::Message;
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
+use crate::gambling::Prize;
 use crate::gambling::{Gamble, Game};
 
 const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
@@ -80,7 +81,7 @@ impl Command {
                     .get(1)
                     .ok_or(Error::CommandParse(format!("expected 2 args: {:?}", args)))?;
                 match command_str {
-                    "gamble" => parse_gamble(server_id, user_id, arg).await,
+                    "gamble" => parse_gamble(user_id, arg).await,
                     _ => Err(Error::UnknownCommand(format!(
                         "unknown 2 arg command: {}",
                         content
@@ -166,16 +167,18 @@ impl Command {
     }
 }
 
-async fn parse_gamble<S: AsRef<str>>(channel_id: u64, user_id: u64, args: S) -> Result<Command> {
+async fn parse_gamble<S: AsRef<str>>(user_id: u64, args: S) -> Result<Command> {
     let args = args.as_ref().trim();
     if args == "all" {
         debug!("gamble all command parsed");
-        todo!()
+	let game = Game::DiceRoll(10);
+	let gamble = Gamble::new(user_id, Prize::AllCoins, game);
+	Ok(Command::Gamble(gamble))
     } else if let Ok(amount) = args.parse::<i64>() {
         if amount > 0 {
             debug!("gamble amount: {}", amount);
             let game = Game::DiceRoll(10);
-            let gamble = Gamble::new(channel_id, user_id, amount, game);
+            let gamble = Gamble::new(user_id, Prize::Coins(amount), game);
             Ok(Command::Gamble(gamble))
         } else {
             debug!("some cheeky fuck entered a negative number: {}", amount);

@@ -10,7 +10,6 @@ pub enum Error {
 /// Parameters for a betting game.
 #[derive(Debug)]
 pub struct Gamble {
-    pub channel_id: u64,
     pub player_id: u64,
     pub prize: Prize,
     pub game: Game,
@@ -59,12 +58,10 @@ pub enum GambleOutput {
 impl Gamble {
     /// Create a new Gamble object.
     /// The initial state is set to `State::Waiting`
-    pub fn new(channel_id: u64, player_id: u64, amount: i64, game: Game) -> Self {
+    pub fn new(player_id: u64, prize: Prize, game: Game) -> Self {
         let state = State::Waiting;
-	let prize = amount.into();
 
         Gamble {
-            channel_id,
             player_id,
 	    prize,
             game,
