@@ -392,8 +392,7 @@ impl EventHandler for Handler {
         }
 
         // channel for logging
-        let channel_id = msg.channel_id.clone();
-        let author_id = *msg.author.id.as_u64();
+	let discord_channel = msg.channel_id.clone();
 
         let command = match Command::parse_message(&msg).await {
             Ok(Command::None) => {
@@ -425,13 +424,13 @@ impl EventHandler for Handler {
         match output {
             Output::Say(string) => {
                 debug!("sending string to discord: {}", string);
-                if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
+                if let Err(err) = messages::say(discord_channel, &ctx.http, string).await {
                     error!("error sending message: {:?}", err);
                 }
             }
             Output::Help => {
                 debug!("sending help message to discord");
-                if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
+                if let Err(err) = messages::help_message(discord_channel, &ctx.http).await {
                     error!("error sending help message: {:?}", err);
                 }
             }
@@ -441,14 +440,14 @@ impl EventHandler for Handler {
                     next_epoch
                 );
                 if let Err(err) =
-                    messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await
+                    messages::bad_daily_response(discord_channel, &ctx.http, next_epoch).await
                 {
                     error!("error sending bad daily response message: {:?}", err);
                 }
             }
             Output::DailyResponse => {
                 debug!("responding to daily request");
-                if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
+                if let Err(err) = messages::daily_response(discord_channel, &ctx.http).await {
                     error!("error sending daily confirmation message: {:?}", err);
                 }
             }
@@ -462,7 +461,7 @@ impl EventHandler for Handler {
                 debug!("responding to successful coin transfer");
 
                 if let Err(err) = messages::transfer_success(
-                    channel_id,
+                    discord_channel,
                     &ctx.http,
                     from_user,
                     from_balance,
@@ -479,7 +478,7 @@ impl EventHandler for Handler {
                 debug!("responding to gamble");
 
                 let player_balance =
-                    match self.get_user_balance(*channel_id.as_u64(), author_id).await {
+                    match self.get_user_balance(message.channel.id, message.user.id).await {
                         Ok(balance) => balance,
                         Err(err) => {
                             error!(
@@ -491,7 +490,7 @@ impl EventHandler for Handler {
                     };
 
                 if let Err(err) =
-                    messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output)
+                    messages::gamble_output(discord_channel, &ctx.http, player_balance, gamble_output)
                         .await
                 {
                     error!("error sending gamble output: {:?}", err);
@@ -502,7 +501,7 @@ impl EventHandler for Handler {
                 player_balance,
             } => {
                 if let Err(err) =
-                    messages::bet_too_high(channel_id, &ctx.http, player_balance, amount).await
+                    messages::bet_too_high(discord_channel, &ctx.http, player_balance, amount).await
                 {
                     error!("error sending 'bet too high' message: {:?}", err);
                 }
