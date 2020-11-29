@@ -5,6 +5,7 @@ use serenity::model::id::ChannelId;
 use serenity::utils::Colour;
 
 use crate::error::{Error, Result};
+use crate::gambling::Prize;
 use crate::gambling::{GambleOutput, State as GambleState};
 
 const HELP_TITLE: &str = "What ULTRON can do for you";
@@ -154,7 +155,10 @@ pub async fn bet_too_high(
                 embed.title("Not Enough");
                 embed.color(Colour::ORANGE);
 
-		embed.description(format!("You haven't enough coins to bet {}🪙. You only have {}🪙", amount, player_balance));
+                embed.description(format!(
+                    "You haven't enough coins to bet {}🪙. You only have {}🪙",
+                    amount, player_balance
+                ));
 
                 embed
             });
@@ -163,7 +167,6 @@ pub async fn bet_too_high(
         })
         .await
         .map_err(Into::into)
-    
 }
 
 pub async fn gamble_output(
@@ -175,7 +178,7 @@ pub async fn gamble_output(
     match gamble_output {
         GambleOutput::DiceRoll {
             player_id,
-            amount,
+            prize,
             house_roll,
             player_roll,
             state,
@@ -187,7 +190,7 @@ pub async fn gamble_output(
                     player_id,
                     house_roll,
                     player_roll,
-                    amount,
+                    prize,
                     player_balance,
                 )
                 .await
@@ -199,7 +202,7 @@ pub async fn gamble_output(
                     player_id,
                     house_roll,
                     player_roll,
-                    amount,
+                    prize,
                     player_balance,
                 )
                 .await
@@ -220,7 +223,7 @@ async fn dice_roll_win(
     player_id: u64,
     house_roll: u32,
     player_roll: u32,
-    amount: i64,
+    prize: Prize,
     player_balance: i64,
 ) -> Result<Message> {
     let player_name = pipe.get_user(player_id).await?.name;
@@ -231,10 +234,20 @@ async fn dice_roll_win(
                 embed.color(Colour::GOLD);
                 embed.title("Winner!");
 
-                embed.description(format!(
-                    "You have bested chance and earned {}🪙. You now have {}🪙",
-                    amount, player_balance
-                ));
+                match prize {
+                    Prize::Coins(amount) => {
+                        embed.description(format!(
+                            "You have bested chance and earned {}🪙. You now have {}🪙",
+                            amount, player_balance
+                        ));
+                    }
+                    Prize::AllCoins => {
+                        embed.description(format!(
+                            "You risked everything and doubled your coins. You now have {}🪙",
+                            player_balance
+                        ));
+                    }
+                }
 
                 let player_roll_string = format!("{} rolled a {}", player_name, player_roll);
                 let house_roll_string = format!("The house rolled a {}", house_roll);
@@ -263,7 +276,7 @@ async fn dice_roll_lose(
     player_id: u64,
     house_roll: u32,
     player_roll: u32,
-    amount: i64,
+    prize: Prize,
     player_balance: i64,
 ) -> Result<Message> {
     let player_name = pipe.get_user(player_id).await?.name;
@@ -274,10 +287,17 @@ async fn dice_roll_lose(
                 embed.color(Colour::DARK_RED);
                 embed.title("You Lose");
 
-                embed.description(format!(
-                    "You lost {}🪙, and now your account is valued at {}🪙",
-                    amount, player_balance
-                ));
+                match prize {
+                    Prize::Coins(amount) => {
+                        embed.description(format!(
+                            "You lost {}🪙, and now your account is valued at {}🪙",
+                            amount, player_balance
+                        ));
+                    }
+                    Prize::AllCoins => {
+                        embed.description("You risked it all and now you have nothing.");
+                    }
+                }
 
                 let player_roll_string = format!("{} rolled a {}", player_name, player_roll);
                 let house_roll_string = format!("The house rolled a {}", house_roll);
@@ -323,7 +343,11 @@ async fn dice_roll_draw(
                 embed.field(player_name, player_roll_string, true);
                 embed.field("ULTRON", house_roll_string, true);
 
-                embed.field("This is but a momentary setback", "You may try again.", false);
+                embed.field(
+                    "This is but a momentary setback",
+                    "You may try again.",
+                    false,
+                );
 
                 embed
             });

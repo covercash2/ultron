@@ -19,6 +19,7 @@ use tokio::sync::Mutex;
 use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
+use crate::gambling::Prize;
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
 
 mod messages;
@@ -141,7 +142,7 @@ impl Handler {
                 let receipt = self.send_transaction(transaction).await?;
                 self.process_receipt(context, receipt, guild_id).await
             }
-            Command::Gamble(mut gamble) => {
+            Command::Gamble(gamble) => {
                 // gamble
                 // .play()
                 // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
@@ -151,7 +152,10 @@ impl Handler {
                 let user_id = gamble.player_id;
 
                 let player_balance = self.get_user_balance(channel_id, user_id).await?;
-                let amount = gamble.amount;
+		let amount = match gamble.prize {
+		    Prize::Coins(n) => n,
+		    Prize::AllCoins => player_balance,
+		};
 
                 if player_balance < amount {
                     // error
@@ -166,15 +170,18 @@ impl Handler {
                 match &gamble_output {
                     GambleOutput::DiceRoll {
                         player_id,
-                        amount,
+                        prize,
                         state,
                         ..
                     } => {
+			let amount = match prize {
+			    Prize::Coins(n) => *n,
+			    Prize::AllCoins => player_balance,
+			};
                         match state {
                             GambleState::Win => {
                                 let from_user = ultron_id;
                                 let to_user = *player_id;
-                                let amount = *amount;
                                 let transaction = Transaction::Transfer {
                                     channel_id,
                                     from_user,
@@ -196,7 +203,6 @@ impl Handler {
                             GambleState::Lose => {
                                 let from_user = *player_id;
                                 let to_user = ultron_id;
-                                let amount = *amount;
                                 let transaction = Transaction::Transfer {
                                     channel_id,
                                     from_user,
