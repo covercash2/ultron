@@ -1,10 +1,10 @@
 use log::*;
 
 use serenity::client::Context;
-use serenity::model::channel::Message;
 use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
+use crate::chat::Message;
 use crate::coins::Transaction;
 use crate::error::{Error, Result};
 use crate::gambling::{Gamble, Game};
@@ -33,7 +33,7 @@ impl Command {
     /// Parses messages from the [`serenity`] Discord API
     pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
-        let channel_id = *message.channel_id.as_u64();
+        let channel_id = message.channel.id;
 
         let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
             args.split(' ').collect()
@@ -47,7 +47,7 @@ impl Command {
             None => return Ok(Command::None), // content == '!'
         };
 
-        let user_id = *message.author.id.as_u64();
+        let user_id = message.user.id;
 
         match args.len() {
             1 => match command_str {
@@ -61,7 +61,7 @@ impl Command {
                 "daily" => {
                     info!("request daily");
                     let timestamp = message.timestamp;
-                    let user_id = *message.author.id.as_u64();
+                    let user_id = message.user.id;
                     let transaction = Transaction::Daily {
                         channel_id,
                         user_id,
@@ -98,7 +98,7 @@ impl Command {
                 }
 
                 let to_user = if message.mentions.len() == 1 {
-                    *message.mentions[0].id.as_u64()
+                    message.mentions[0].id
                 } else if message.mentions.len() == 0 {
                     return Err(Error::CommandParse(
                         "no users mentioned in give command".to_owned(),

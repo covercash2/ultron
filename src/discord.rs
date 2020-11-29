@@ -65,7 +65,7 @@ impl From<String> for Output {
 
 impl From<DiscordMessage> for ChatMessage {
     fn from(discord_message: DiscordMessage) -> Self {
-	let content: String = discord_message.content;
+        let content: String = discord_message.content;
         let user: ChatUser = (*discord_message.author.id.as_u64()).into();
         let channel: ChatChannel = (*discord_message.channel_id.as_u64()).into();
         let server: ChatServer = discord_message
@@ -73,14 +73,21 @@ impl From<DiscordMessage> for ChatMessage {
             .map(|id| *id.as_u64())
             .unwrap_or(0)
             .into();
-	let timestamp = discord_message.timestamp;
+        let timestamp = discord_message.timestamp;
+        let mentions = discord_message
+            .mentions
+            .iter()
+            .map(|user| *user.id.as_u64())
+            .map(ChatUser::from)
+            .collect();
 
         ChatMessage {
-	    content,
+            content,
             user,
             channel,
             server,
-	    timestamp
+            timestamp,
+            mentions,
         }
     }
 }
@@ -374,10 +381,10 @@ impl Handler {
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: DiscordMessage) {
-	let msg_copy = msg.clone();
-	let message: ChatMessage = msg_copy.into();
+        let msg_copy = msg.clone();
+        let message: ChatMessage = msg_copy.into();
 
-	debug!("chat message: {:?}", message);
+        debug!("chat message: {:?}", message);
 
         match self.ultron_id().await {
             Ok(user_id) => {
@@ -392,9 +399,9 @@ impl EventHandler for Handler {
         }
 
         // channel for logging
-	let discord_channel = msg.channel_id.clone();
+        let discord_channel = msg.channel_id.clone();
 
-        let command = match Command::parse_message(&msg).await {
+        let command = match Command::parse_message(&message).await {
             Ok(Command::None) => {
                 debug!("no command parsed: {:?}", msg.content);
                 return;
@@ -477,21 +484,27 @@ impl EventHandler for Handler {
             Output::Gamble(gamble_output) => {
                 debug!("responding to gamble");
 
-                let player_balance =
-                    match self.get_user_balance(message.channel.id, message.user.id).await {
-                        Ok(balance) => balance,
-                        Err(err) => {
-                            error!(
-                                "error retrieving user balance after gamble finished: {:?}",
-                                err
-                            );
-                            return;
-                        }
-                    };
+                let player_balance = match self
+                    .get_user_balance(message.channel.id, message.user.id)
+                    .await
+                {
+                    Ok(balance) => balance,
+                    Err(err) => {
+                        error!(
+                            "error retrieving user balance after gamble finished: {:?}",
+                            err
+                        );
+                        return;
+                    }
+                };
 
-                if let Err(err) =
-                    messages::gamble_output(discord_channel, &ctx.http, player_balance, gamble_output)
-                        .await
+                if let Err(err) = messages::gamble_output(
+                    discord_channel,
+                    &ctx.http,
+                    player_balance,
+                    gamble_output,
+                )
+                .await
                 {
                     error!("error sending gamble output: {:?}", err);
                 }

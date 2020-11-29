@@ -23,6 +23,7 @@ pub struct Message {
     pub channel: Channel,
     pub server: Server,
     pub timestamp: DateTime<Utc>,
+    pub mentions: Vec<User>,
 }
 
 impl From<u64> for User {
