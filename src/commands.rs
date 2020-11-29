@@ -33,7 +33,7 @@ impl Command {
     /// Parses messages from the [`serenity`] Discord API
     pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
-        let channel_id = message.channel.id;
+	let server_id = message.server.id;
 
         let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
             args.split(' ').collect()
@@ -55,7 +55,7 @@ impl Command {
                 "ping" => Ok(Command::Ping),
                 "about" => Ok(Command::About),
                 "coins" => {
-                    let transaction = Transaction::GetAllBalances(channel_id);
+                    let transaction = Transaction::GetAllBalances(server_id);
                     Ok(Command::Coin(transaction))
                 }
                 "daily" => {
@@ -63,7 +63,7 @@ impl Command {
                     let timestamp = message.timestamp;
                     let user_id = message.user.id;
                     let transaction = Transaction::Daily {
-                        channel_id,
+                        server_id,
                         user_id,
                         timestamp,
                     };
@@ -80,7 +80,7 @@ impl Command {
                     .get(1)
                     .ok_or(Error::CommandParse(format!("expected 2 args: {:?}", args)))?;
                 match command_str {
-                    "gamble" => parse_gamble(channel_id, user_id, arg).await,
+                    "gamble" => parse_gamble(server_id, user_id, arg).await,
                     _ => Err(Error::UnknownCommand(format!(
                         "unknown 2 arg command: {}",
                         content
@@ -124,7 +124,7 @@ impl Command {
                     })?;
 
                 let transaction = Transaction::Transfer {
-                    channel_id,
+                    server_id,
                     from_user,
                     to_user,
                     amount,
@@ -140,7 +140,7 @@ impl Command {
 
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
-        let channel_id = *reaction.channel_id.as_u64();
+	let server_id = *reaction.guild_id.expect("no guild id").as_u64();
         let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -153,7 +153,7 @@ impl Command {
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
             let transaction = Transaction::Tip {
-                channel_id,
+                server_id,
                 from_user,
                 to_user,
             };
