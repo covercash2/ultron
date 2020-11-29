@@ -4,18 +4,20 @@ use log::*;
 
 use chrono::{DateTime, Utc};
 
-use serenity::http::Http;
 use serenity::model::channel::Reaction;
 use serenity::model::id::GuildId;
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
-    model::{channel::Message, gateway::Ready},
+    model::{channel::Message as DiscordMessage, gateway::Ready},
     prelude::*,
 };
 
 use tokio::sync::Mutex;
 
+use crate::chat::{
+    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+};
 use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
@@ -31,12 +33,6 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
         .expect("unable to create client");
 
     client.start().await.map_err(Error::from)
-}
-
-#[derive(Debug)]
-pub struct DiscordMessage<'a> {
-    pub context: &'a Http,
-    pub message: Message,
 }
 
 #[derive(Debug)]
@@ -64,6 +60,28 @@ pub enum Output {
 impl From<String> for Output {
     fn from(s: String) -> Output {
         Output::Say(s)
+    }
+}
+
+impl From<DiscordMessage> for ChatMessage {
+    fn from(discord_message: DiscordMessage) -> Self {
+	let content: String = discord_message.content;
+        let user: ChatUser = (*discord_message.author.id.as_u64()).into();
+        let channel: ChatChannel = (*discord_message.channel_id.as_u64()).into();
+        let server: ChatServer = discord_message
+            .guild_id
+            .map(|id| *id.as_u64())
+            .unwrap_or(0)
+            .into();
+	let timestamp = discord_message.timestamp;
+
+        ChatMessage {
+	    content,
+            user,
+            channel,
+            server,
+	    timestamp
+        }
     }
 }
 
@@ -355,7 +373,12 @@ impl Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
+    async fn message(&self, ctx: Context, msg: DiscordMessage) {
+	let msg_copy = msg.clone();
+	let chat_message: ChatMessage = msg_copy.into();
+
+	debug!("chat message: {:?}", chat_message);
+
         match self.ultron_id().await {
             Ok(user_id) => {
                 if &msg.author.id == &user_id {

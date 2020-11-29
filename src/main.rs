@@ -6,6 +6,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 mod logger;
 
+mod chat;
 mod coins;
 mod commands;
 mod error;
