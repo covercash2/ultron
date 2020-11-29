@@ -4,11 +4,17 @@ use log::*;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug)]
-pub struct User(pub u64);
+pub struct User {
+    pub id: u64,
+}
 #[derive(Debug)]
-pub struct Channel(pub u64);
+pub struct Channel {
+    pub id: u64,
+}
 #[derive(Debug)]
-pub struct Server(pub u64);
+pub struct Server {
+    pub id: u64,
+}
 
 #[derive(Debug)]
 pub struct Message {
@@ -19,23 +25,20 @@ pub struct Message {
     pub timestamp: DateTime<Utc>,
 }
 
-impl From<u64> for User
-{
+impl From<u64> for User {
     fn from(id: u64) -> Self {
-	User(id)
+        User{ id }
     }
 }
 
-impl From<u64> for Channel
-{
+impl From<u64> for Channel {
     fn from(id: u64) -> Self {
-	Channel(id)
+        Channel{ id }
     }
 }
 
-impl From<u64> for Server
-{
+impl From<u64> for Server {
     fn from(id: u64) -> Self {
-	Server(id)
+        Server{ id }
     }
 }

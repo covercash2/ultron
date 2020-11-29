@@ -375,13 +375,13 @@ impl Handler {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: DiscordMessage) {
 	let msg_copy = msg.clone();
-	let chat_message: ChatMessage = msg_copy.into();
+	let message: ChatMessage = msg_copy.into();
 
-	debug!("chat message: {:?}", chat_message);
+	debug!("chat message: {:?}", message);
 
         match self.ultron_id().await {
             Ok(user_id) => {
-                if &msg.author.id == &user_id {
+                if &message.user.id == &user_id {
                     debug!("ignoring message sent by ultron");
                     return;
                 }
@@ -408,7 +408,7 @@ impl EventHandler for Handler {
         };
 
         let output = match self
-            .process_command(*channel_id.as_u64(), msg.guild_id, &ctx, command)
+            .process_command(message.channel.id, msg.guild_id, &ctx, command)
             .await
         {
             Ok(Some(output)) => output,
