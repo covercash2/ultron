@@ -269,7 +269,7 @@ impl Handler {
                     .account_results
                     .sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
                 let mut output = String::new();
-                for (id, amount) in receipt.iter() {
+                for (id, amount) in receipt.iter().take(10) {
                     let user_id: UserId = (*id).into();
                     let user = user_id.to_user(&context.http).await?;
                     let name = user
