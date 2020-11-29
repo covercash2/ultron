@@ -1,3 +1,4 @@
 /target
 accounts.json
 daily_log.json
+*.bak
