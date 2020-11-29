@@ -11,8 +11,6 @@ use crate::error::Result;
 
 const DATA_FILE: &str = "accounts.json";
 
-type ChannelId = u64;
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Accounts {
     ledgers: HashMap<u64, Ledger>,
@@ -43,31 +41,31 @@ impl Accounts {
         tokio::fs::write(DATA_FILE, json).await.map_err(Into::into)
     }
 
-    pub fn get_or_create(&mut self, channel_id: &ChannelId) -> &Ledger {
-        if self.ledgers.contains_key(channel_id) {
+    pub fn get_or_create(&mut self, ledger_id: &u64) -> &Ledger {
+        if self.ledgers.contains_key(ledger_id) {
             return self
                 .ledgers
-                .get(channel_id)
+                .get(ledger_id)
                 .expect("weird error retrieving ledger");
         }
-        info!("creating accounts for channel: {:?}", channel_id);
-        self.ledgers.insert(*channel_id, Ledger::default());
+        info!("creating accounts for channel: {:?}", ledger_id);
+        self.ledgers.insert(*ledger_id, Ledger::default());
         self.ledgers
-            .get(channel_id)
+            .get(ledger_id)
             .expect("unable to get the ledger that was just created")
     }
 
-    pub fn get_or_create_mut(&mut self, channel_id: &ChannelId) -> &mut Ledger {
-        if self.ledgers.contains_key(channel_id) {
+    pub fn get_or_create_mut(&mut self, ledger_id: &u64) -> &mut Ledger {
+        if self.ledgers.contains_key(ledger_id) {
             return self
                 .ledgers
-                .get_mut(channel_id)
+                .get_mut(ledger_id)
                 .expect("weird error retrieving ledger");
         }
-        info!("creating accounts for channel: {:?}", channel_id);
-        self.ledgers.insert(*channel_id, Ledger::default());
+        info!("creating accounts for channel: {:?}", ledger_id);
+        self.ledgers.insert(*ledger_id, Ledger::default());
         self.ledgers
-            .get_mut(channel_id)
+            .get_mut(ledger_id)
             .expect("unable to get the ledger that was just created")
     }
 }

@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
 
-use super::{ChannelId, UserId, Receipt};
+use super::{ServerId, UserId, Receipt};
 
 pub struct TransactionSender {
     send_channel: Sender<Transaction>,
@@ -46,30 +46,30 @@ impl TransactionSender {
 pub enum Transaction {
     /// Transfer coins from one user to another
     Transfer {
-        channel_id: ChannelId,
+        server_id: ServerId,
         from_user: UserId,
         to_user: UserId,
         amount: i64,
     },
     /// Dump the account data
-    GetAllBalances(ChannelId),
+    GetAllBalances(ServerId),
     GetUserBalance {
-        channel_id: ChannelId,
+        server_id: ServerId,
         user_id: UserId,
     },
     Tip {
-        channel_id: ChannelId,
+        server_id: ServerId,
         from_user: UserId,
         to_user: UserId,
     },
     Untip {
-        channel_id: ChannelId,
+        server_id: ServerId,
         from_user: UserId,
         to_user: UserId,
     },
     /// Give some coins to a user once per day
     Daily {
-        channel_id: ChannelId,
+        server_id: ServerId,
         user_id: UserId,
         timestamp: DateTime<Utc>,
     },
