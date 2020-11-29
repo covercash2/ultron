@@ -4,18 +4,19 @@ use log::*;
 
 use chrono::{DateTime, Utc};
 
-use serenity::http::Http;
 use serenity::model::channel::Reaction;
-use serenity::model::id::GuildId;
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
-    model::{channel::Message, gateway::Ready},
+    model::{channel::Message as DiscordMessage, gateway::Ready},
     prelude::*,
 };
 
 use tokio::sync::Mutex;
 
+use crate::chat::{
+    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+};
 use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
@@ -31,12 +32,6 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
         .expect("unable to create client");
 
     client.start().await.map_err(Error::from)
-}
-
-#[derive(Debug)]
-pub struct DiscordMessage<'a> {
-    pub context: &'a Http,
-    pub message: Message,
 }
 
 #[derive(Debug)]
@@ -64,6 +59,35 @@ pub enum Output {
 impl From<String> for Output {
     fn from(s: String) -> Output {
         Output::Say(s)
+    }
+}
+
+impl From<DiscordMessage> for ChatMessage {
+    fn from(discord_message: DiscordMessage) -> Self {
+        let content: String = discord_message.content;
+        let user: ChatUser = (*discord_message.author.id.as_u64()).into();
+        let channel: ChatChannel = (*discord_message.channel_id.as_u64()).into();
+        let server: ChatServer = discord_message
+            .guild_id
+            .map(|id| *id.as_u64())
+            .unwrap_or(0)
+            .into();
+        let timestamp = discord_message.timestamp;
+        let mentions = discord_message
+            .mentions
+            .iter()
+            .map(|user| *user.id.as_u64())
+            .map(ChatUser::from)
+            .collect();
+
+        ChatMessage {
+            content,
+            user,
+            channel,
+            server,
+            timestamp,
+            mentions,
+        }
     }
 }
 
@@ -96,11 +120,8 @@ impl Handler {
         }
     }
 
-    async fn get_user_balance(&self, channel_id: u64, user_id: u64) -> Result<i64> {
-        let transaction = Transaction::GetUserBalance {
-            channel_id,
-            user_id,
-        };
+    async fn get_user_balance(&self, server_id: u64, user_id: u64) -> Result<i64> {
+        let transaction = Transaction::GetUserBalance { server_id, user_id };
 
         let receipt = self.send_transaction(transaction).await?;
 
@@ -128,8 +149,7 @@ impl Handler {
     /// Process the command, performing any necessary IO operations
     pub async fn process_command(
         &self,
-        channel_id: u64,
-        guild_id: Option<GuildId>,
+        server_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -139,7 +159,7 @@ impl Handler {
             Command::About => Ok(Some(Output::Say(commands::ABOUT.to_owned()))),
             Command::Coin(transaction) => {
                 let receipt = self.send_transaction(transaction).await?;
-                self.process_receipt(context, receipt, guild_id).await
+                self.process_receipt(context, receipt, server_id).await
             }
             Command::Gamble(mut gamble) => {
                 // gamble
@@ -150,7 +170,7 @@ impl Handler {
                 let ultron_id = self.ultron_id().await?;
                 let user_id = gamble.player_id;
 
-                let player_balance = self.get_user_balance(channel_id, user_id).await?;
+                let player_balance = self.get_user_balance(server_id, user_id).await?;
                 let amount = gamble.amount;
 
                 if player_balance < amount {
@@ -176,7 +196,7 @@ impl Handler {
                                 let to_user = *player_id;
                                 let amount = *amount;
                                 let transaction = Transaction::Transfer {
-                                    channel_id,
+                                    server_id,
                                     from_user,
                                     to_user,
                                     amount,
@@ -198,7 +218,7 @@ impl Handler {
                                 let to_user = ultron_id;
                                 let amount = *amount;
                                 let transaction = Transaction::Transfer {
-                                    channel_id,
+                                    server_id,
                                     from_user,
                                     to_user,
                                     amount,
@@ -235,10 +255,10 @@ impl Handler {
         &self,
         context: &Context,
         mut receipt: Receipt,
-        guild_id: Option<GuildId>,
+        server_id: u64,
     ) -> Result<Option<Output>> {
         match receipt.transaction {
-            Transaction::GetAllBalances(_channel_id) => {
+            Transaction::GetAllBalances(_server_id) => {
                 if receipt.account_results.is_empty() {
                     return Ok(Some(Output::Say(
                         "Coin transactions have yet to occur on this channel".to_owned(),
@@ -249,16 +269,13 @@ impl Handler {
                     .account_results
                     .sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
                 let mut output = String::new();
-                for (id, amount) in receipt.iter() {
+                for (id, amount) in receipt.iter().take(10) {
                     let user_id: UserId = (*id).into();
                     let user = user_id.to_user(&context.http).await?;
-                    let name = match guild_id {
-                        Some(guild) => user
-                            .nick_in(&context.http, guild)
-                            .await
-                            .unwrap_or(user.name),
-                        None => user.name,
-                    };
+                    let name = user
+                        .nick_in(&context.http, server_id)
+                        .await
+                        .unwrap_or(user.name);
                     output.push_str(&format!("`{:04}`🪙\t{}\n", amount, name));
                 }
                 Ok(Some(output.into()))
@@ -355,10 +372,15 @@ impl Handler {
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn message(&self, ctx: Context, msg: Message) {
+    async fn message(&self, ctx: Context, msg: DiscordMessage) {
+        let discord_channel = msg.channel_id.clone();
+        let message: ChatMessage = msg.into();
+
+        debug!("chat message: {:?}", message);
+
         match self.ultron_id().await {
             Ok(user_id) => {
-                if &msg.author.id == &user_id {
+                if &message.user.id == &user_id {
                     debug!("ignoring message sent by ultron");
                     return;
                 }
@@ -368,13 +390,9 @@ impl EventHandler for Handler {
             }
         }
 
-        // channel for logging
-        let channel_id = msg.channel_id.clone();
-        let author_id = *msg.author.id.as_u64();
-
-        let command = match Command::parse_message(&msg).await {
+        let command = match Command::parse_message(&message).await {
             Ok(Command::None) => {
-                debug!("no command parsed: {:?}", msg.content);
+                debug!("no command parsed: {:?}", message.content);
                 return;
             }
             Ok(command) => command,
@@ -384,10 +402,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self
-            .process_command(*channel_id.as_u64(), msg.guild_id, &ctx, command)
-            .await
-        {
+        let output = match self.process_command(message.server.id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -402,13 +417,13 @@ impl EventHandler for Handler {
         match output {
             Output::Say(string) => {
                 debug!("sending string to discord: {}", string);
-                if let Err(err) = messages::say(channel_id, &ctx.http, string).await {
+                if let Err(err) = messages::say(discord_channel, &ctx.http, string).await {
                     error!("error sending message: {:?}", err);
                 }
             }
             Output::Help => {
                 debug!("sending help message to discord");
-                if let Err(err) = messages::help_message(channel_id, &ctx.http).await {
+                if let Err(err) = messages::help_message(discord_channel, &ctx.http).await {
                     error!("error sending help message: {:?}", err);
                 }
             }
@@ -418,14 +433,14 @@ impl EventHandler for Handler {
                     next_epoch
                 );
                 if let Err(err) =
-                    messages::bad_daily_response(channel_id, &ctx.http, next_epoch).await
+                    messages::bad_daily_response(discord_channel, &ctx.http, next_epoch).await
                 {
                     error!("error sending bad daily response message: {:?}", err);
                 }
             }
             Output::DailyResponse => {
                 debug!("responding to daily request");
-                if let Err(err) = messages::daily_response(channel_id, &ctx.http).await {
+                if let Err(err) = messages::daily_response(discord_channel, &ctx.http).await {
                     error!("error sending daily confirmation message: {:?}", err);
                 }
             }
@@ -439,7 +454,7 @@ impl EventHandler for Handler {
                 debug!("responding to successful coin transfer");
 
                 if let Err(err) = messages::transfer_success(
-                    channel_id,
+                    discord_channel,
                     &ctx.http,
                     from_user,
                     from_balance,
@@ -455,21 +470,27 @@ impl EventHandler for Handler {
             Output::Gamble(gamble_output) => {
                 debug!("responding to gamble");
 
-                let player_balance =
-                    match self.get_user_balance(*channel_id.as_u64(), author_id).await {
-                        Ok(balance) => balance,
-                        Err(err) => {
-                            error!(
-                                "error retrieving user balance after gamble finished: {:?}",
-                                err
-                            );
-                            return;
-                        }
-                    };
+                let player_balance = match self
+                    .get_user_balance(message.server.id, message.user.id)
+                    .await
+                {
+                    Ok(balance) => balance,
+                    Err(err) => {
+                        error!(
+                            "error retrieving user balance after gamble finished: {:?}",
+                            err
+                        );
+                        return;
+                    }
+                };
 
-                if let Err(err) =
-                    messages::gamble_output(channel_id, &ctx.http, player_balance, gamble_output)
-                        .await
+                if let Err(err) = messages::gamble_output(
+                    discord_channel,
+                    &ctx.http,
+                    player_balance,
+                    gamble_output,
+                )
+                .await
                 {
                     error!("error sending gamble output: {:?}", err);
                 }
@@ -479,7 +500,7 @@ impl EventHandler for Handler {
                 player_balance,
             } => {
                 if let Err(err) =
-                    messages::bet_too_high(channel_id, &ctx.http, player_balance, amount).await
+                    messages::bet_too_high(discord_channel, &ctx.http, player_balance, amount).await
                 {
                     error!("error sending 'bet too high' message: {:?}", err);
                 }
@@ -488,7 +509,7 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
-        let channel_id = *reaction.channel_id.as_u64();
+        let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(command) => command,
@@ -499,10 +520,7 @@ impl EventHandler for Handler {
         };
 
         // no reacts need output right now
-        let output = match self
-            .process_command(channel_id, reaction.guild_id, &ctx, command)
-            .await
-        {
+        let output = match self.process_command(server_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -518,16 +536,16 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
-        let channel_id = *reaction.channel_id.as_u64();
+	let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
             Ok(Command::Coin(Transaction::Tip {
-                channel_id,
+                server_id,
                 to_user,
                 from_user,
             })) => {
                 let transaction = Transaction::Untip {
-                    channel_id,
+                    server_id,
                     to_user,
                     from_user,
                 };
@@ -544,7 +562,11 @@ impl EventHandler for Handler {
         };
 
         let _output = match self
-            .process_command(channel_id, reaction.guild_id, &context, command)
+            .process_command(
+		server_id,
+                &context,
+                command,
+            )
             .await
         {
             Ok(receipt) => receipt,
