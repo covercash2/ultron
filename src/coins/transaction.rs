@@ -5,6 +5,7 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use chrono::{DateTime, Utc};
 
+use crate::chat::User;
 use crate::error::{Error, Result};
 
 use super::{ChannelId, ServerId, UserId, Receipt};
@@ -46,6 +47,7 @@ impl TransactionSender {
 pub struct Transaction {
     pub from_user: UserId,
     pub server_id: ServerId,
+    pub channel_id: ChannelId,
     pub operation: Operation
 }
 
@@ -55,9 +57,7 @@ pub enum Operation {
 	to_user: UserId,
 	amount: i64,
     },
-    GetAllBalances {
-	channel_id: ChannelId,
-    },
+    GetAllBalances,
     GetUserBalance,
     /// Give some coins to both users
     Tip {
