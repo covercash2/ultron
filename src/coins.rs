@@ -14,21 +14,20 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
+use crate::data::{ChannelId, ServerId, UserId, UserLog};
 use crate::error::Result;
 
 mod ledger;
 mod transaction;
 
 use ledger::Accounts;
-pub use transaction::{Transaction, TransactionStatus, TransactionSender};
+pub use transaction::{Transaction, TransactionSender, TransactionStatus};
 
 /// The log file for the daily logins
 const DAILY_LOG_FILE: &str = "daily_log.json";
 /// The amount of coins to give to each user that asks once per day
 const DAILY_AMOUNT: i64 = 10;
 
-type ServerId = u64;
-type UserId = u64;
 type Account = (UserId, i64);
 
 /// Get the next epoch for the daily allowances.
@@ -86,6 +85,8 @@ pub struct Bank {
     ledgers: Accounts,
     /// A map to keep track of which users have logged in today
     daily_log: DailyLog,
+    /// a log of all users, ever
+    user_log: UserLog,
 }
 
 impl Bank {
@@ -225,10 +226,7 @@ impl Bank {
                     }
                 }
             }
-            Transaction::GetUserBalance {
-                server_id,
-                user_id,
-            } => {
+            Transaction::GetUserBalance { server_id, user_id } => {
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
                 let balance = ledger.get_balance(&user_id);
                 let account_results = vec![(user_id, balance)];
@@ -247,14 +245,16 @@ impl Bank {
     pub async fn load() -> Result<Self> {
         let ledgers = Accounts::load().await?;
         let daily_log = DailyLog::load().await?;
+        let user_log = UserLog::load().await?;
 
-        Ok(Bank { ledgers, daily_log })
+        Ok(Bank { ledgers, daily_log, user_log })
     }
 
     /// Save account data
     pub async fn save(&self) -> Result<()> {
         self.ledgers.save().await?;
-        self.daily_log.save().await
+        self.daily_log.save().await?;
+	self.user_log.save().await
     }
 }
 
