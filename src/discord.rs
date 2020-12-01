@@ -15,8 +15,9 @@ use serenity::{
 use tokio::sync::Mutex;
 
 use crate::chat::{
-    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser
+    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
 };
+use crate::coins::Operation;
 use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
@@ -122,7 +123,13 @@ impl Handler {
     }
 
     async fn get_user_balance(&self, server_id: u64, user_id: u64) -> Result<i64> {
-        let transaction = Transaction::GetUserBalance { server_id, user_id };
+        let from_user = user_id;
+        let operation = Operation::GetUserBalance;
+        let transaction = Transaction {
+            server_id,
+            from_user,
+            operation,
+        };
 
         let receipt = self.send_transaction(transaction).await?;
 
@@ -202,11 +209,11 @@ impl Handler {
                             GambleState::Win => {
                                 let from_user = ultron_id;
                                 let to_user = *player_id;
-                                let transaction = Transaction::Transfer {
+                                let operation = Operation::Transfer { to_user, amount };
+                                let transaction = Transaction {
                                     server_id,
                                     from_user,
-                                    to_user,
-                                    amount,
+                                    operation,
                                 };
 
                                 let receipt = self.send_transaction(transaction).await?;
@@ -223,11 +230,11 @@ impl Handler {
                             GambleState::Lose => {
                                 let from_user = *player_id;
                                 let to_user = ultron_id;
-                                let transaction = Transaction::Transfer {
+                                let operation = Operation::Transfer { to_user, amount };
+                                let transaction = Transaction {
                                     server_id,
                                     from_user,
-                                    to_user,
-                                    amount,
+                                    operation,
                                 };
 
                                 let receipt = self.send_transaction(transaction).await?;
@@ -260,22 +267,23 @@ impl Handler {
     pub async fn process_receipt(
         &self,
         context: &Context,
-        mut receipt: Receipt,
+        receipt: Receipt,
         server_id: u64,
     ) -> Result<Option<Output>> {
-        match receipt.transaction {
-            Transaction::GetAllBalances(_server_id) => {
-                if receipt.account_results.is_empty() {
+        let user_id = receipt.transaction.from_user;
+        let operation = receipt.transaction.operation;
+        let mut account_results = receipt.account_results;
+        match operation {
+            Operation::GetAllBalances { channel_id } => {
+                if account_results.is_empty() {
                     return Ok(Some(Output::Say(
                         "Coin transactions have yet to occur on this channel".to_owned(),
                     )));
                 }
 
-                receipt
-                    .account_results
-                    .sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
+                account_results.sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
                 let mut output = String::new();
-                for (id, amount) in receipt.iter().take(10) {
+                for (id, amount) in account_results.iter().take(10) {
                     let user_id: UserId = (*id).into();
                     let user = user_id.to_user(&context.http).await?;
                     let name = user
@@ -286,24 +294,21 @@ impl Handler {
                 }
                 Ok(Some(output.into()))
             }
-            Transaction::Transfer {
-                from_user,
-                to_user,
-                amount,
-                ..
+            Operation::Transfer {
+                to_user, amount, ..
             } => {
                 debug!("transfer complete");
 
-                let to_balance = *receipt
-                    .account_results
+                let from_user = user_id;
+
+                let to_balance = *account_results
                     .iter()
                     .find(|(user_id, _balance)| user_id == &to_user)
                     .map(|(_user_id, balance)| balance)
                     .ok_or(Error::ReceiptProcess(
                         "unable to find sender account in transaction receipt".to_owned(),
                     ))?;
-                let from_balance = *receipt
-                    .account_results
+                let from_balance = *account_results
                     .iter()
                     .find(|(user_id, _balance)| user_id == &from_user)
                     .map(|(_user_id, balance)| balance)
@@ -319,7 +324,7 @@ impl Handler {
                     amount,
                 }))
             }
-            Transaction::Tip { .. } => {
+            Operation::Tip { .. } => {
                 match receipt.status {
                     TransactionStatus::Complete => {
                         debug!("tip complete");
@@ -329,26 +334,26 @@ impl Handler {
                         // TODO chastize
                         Err(Error::TransactionFailed(format!(
                             "user tried to tip themselves: {:?}",
-                            receipt
+                            receipt.status
                         )))
                     }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
-                        receipt
+                        receipt.status
                     ))),
                 }
             }
-            Transaction::Untip { .. } => match receipt.status {
+            Operation::Untip { .. } => match receipt.status {
                 TransactionStatus::Complete => {
                     debug!("untip complete");
                     Ok(None)
                 }
                 _ => Err(Error::TransactionFailed(format!(
                     "unexpected transaction status: {:?}",
-                    receipt
+                    receipt.status
                 ))),
             },
-            Transaction::Daily { .. } => {
+            Operation::Daily { .. } => {
                 match receipt.status {
                     TransactionStatus::Complete => {
                         debug!("daily complete");
@@ -356,17 +361,17 @@ impl Handler {
                     }
                     TransactionStatus::BadDailyRequest { next_epoch } => {
                         // bad daily request
-                        info!("bad daily request: {:?}", receipt);
+                        info!("bad daily request: {:?}", next_epoch);
                         // TODO chastize
                         Ok(Some(Output::BadDailyResponse { next_epoch }))
                     }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
-                        receipt
+			receipt.status
                     ))),
                 }
             }
-            Transaction::GetUserBalance { .. } => {
+            Operation::GetUserBalance { .. } => {
                 // TODO raw balance query response
                 Err(Error::ReceiptProcess(
                     "no message implementation ready for user balance".to_owned(),
@@ -545,18 +550,25 @@ impl EventHandler for Handler {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
-            Ok(Command::Coin(Transaction::Tip {
-                server_id,
-                to_user,
-                from_user,
-            })) => {
-                let transaction = Transaction::Untip {
-                    server_id,
-                    to_user,
-                    from_user,
-                };
-                Command::Coin(transaction)
-            }
+	    Ok(Command::Coin(transaction)) => {
+		match transaction.operation {
+		    Operation::Tip { to_user } => {
+			let from_user = transaction.from_user;
+			let server_id = transaction.server_id;
+			let operation = Operation::Untip { to_user };
+			let transaction = Transaction {
+			    from_user,
+			    server_id,
+			    operation,
+			};
+			Command::Coin(transaction)
+		    }
+		    _ => {
+			error!("unexpected operation: {:?}", transaction.operation);
+			return;
+		    }
+		}
+	    }
             Ok(command) => {
                 error!("unexpectedly parsed reaction remove command: {:?}", command);
                 return;
