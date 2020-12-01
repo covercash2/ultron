@@ -5,7 +5,9 @@ use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
 use crate::chat::Message;
+use crate::coins::Operation;
 use crate::coins::Transaction;
+use crate::data::UserId;
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Gamble, Game};
@@ -34,7 +36,7 @@ impl Command {
     /// Parses messages from the [`serenity`] Discord API
     pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
-	let server_id = message.server.id;
+        let server_id = message.server.id;
 
         let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
             args.split(' ').collect()
@@ -56,17 +58,26 @@ impl Command {
                 "ping" => Ok(Command::Ping),
                 "about" => Ok(Command::About),
                 "coins" => {
-                    let transaction = Transaction::GetAllBalances(server_id);
+                    // TODO User
+                    let from_user: UserId = user_id;
+                    let channel_id = message.channel.id;
+                    let operation = Operation::GetAllBalances { channel_id };
+                    let transaction = Transaction {
+                        from_user,
+                        server_id,
+                        operation,
+                    };
                     Ok(Command::Coin(transaction))
                 }
                 "daily" => {
                     info!("request daily");
                     let timestamp = message.timestamp;
-                    let user_id = message.user.id;
-                    let transaction = Transaction::Daily {
+                    let from_user = message.user.id;
+                    let operation = Operation::Daily { timestamp };
+                    let transaction = Transaction {
+                        from_user,
                         server_id,
-                        user_id,
-                        timestamp,
+                        operation,
                     };
 
                     Ok(Command::Coin(transaction))
@@ -124,39 +135,42 @@ impl Command {
                         })
                     })?;
 
-                let transaction = Transaction::Transfer {
+                let operation = Operation::Transfer { to_user, amount };
+
+                let transaction = Transaction {
                     server_id,
                     from_user,
-                    to_user,
-                    amount,
+                    operation,
                 };
 
                 Ok(Command::Coin(transaction))
             }
-	    _ => {
-		Err(Error::UnknownCommand(format!("command has too many args: {}", content)))
-	    }
+            _ => Err(Error::UnknownCommand(format!(
+                "command has too many args: {}",
+                content
+            ))),
         }
     }
 
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
-	let server_id = *reaction.guild_id.expect("no guild id").as_u64();
+        let server_id = *reaction.guild_id.expect("no guild id").as_u64();
         let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user = match reaction.user_id {
             Some(id) => *id.as_u64(),
             None => return Err(Error::CommandParse("no user in reaction".to_owned())),
         };
 
-        let emoji_string: String = reaction_string(reaction.emoji.clone()).ok_or(Error::CommandParse(
-            "no name found for custom emoji".to_owned(),
-        ))?;
+        let emoji_string: String = reaction_string(reaction.emoji.clone()).ok_or(
+            Error::CommandParse("no name found for custom emoji".to_owned()),
+        )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-            let transaction = Transaction::Tip {
+            let operation = Operation::Tip { to_user };
+            let transaction = Transaction {
                 server_id,
                 from_user,
-                to_user,
+                operation,
             };
             Ok(Command::Coin(transaction))
         } else {
@@ -171,9 +185,9 @@ async fn parse_gamble<S: AsRef<str>>(user_id: u64, args: S) -> Result<Command> {
     let args = args.as_ref().trim();
     if args == "all" {
         debug!("gamble all command parsed");
-	let game = Game::DiceRoll(10);
-	let gamble = Gamble::new(user_id, Prize::AllCoins, game);
-	Ok(Command::Gamble(gamble))
+        let game = Game::DiceRoll(10);
+        let gamble = Gamble::new(user_id, Prize::AllCoins, game);
+        Ok(Command::Gamble(gamble))
     } else if let Ok(amount) = args.parse::<i64>() {
         if amount > 0 {
             debug!("gamble amount: {}", amount);

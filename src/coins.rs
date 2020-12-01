@@ -21,7 +21,7 @@ mod ledger;
 mod transaction;
 
 use ledger::Accounts;
-pub use transaction::{Transaction, TransactionSender, TransactionStatus};
+pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
 
 /// The log file for the daily logins
 const DAILY_LOG_FILE: &str = "daily_log.json";
@@ -43,7 +43,7 @@ fn daily_epoch() -> DateTime<Utc> {
 /// This type is returned from [`Bank::process_transaction`].
 /// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
 /// completes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Receipt {
     pub transaction: Transaction,
     pub account_results: Vec<Account>,
@@ -92,10 +92,10 @@ pub struct Bank {
 impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
-        match transaction {
-            Transaction::Transfer {
-                server_id,
-                from_user,
+	let server_id = transaction.server_id;
+	let from_user = transaction.from_user;
+        match transaction.operation {
+            Operation::Transfer {
                 to_user,
                 amount,
             } => {
@@ -113,7 +113,7 @@ impl Bank {
                     status: TransactionStatus::Complete,
                 }
             }
-            Transaction::GetAllBalances(server_id) => {
+            Operation::GetAllBalances { channel_id }=> {
                 let ledger = self.ledgers.get_or_create(&server_id);
                 let account_results = ledger.get_all_balances();
 
@@ -123,9 +123,7 @@ impl Bank {
                     status: TransactionStatus::Complete,
                 }
             }
-            Transaction::Tip {
-                server_id,
-                from_user,
+            Operation::Tip {
                 to_user,
             } => {
                 if from_user == to_user {
@@ -152,9 +150,7 @@ impl Bank {
                     }
                 }
             }
-            Transaction::Untip {
-                server_id,
-                from_user,
+            Operation::Untip {
                 to_user,
             } => {
                 if from_user == to_user {
@@ -181,13 +177,11 @@ impl Bank {
                     }
                 }
             }
-            Transaction::Daily {
-                server_id,
-                user_id,
+            Operation::Daily {
                 timestamp,
             } => {
+		let user_id = from_user;
                 info!("unhandled timestamp: {:?}", timestamp);
-
                 if self.daily_log.log_user(&server_id, user_id) {
                     // first log today
                     // award daily
@@ -226,8 +220,9 @@ impl Bank {
                     }
                 }
             }
-            Transaction::GetUserBalance { server_id, user_id } => {
+            Operation::GetUserBalance => {
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
+		let user_id = from_user;
                 let balance = ledger.get_balance(&user_id);
                 let account_results = vec![(user_id, balance)];
                 let status = TransactionStatus::Complete;
