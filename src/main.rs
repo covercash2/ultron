@@ -9,6 +9,7 @@ mod logger;
 mod chat;
 mod coins;
 mod commands;
+mod data;
 mod error;
 
 mod discord;
@@ -16,6 +17,7 @@ mod gambling;
 mod tokens;
 
 use coins::{bank_loop, Bank, Receipt, Transaction};
+use data::UserLog;
 use discord::Handler;
 use tokens::load_token;
 
@@ -30,6 +32,8 @@ async fn main() {
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
     let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
+
+    let user_log = UserLog::load().await.expect("unable to load user log");
 
     let event_handler = Handler::new(bank_channel);
 

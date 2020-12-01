@@ -15,7 +15,7 @@ use serenity::{
 use tokio::sync::Mutex;
 
 use crate::chat::{
-    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser
 };
 use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
@@ -172,10 +172,10 @@ impl Handler {
                 let user_id = gamble.player_id;
 
                 let player_balance = self.get_user_balance(server_id, user_id).await?;
-		let amount = match gamble.prize {
-		    Prize::Coins(n) => n,
-		    Prize::AllCoins => player_balance,
-		};
+                let amount = match gamble.prize {
+                    Prize::Coins(n) => n,
+                    Prize::AllCoins => player_balance,
+                };
 
                 if player_balance < amount {
                     // error
@@ -194,10 +194,10 @@ impl Handler {
                         state,
                         ..
                     } => {
-			let amount = match prize {
-			    Prize::Coins(n) => *n,
-			    Prize::AllCoins => player_balance,
-			};
+                        let amount = match prize {
+                            Prize::Coins(n) => *n,
+                            Prize::AllCoins => player_balance,
+                        };
                         match state {
                             GambleState::Win => {
                                 let from_user = ultron_id;
@@ -542,7 +542,7 @@ impl EventHandler for Handler {
     }
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
-	let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
+        let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
             Ok(Command::Coin(Transaction::Tip {
@@ -567,14 +567,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let _output = match self
-            .process_command(
-		server_id,
-                &context,
-                command,
-            )
-            .await
-        {
+        let _output = match self.process_command(server_id, &context, command).await {
             Ok(receipt) => receipt,
             Err(err) => {
                 error!("unable to process command: {:?}", err);
