@@ -113,7 +113,7 @@ impl Bank {
                     status: TransactionStatus::Complete,
                 }
             }
-            Operation::GetAllBalances { channel_id }=> {
+            Operation::GetAllBalances => {
                 let ledger = self.ledgers.get_or_create(&server_id);
                 let account_results = ledger.get_all_balances();
 

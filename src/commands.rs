@@ -61,10 +61,11 @@ impl Command {
                     // TODO User
                     let from_user: UserId = user_id;
                     let channel_id = message.channel.id;
-                    let operation = Operation::GetAllBalances { channel_id };
+                    let operation = Operation::GetAllBalances;
                     let transaction = Transaction {
                         from_user,
                         server_id,
+			channel_id,
                         operation,
                     };
                     Ok(Command::Coin(transaction))
@@ -73,10 +74,12 @@ impl Command {
                     info!("request daily");
                     let timestamp = message.timestamp;
                     let from_user = message.user.id;
+		    let channel_id = message.channel.id;
                     let operation = Operation::Daily { timestamp };
                     let transaction = Transaction {
                         from_user,
                         server_id,
+			channel_id,
                         operation,
                     };
 
@@ -135,10 +138,12 @@ impl Command {
                         })
                     })?;
 
+		let channel_id = message.channel.id;
                 let operation = Operation::Transfer { to_user, amount };
 
                 let transaction = Transaction {
                     server_id,
+		    channel_id,
                     from_user,
                     operation,
                 };
@@ -155,6 +160,7 @@ impl Command {
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
+	let channel_id = *reaction.channel_id.as_u64();
         let to_user = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -169,6 +175,7 @@ impl Command {
             let operation = Operation::Tip { to_user };
             let transaction = Transaction {
                 server_id,
+		channel_id,
                 from_user,
                 operation,
             };
