@@ -14,7 +14,7 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use crate::data::{ChannelId, ServerId, UserId, UserLog};
+use crate::{error::Error, data::{ChannelId, ServerId, UserId, UserLog}};
 use crate::error::Result;
 
 mod ledger;
@@ -96,12 +96,17 @@ impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
 	let server_id = transaction.server_id;
+	let channel_id = transaction.channel_id;
 	let from_user_id = transaction.from_user;
+
+	self.user_log.log_user(&server_id, &transaction.channel_id, &transaction.from_user).await?;
+
         let receipt = match transaction.operation {
             Operation::Transfer {
                 to_user,
                 amount,
             } => {
+		self.user_log.log_user(&server_id, &transaction.channel_id, &to_user).await?;
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
                 ledger.transfer(&from_user_id, &to_user, amount);
                 let account_results = ledger.get_balances(vec![from_user_id, to_user]);
@@ -117,8 +122,12 @@ impl Bank {
                 }
             }
             Operation::GetAllBalances => {
+		let channel_users = self.user_log.get_channel_users(&server_id, &channel_id)
+		    .ok_or(Error::TransactionFailed("unable to get channel users".to_owned()))?;
                 let ledger = self.ledgers.get_or_create(&server_id);
-                let account_results = ledger.get_all_balances();
+                let account_results = ledger.get_all_balances()
+                    .filter(|(user_id, _balance)| channel_users.contains(user_id))
+		    .collect();
 
                 Receipt {
                     transaction,
@@ -237,8 +246,6 @@ impl Bank {
                 }
             }
         };
-
-	self.user_log.log_user(&server_id, &receipt.transaction.channel_id, &receipt.transaction.from_user).await?;
 
 	Ok(receipt)
     }
