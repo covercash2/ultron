@@ -5,7 +5,6 @@ use serde::{Deserialize, Serialize};
 
 use tokio::{io::AsyncReadExt, fs::OpenOptions};
 
-use crate::chat::User;
 use crate::error::Result;
 
 pub type UserId = u64;
@@ -16,24 +15,24 @@ const USER_LOG_FILE: &str = "users.json";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UserLog {
-    map: HashMap<ServerId, HashMap<ChannelId, Vec<User>>>,
+    map: HashMap<ServerId, HashMap<ChannelId, Vec<UserId>>>,
 }
 
 impl UserLog {
     /// Add `user_id` to the channel's daily log.
-    async fn log_user(
+    pub async fn log_user(
         &mut self,
         server_id: &ServerId,
         channel_id: &ChannelId,
-        user: User,
+        user: &UserId,
     ) -> Result<()> {
         let channel_log = self.get_or_create_channel_log(server_id, channel_id);
-        if channel_log.contains(&user) {
+        if channel_log.contains(user) {
             debug!("already logged user: {:?}", user);
             Ok(())
         } else {
             debug!("logging new user: {:?}", user);
-            channel_log.push(user);
+            channel_log.push(*user);
             self.save().await
         }
     }
@@ -42,7 +41,7 @@ impl UserLog {
         &mut self,
         server_id: &ServerId,
         channel_id: &ChannelId,
-    ) -> &mut Vec<User> {
+    ) -> &mut Vec<UserId> {
         let channel_map = if self.map.contains_key(server_id) {
             self.map
                 .get_mut(server_id)

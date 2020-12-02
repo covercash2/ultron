@@ -303,7 +303,7 @@ impl Handler {
             } => {
                 debug!("transfer complete");
 
-                let from_user = user_id.id;
+                let from_user = user_id;
 
                 let to_balance = *account_results
                     .iter()
