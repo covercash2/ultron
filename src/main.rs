@@ -9,6 +9,7 @@ mod logger;
 mod chat;
 mod coins;
 mod commands;
+mod data;
 mod error;
 
 mod discord;
