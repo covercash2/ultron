@@ -45,7 +45,7 @@ impl TransactionSender {
 /// to be processed by [`Bank::process_transaction`].
 #[derive(Debug, Clone)]
 pub struct Transaction {
-    pub from_user: UserId,
+    pub from_user: User,
     pub server_id: ServerId,
     pub channel_id: ChannelId,
     pub operation: Operation
