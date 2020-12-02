@@ -1,19 +1,22 @@
 //! implementation agnostic chat functions
-use log::*;
-
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+use crate::data::{ChannelId, ServerId, UserId};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    pub id: u64,
+    pub id: UserId,
 }
+
 #[derive(Debug)]
 pub struct Channel {
-    pub id: u64,
+    pub id: ChannelId,
 }
+
 #[derive(Debug)]
 pub struct Server {
-    pub id: u64,
+    pub id: ServerId,
 }
 
 #[derive(Debug)]
@@ -28,18 +31,18 @@ pub struct Message {
 
 impl From<u64> for User {
     fn from(id: u64) -> Self {
-        User{ id }
+        User { id }
     }
 }
 
 impl From<u64> for Channel {
     fn from(id: u64) -> Self {
-        Channel{ id }
+        Channel { id }
     }
 }
 
 impl From<u64> for Server {
     fn from(id: u64) -> Self {
-        Server{ id }
+        Server { id }
     }
 }
