@@ -93,7 +93,7 @@ impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
 	let server_id = transaction.server_id;
-	let from_user = transaction.from_user;
+	let from_user = transaction.from_user.id;
         match transaction.operation {
             Operation::Transfer {
                 to_user,

@@ -123,7 +123,7 @@ impl Handler {
     }
 
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
-        let from_user = user_id;
+        let from_user = user_id.into();
         let operation = Operation::GetUserBalance;
         let transaction = Transaction {
             server_id,
@@ -209,7 +209,7 @@ impl Handler {
                         };
                         match state {
                             GambleState::Win => {
-                                let from_user = ultron_id;
+                                let from_user = ultron_id.into();
                                 let to_user = *player_id;
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
@@ -231,7 +231,7 @@ impl Handler {
                                 }
                             }
                             GambleState::Lose => {
-                                let from_user = *player_id;
+                                let from_user = (*player_id).into();
                                 let to_user = ultron_id;
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
@@ -303,7 +303,7 @@ impl Handler {
             } => {
                 debug!("transfer complete");
 
-                let from_user = user_id;
+                let from_user = user_id.id;
 
                 let to_balance = *account_results
                     .iter()
