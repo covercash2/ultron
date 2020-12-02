@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::error::{Error, Result};
 
-use super::{ServerId, UserId, Receipt};
+use super::{ChannelId, ServerId, UserId, Receipt};
 
 pub struct TransactionSender {
     send_channel: Sender<Transaction>,
@@ -42,40 +42,37 @@ impl TransactionSender {
 /// Interactions with the Bank are handled through transactions.
 /// These transactions are sent over channels in the [`bank_loop`]
 /// to be processed by [`Bank::process_transaction`].
-#[derive(Debug)]
-pub enum Transaction {
-    /// Transfer coins from one user to another
+#[derive(Debug, Clone)]
+pub struct Transaction {
+    pub from_user: UserId,
+    pub server_id: ServerId,
+    pub channel_id: ChannelId,
+    pub operation: Operation
+}
+
+#[derive(Debug, Clone)]
+pub enum Operation {
     Transfer {
-        server_id: ServerId,
-        from_user: UserId,
-        to_user: UserId,
-        amount: i64,
+	to_user: UserId,
+	amount: i64,
     },
-    /// Dump the account data
-    GetAllBalances(ServerId),
-    GetUserBalance {
-        server_id: ServerId,
-        user_id: UserId,
-    },
+    GetAllBalances,
+    GetUserBalance,
+    /// Give some coins to both users
     Tip {
-        server_id: ServerId,
-        from_user: UserId,
         to_user: UserId,
     },
+    /// Undo tip operation
     Untip {
-        server_id: ServerId,
-        from_user: UserId,
         to_user: UserId,
     },
     /// Give some coins to a user once per day
     Daily {
-        server_id: ServerId,
-        user_id: UserId,
         timestamp: DateTime<Utc>,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
     BadDailyRequest { next_epoch: DateTime<Utc> },

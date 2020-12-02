@@ -10,11 +10,22 @@ pub enum Error {
 /// Parameters for a betting game.
 #[derive(Debug)]
 pub struct Gamble {
-    pub channel_id: u64,
     pub player_id: u64,
-    pub amount: i64,
+    pub prize: Prize,
     pub game: Game,
     state: State,
+}
+
+#[derive(Debug, Clone)]
+pub enum Prize {
+    Coins(i64),
+    AllCoins,
+}
+
+impl From<i64> for Prize {
+    fn from(n: i64) -> Self {
+	Prize::Coins(n)
+    }
 }
 
 /// Different games that are supported
@@ -37,7 +48,7 @@ pub enum State {
 pub enum GambleOutput {
     DiceRoll {
         player_id: u64,
-        amount: i64,
+        prize: Prize,
         house_roll: u32,
         player_roll: u32,
         state: State,
@@ -47,24 +58,23 @@ pub enum GambleOutput {
 impl Gamble {
     /// Create a new Gamble object.
     /// The initial state is set to `State::Waiting`
-    pub fn new(channel_id: u64, player_id: u64, amount: i64, game: Game) -> Self {
+    pub fn new(player_id: u64, prize: Prize, game: Game) -> Self {
         let state = State::Waiting;
 
         Gamble {
-            channel_id,
             player_id,
-            amount,
+	    prize,
             game,
             state,
         }
     }
 
     /// Play the game a return the results
-    pub fn play(&mut self) -> Result<GambleOutput> {
+    pub fn play(self) -> Result<GambleOutput> {
         match self.game {
             Game::DiceRoll(sides) => match self.state {
                 State::Waiting => {
-                    let output = play_dice(self.player_id, self.amount, sides);
+                    let output = play_dice(self.player_id, self.prize, sides);
                     Ok(output)
                 }
                 _ => Err(Error::InvalidState(self.state.clone())),
@@ -73,7 +83,7 @@ impl Gamble {
     }
 }
 
-fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
+fn play_dice(player_id: u64, prize: Prize, sides: u32) -> GambleOutput {
     let mut rng = rand::thread_rng();
 
     let player_roll = rng.gen_range(0, sides);
@@ -89,7 +99,7 @@ fn play_dice(player_id: u64, amount: i64, sides: u32) -> GambleOutput {
 
     GambleOutput::DiceRoll {
         player_id,
-        amount,
+        prize,
         house_roll,
         player_roll,
         state,

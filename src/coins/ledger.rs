@@ -113,11 +113,10 @@ impl Ledger {
             .collect()
     }
 
-    pub fn get_all_balances(&self) -> Vec<(u64, i64)> {
+    pub fn get_all_balances<'a>(&'a self) -> impl Iterator<Item = (u64, i64)> + 'a {
         self.map
             .iter()
             .map(|(uid, amount)| (*uid, *amount))
-            .collect()
     }
 }
 
