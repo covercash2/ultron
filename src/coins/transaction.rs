@@ -5,7 +5,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 use chrono::{DateTime, Utc};
 
-use crate::chat::User;
 use crate::error::{Error, Result};
 
 use super::{ChannelId, ServerId, UserId, Receipt};
@@ -45,7 +44,7 @@ impl TransactionSender {
 /// to be processed by [`Bank::process_transaction`].
 #[derive(Debug, Clone)]
 pub struct Transaction {
-    pub from_user: User,
+    pub from_user: UserId,
     pub server_id: ServerId,
     pub channel_id: ChannelId,
     pub operation: Operation

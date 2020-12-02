@@ -5,7 +5,6 @@ use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
 use crate::chat::Message;
-use crate::chat::User;
 use crate::coins::Operation;
 use crate::coins::Transaction;
 use crate::data::UserId;
@@ -60,7 +59,7 @@ impl Command {
                 "about" => Ok(Command::About),
                 "coins" => {
                     // TODO User
-                    let from_user = message.user.clone();
+                    let from_user = message.user.id;
                     let channel_id = message.channel.id;
                     let operation = Operation::GetAllBalances;
                     let transaction = Transaction {
@@ -74,7 +73,7 @@ impl Command {
                 "daily" => {
                     info!("request daily");
                     let timestamp = message.timestamp;
-                    let from_user = message.user.clone();
+                    let from_user = message.user.id;
 		    let channel_id = message.channel.id;
                     let operation = Operation::Daily { timestamp };
                     let transaction = Transaction {
@@ -124,7 +123,7 @@ impl Command {
                         "for now you can only give one user coins".to_owned(),
                     ));
                 };
-                let from_user = message.user.clone();
+                let from_user = message.user.id;
                 let amount = args
                     .get(1)
                     .ok_or(Error::CommandParse(
@@ -162,9 +161,9 @@ impl Command {
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
 	let channel_id = *reaction.channel_id.as_u64();
-        let to_user: User = (*reaction.message(&context.http).await?.author.id.as_u64()).into();
-        let from_user: User = match reaction.user_id {
-            Some(id) => (*id.as_u64()).into(),
+        let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
+        let from_user: UserId = match reaction.user_id {
+            Some(id) => *id.as_u64(),
             None => return Err(Error::CommandParse("no user in reaction".to_owned())),
         };
 
@@ -173,7 +172,6 @@ impl Command {
         )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-	    let to_user = to_user.id;
             let operation = Operation::Tip { to_user };
             let transaction = Transaction {
                 server_id,

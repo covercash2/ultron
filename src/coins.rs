@@ -70,11 +70,14 @@ pub async fn bank_loop(
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
 
-        let receipt = bank.process_transaction(transaction).await;
-
-        if let Err(err) = output_sender.send(receipt).await {
-            error!("error sending receipt: {:?}", err);
-        }
+	match bank.process_transaction(transaction).await {
+	    Ok(receipt) => {
+		if let Err(err) = output_sender.send(receipt).await {
+		    error!("error sending receipt: {:?}", err);
+		}
+	    }
+	    Err(err) => error!("error processing transaction: {:?}", err)
+	}
     }
     debug!("bank loop finished");
 }
@@ -91,17 +94,17 @@ pub struct Bank {
 
 impl Bank {
     /// Process a transaction and return a [`Receipt`]
-    pub async fn process_transaction(&mut self, transaction: Transaction) -> Receipt {
+    pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
 	let server_id = transaction.server_id;
-	let from_user = transaction.from_user.id;
-        match transaction.operation {
+	let from_user_id = transaction.from_user;
+        let receipt = match transaction.operation {
             Operation::Transfer {
                 to_user,
                 amount,
             } => {
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
-                ledger.transfer(&from_user, &to_user, amount);
-                let account_results = ledger.get_balances(vec![from_user, to_user]);
+                ledger.transfer(&from_user_id, &to_user, amount);
+                let account_results = ledger.get_balances(vec![from_user_id, to_user]);
 
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
@@ -126,7 +129,7 @@ impl Bank {
             Operation::Tip {
                 to_user,
             } => {
-                if from_user == to_user {
+                if from_user_id == to_user {
                     let account_results = Vec::new();
                     Receipt {
                         transaction,
@@ -136,8 +139,8 @@ impl Bank {
                 } else {
                     let ledger = self.ledgers.get_or_create_mut(&server_id);
                     ledger.increment_balance(&to_user, 2);
-                    ledger.increment_balance(&from_user, 1);
-                    let account_results = ledger.get_balances(vec![from_user, to_user]);
+                    ledger.increment_balance(&from_user_id, 1);
+                    let account_results = ledger.get_balances(vec![from_user_id, to_user]);
 
                     if let Err(err) = self.ledgers.save().await {
                         error!("unable to save ledger: {:?}", err);
@@ -153,7 +156,7 @@ impl Bank {
             Operation::Untip {
                 to_user,
             } => {
-                if from_user == to_user {
+                if from_user_id == to_user {
                     let account_results = Vec::new();
                     Receipt {
                         transaction,
@@ -163,8 +166,8 @@ impl Bank {
                 } else {
                     let ledger = self.ledgers.get_or_create_mut(&server_id);
                     ledger.increment_balance(&to_user, -2);
-                    ledger.increment_balance(&from_user, -1);
-                    let account_results = ledger.get_balances(vec![from_user, to_user]);
+                    ledger.increment_balance(&from_user_id, -1);
+                    let account_results = ledger.get_balances(vec![from_user_id, to_user]);
 
                     if let Err(err) = self.ledgers.save().await {
                         error!("unable to save ledger: {:?}", err);
@@ -180,7 +183,7 @@ impl Bank {
             Operation::Daily {
                 timestamp,
             } => {
-		let user_id = from_user;
+		let user_id = from_user_id;
                 info!("unhandled timestamp: {:?}", timestamp);
                 if self.daily_log.log_user(&server_id, user_id) {
                     // first log today
@@ -222,7 +225,7 @@ impl Bank {
             }
             Operation::GetUserBalance => {
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
-		let user_id = from_user;
+		let user_id = from_user_id;
                 let balance = ledger.get_balance(&user_id);
                 let account_results = vec![(user_id, balance)];
                 let status = TransactionStatus::Complete;
@@ -233,7 +236,11 @@ impl Bank {
                     status,
                 }
             }
-        }
+        };
+
+	self.user_log.log_user(&server_id, &receipt.transaction.channel_id, &receipt.transaction.from_user).await?;
+
+	Ok(receipt)
     }
 
     /// Load saved account data
