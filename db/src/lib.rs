@@ -6,9 +6,9 @@ mod error;
 pub mod model;
 pub mod schema;
 
-use schema::bank_accounts::dsl::*;
-use model::BankAccount;
 use error::*;
+use model::BankAccount;
+use schema::bank_accounts::dsl::*;
 
 pub struct Db {
     connection: SqliteConnection,
@@ -22,8 +22,25 @@ impl Db {
     }
 
     pub fn show_accounts(&self) -> Result<Vec<BankAccount>> {
-        bank_accounts.load::<BankAccount>(&self.connection)
+        bank_accounts
+            .load::<BankAccount>(&self.connection)
             .map_err(Into::into)
+    }
+
+    pub fn insert_bank_account(&self, server: &u64, user: &u64, amount: &i32) -> Result<usize> {
+	diesel::insert_into(schema::bank_accounts::table)
+            .values(&BankAccount::new(server, user, amount))
+	    .execute(&self.connection)
+	    .map_err(Into::into)
+    }
+
+    pub fn update_balance(&self, server: &u64, user: &u64, new_balance: &i32) -> Result<usize> {
+	let server = server.to_string();
+	let user = user.to_string();
+	diesel::update(bank_accounts.find((server, user)))
+	    .set(balance.eq(new_balance))
+	    .execute(&self.connection)
+	    .map_err(Into::into)
     }
 }
 
