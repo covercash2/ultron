@@ -16,7 +16,7 @@ struct Opts {
 
 #[derive(Clap)]
 enum SubCommand {
-    #[clap(version = "1.3", author = "Someone E. <someone_else@other.com>")]
+    #[clap(version = "0.1")]
     Test(Test),
 }
 

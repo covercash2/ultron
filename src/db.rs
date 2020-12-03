@@ -6,7 +6,7 @@ use log::*;
 use diesel::{prelude::*, sqlite::SqliteConnection, Queryable};
 use dotenv::dotenv;
 
-use crate::schema::channel_users::dsl::*;
+//use crate::schema::channel_users::dsl::*;
 use crate::error::Result;
 
 #[derive(Queryable)]
