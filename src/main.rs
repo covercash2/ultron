@@ -1,6 +1,7 @@
 #![feature(async_closure)]
-use coins::TransactionSender;
-use log::error;
+use std::env;
+use log::*;
+use dotenv::dotenv;
 
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
@@ -16,13 +17,23 @@ mod discord;
 mod gambling;
 mod tokens;
 
-use coins::{bank_loop, Bank, Receipt, Transaction};
+use coins::{bank_loop, Bank, Receipt, Transaction, TransactionSender};
 use discord::Handler;
 use tokens::load_token;
 
 #[tokio::main]
 async fn main() {
     logger::init();
+
+    // load .env file
+    dotenv().ok();
+    // get sqlite database file path
+    let database_url: String = env::var("TEST_DB_URL")
+        .or(env::var("PROD_DB_URL"))
+        .unwrap_or_else(|err| {
+	    warn!("no DB_URL set. falling back to test.db: {:?}", err);
+	    "test.db".to_owned()
+	});
 
     let discord_token = load_token(tokens::DISCORD_TOKEN).expect("unable to load discord token");
 
@@ -34,7 +45,7 @@ async fn main() {
 
     let event_handler = Handler::new(bank_channel);
 
-    let bank = Bank::load().await.expect("unable to load bank file");
+    let bank = Bank::load(database_url).await.expect("unable to load bank file");
 
     let _bank_thread = tokio::task::spawn(bank_loop(bank, transaction_receiver, receipt_sender));
 
