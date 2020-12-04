@@ -13,12 +13,15 @@ struct Opts {
     /// A level of verbosity, and can be used multiple times
     #[clap(short, long, parse(from_occurrences))]
     verbose: i32,
+    /// subcommands
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
 
+/// subcommands
 #[derive(Clap)]
 enum SubCommand {
+    /// database commands
     Db(Db),
 }
 
@@ -31,14 +34,18 @@ struct Db {
     subcmd: DbCommand,
 }
 
+/// a command for the database
 #[derive(Clap)]
 enum DbCommand {
+    /// insert a record into the database
     Create(Create),
+    /// read from the database
     Read(Read),
+    /// update the database
     Update(Update),
 }
 
-/// insert
+/// insert a record into the database
 #[derive(Clap)]
 struct Create {
     #[clap(subcommand)]
@@ -46,13 +53,25 @@ struct Create {
 }
 
 #[derive(Clap)]
-enum Read {
+struct Read {
+    #[clap(subcommand)]
+    op: ReadOp,
+}
+
+/// read from the database
+#[derive(Clap)]
+enum ReadOp {
+    /// show all balances from all servers
     AllBalances,
+    /// show all users and their associated channels
     AllChannelUsers,
+    /// show users in a channel
     ChannelUsers { server_id: u64, channel_id: u64 },
+    /// show balances for users in a channel
     ChannelUserBalances { server_id: u64, channel_id: u64 },
 }
 
+/// update a database
 #[derive(Clap)]
 struct Update {
     #[clap(subcommand)]
@@ -67,6 +86,7 @@ enum Record {
     Balance(Account),
 }
 
+/// a user in the channel user log
 #[derive(Clap)]
 struct User {
     server_id: u64,
@@ -74,6 +94,7 @@ struct User {
     user_id: u64,
 }
 
+/// a user bank account
 #[derive(Clap)]
 struct Account {
     server_id: u64,
@@ -108,20 +129,20 @@ impl Create {
     }
 }
 
-impl Read {
+impl ReadOp {
     fn handle(self, db: &Database) {
         match self {
-            Read::AllBalances => {
+            ReadOp::AllBalances => {
                 let accounts = db.show_accounts().expect("unable to retrieve accounts");
 		print_accounts(accounts);
             }
-            Read::AllChannelUsers => {
+            ReadOp::AllChannelUsers => {
                 let users = db
                     .show_channel_users()
                     .expect("unable to retrieve channel users");
 		print_channel_users(users);
             }
-            Read::ChannelUsers {
+            ReadOp::ChannelUsers {
                 server_id,
                 channel_id,
             } => {
@@ -130,7 +151,7 @@ impl Read {
                     .expect("unable to get channel users from db");
 		print_channel_users(users);
             }
-            Read::ChannelUserBalances {
+            ReadOp::ChannelUserBalances {
                 server_id,
                 channel_id,
             } => {
@@ -208,7 +229,7 @@ fn main() {
 
             match db_command.subcmd {
                 DbCommand::Create(create_command) => create_command.handle(&db),
-                DbCommand::Read(read) => read.handle(&db),
+                DbCommand::Read(read) => read.op.handle(&db),
                 DbCommand::Update(update) => {
                     match update.record {
                         Record::ChannelUser(_) => {
