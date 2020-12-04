@@ -7,6 +7,9 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    CoinOverflow,
+    NotFound(String),
+    Unexpected(String),
     Db(DieselError),
     IdParse(ParseIntError),
     Env(VarError),

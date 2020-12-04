@@ -2,7 +2,7 @@
 extern crate diesel;
 use diesel::{prelude::*, sqlite::SqliteConnection};
 
-use std::fmt;
+use std::{convert::TryInto, fmt};
 
 pub mod error;
 pub mod model;
@@ -35,16 +35,39 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub fn insert_bank_account(&self, server: &u64, user: &u64, amount: &i32) -> Result<usize> {
+    pub fn user_account(&self, server: &u64, user: &u64) -> Result<BankAccount> {
+        let server = server.to_string();
+        let user = user.to_string();
+        bank_accounts
+            .find((&server, &user))
+            .load::<BankAccount>(&self.connection)
+            .map_err(Into::into)
+            .and_then(|vec| {
+                match vec.len() {
+                    1 => Ok(vec[0].clone()), // return the only value
+                    0 => Err(Error::NotFound(format!(
+                        "unable to find user account: #s{} #u{}",
+                        server, user
+                    ))),
+                    _ => Err(Error::Unexpected("too many records returned".to_owned())),
+                }
+            })
+    }
+
+    pub fn insert_bank_account(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
+	let amount: i32 = (*amount).try_into()
+	    .map_err(|_e| Error::CoinOverflow)?;
         diesel::insert_into(schema::bank_accounts::table)
-            .values(&BankAccount::new(server, user, amount))
+            .values(&BankAccount::new(server, user, &amount))
             .execute(&self.connection)
             .map_err(Into::into)
     }
 
-    pub fn update_balance(&self, server: &u64, user: &u64, new_balance: &i32) -> Result<usize> {
+    pub fn update_balance(&self, server: &u64, user: &u64, new_balance: &i64) -> Result<usize> {
         let server = server.to_string();
         let user = user.to_string();
+	let new_balance: i32 = (*new_balance).try_into()
+	    .map_err(|_e| Error::CoinOverflow)?;
         diesel::update(bank_accounts.find((server, user)))
             .set(balance.eq(new_balance))
             .execute(&self.connection)

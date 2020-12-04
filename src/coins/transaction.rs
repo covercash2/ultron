@@ -75,6 +75,7 @@ pub enum Operation {
 #[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
+    DbError,
     BadDailyRequest { next_epoch: DateTime<Utc> },
     SelfTip,
 }
