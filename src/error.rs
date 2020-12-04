@@ -7,6 +7,8 @@ use hubcaps::Error as GithubError;
 use serenity::Error as DiscordError;
 use tokio::sync::mpsc::error::SendError;
 
+use db::error::Error as DbError;
+
 use crate::coins::Transaction;
 use crate::gambling::Error as GambleError;
 
@@ -14,6 +16,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
+    Db(DbError),
     DiscordError(DiscordError),
     GithubError(GithubError),
     BadApiKey(VarError),
@@ -28,6 +31,12 @@ pub enum Error {
     GambleError(GambleError),
     ServerState(String),
     MessageBuild(String),
+}
+
+impl From<DbError> for Error {
+    fn from(err: DbError) -> Self {
+	Error::Db(err)
+    }
 }
 
 impl From<SendError<Transaction>> for Error {

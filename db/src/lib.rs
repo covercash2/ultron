@@ -2,7 +2,9 @@
 extern crate diesel;
 use diesel::{prelude::*, sqlite::SqliteConnection};
 
-mod error;
+use std::fmt;
+
+pub mod error;
 pub mod model;
 pub mod schema;
 
@@ -12,6 +14,12 @@ use schema::bank_accounts::dsl::*;
 
 pub struct Db {
     connection: SqliteConnection,
+}
+
+impl fmt::Debug for Db {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Db").finish()
+    }
 }
 
 impl Db {

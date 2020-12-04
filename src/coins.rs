@@ -1,12 +1,15 @@
 //! A simple economy database.
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::Duration;
 use log::*;
 use tokio::{
     fs::OpenOptions,
     prelude::*,
-    sync::mpsc::{Receiver, Sender},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Mutex,
+    },
 };
 
 use serde::{Deserialize, Serialize};
@@ -14,8 +17,13 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use crate::{error::Error, data::{ChannelId, ServerId, UserId, UserLog}};
+use db::Db;
+
 use crate::error::Result;
+use crate::{
+    data::{ChannelId, ServerId, UserId, UserLog},
+    error::Error,
+};
 
 mod ledger;
 mod transaction;
@@ -70,14 +78,14 @@ pub async fn bank_loop(
     while let Some(transaction) = transaction_receiver.recv().await {
         debug!("transaction received: {:?}", transaction);
 
-	match bank.process_transaction(transaction).await {
-	    Ok(receipt) => {
-		if let Err(err) = output_sender.send(receipt).await {
-		    error!("error sending receipt: {:?}", err);
-		}
-	    }
-	    Err(err) => error!("error processing transaction: {:?}", err)
-	}
+        match bank.process_transaction(transaction).await {
+            Ok(receipt) => {
+                if let Err(err) = output_sender.send(receipt).await {
+                    error!("error sending receipt: {:?}", err);
+                }
+            }
+            Err(err) => error!("error processing transaction: {:?}", err),
+        }
     }
     debug!("bank loop finished");
 }
@@ -85,6 +93,7 @@ pub async fn bank_loop(
 /// The main structure for storing account information.
 #[derive(Debug)]
 pub struct Bank {
+    db: Arc<Mutex<Db>>,
     ledgers: Accounts,
     /// A map to keep track of which users have logged in today
     daily_log: DailyLog,
@@ -95,18 +104,19 @@ pub struct Bank {
 impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
-	let server_id = transaction.server_id;
-	let channel_id = transaction.channel_id;
-	let from_user_id = transaction.from_user;
+        let server_id = transaction.server_id;
+        let channel_id = transaction.channel_id;
+        let from_user_id = transaction.from_user;
 
-	self.user_log.log_user(&server_id, &transaction.channel_id, &transaction.from_user).await?;
+        self.user_log
+            .log_user(&server_id, &transaction.channel_id, &transaction.from_user)
+            .await?;
 
         let receipt = match transaction.operation {
-            Operation::Transfer {
-                to_user,
-                amount,
-            } => {
-		self.user_log.log_user(&server_id, &transaction.channel_id, &to_user).await?;
+            Operation::Transfer { to_user, amount } => {
+                self.user_log
+                    .log_user(&server_id, &transaction.channel_id, &to_user)
+                    .await?;
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
                 ledger.transfer(&from_user_id, &to_user, amount);
                 let account_results = ledger.get_balances(vec![from_user_id, to_user]);
@@ -122,12 +132,17 @@ impl Bank {
                 }
             }
             Operation::GetAllBalances => {
-		let channel_users = self.user_log.get_channel_users(&server_id, &channel_id)
-		    .ok_or(Error::TransactionFailed("unable to get channel users".to_owned()))?;
+                let channel_users = self
+                    .user_log
+                    .get_channel_users(&server_id, &channel_id)
+                    .ok_or(Error::TransactionFailed(
+                        "unable to get channel users".to_owned(),
+                    ))?;
                 let ledger = self.ledgers.get_or_create(&server_id);
-                let account_results = ledger.get_all_balances()
+                let account_results = ledger
+                    .get_all_balances()
                     .filter(|(user_id, _balance)| channel_users.contains(user_id))
-		    .collect();
+                    .collect();
 
                 Receipt {
                     transaction,
@@ -135,9 +150,7 @@ impl Bank {
                     status: TransactionStatus::Complete,
                 }
             }
-            Operation::Tip {
-                to_user,
-            } => {
+            Operation::Tip { to_user } => {
                 if from_user_id == to_user {
                     let account_results = Vec::new();
                     Receipt {
@@ -162,9 +175,7 @@ impl Bank {
                     }
                 }
             }
-            Operation::Untip {
-                to_user,
-            } => {
+            Operation::Untip { to_user } => {
                 if from_user_id == to_user {
                     let account_results = Vec::new();
                     Receipt {
@@ -189,10 +200,8 @@ impl Bank {
                     }
                 }
             }
-            Operation::Daily {
-                timestamp,
-            } => {
-		let user_id = from_user_id;
+            Operation::Daily { timestamp } => {
+                let user_id = from_user_id;
                 info!("unhandled timestamp: {:?}", timestamp);
                 if self.daily_log.log_user(&server_id, user_id) {
                     // first log today
@@ -234,7 +243,7 @@ impl Bank {
             }
             Operation::GetUserBalance => {
                 let ledger = self.ledgers.get_or_create_mut(&server_id);
-		let user_id = from_user_id;
+                let user_id = from_user_id;
                 let balance = ledger.get_balance(&user_id);
                 let account_results = vec![(user_id, balance)];
                 let status = TransactionStatus::Complete;
@@ -247,23 +256,32 @@ impl Bank {
             }
         };
 
-	Ok(receipt)
+        Ok(receipt)
     }
 
     /// Load saved account data
-    pub async fn load() -> Result<Self> {
+    pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
+        warn!("not using database url: {}", database_url.as_ref());
+
+        let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
+
         let ledgers = Accounts::load().await?;
         let daily_log = DailyLog::load().await?;
         let user_log = UserLog::load().await?;
 
-        Ok(Bank { ledgers, daily_log, user_log })
+        Ok(Bank {
+            ledgers,
+            daily_log,
+            user_log,
+            db,
+        })
     }
 
     /// Save account data
     pub async fn save(&self) -> Result<()> {
         self.ledgers.save().await?;
         self.daily_log.save().await?;
-	self.user_log.save().await
+        self.user_log.save().await
     }
 }
 
