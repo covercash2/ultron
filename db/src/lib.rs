@@ -8,7 +8,7 @@ pub mod schema;
 
 use error::*;
 use model::{BankAccount, ChannelUser};
-use schema::{bank_accounts::dsl::*, channel_users::dsl::*};
+use schema::bank_accounts::dsl::*;
 
 pub struct Db {
     connection: SqliteConnection,
@@ -44,9 +44,20 @@ impl Db {
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
+	use schema::channel_users::dsl::*;
         channel_users
             .load::<ChannelUser>(&self.connection)
             .map_err(Into::into)
+    }
+
+    pub fn channel_users(&self, server: &u64, channel: &u64) -> Result<Vec<ChannelUser>> {
+	use schema::channel_users::dsl::*;
+	let server = server.to_string();
+	let channel = channel.to_string();
+	channel_users.filter(server_id.eq(server))
+	    .filter(channel_id.eq(channel))
+	    .load::<ChannelUser>(&self.connection)
+	    .map_err(Into::into)
     }
 
     pub fn insert_channel_user(&self, server: &u64, channel: &u64, user: &u64) -> Result<usize> {

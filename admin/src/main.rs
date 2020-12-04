@@ -49,6 +49,10 @@ struct Create {
 enum Read {
     AllBalances,
     AllChannelUsers,
+    ChannelUsers {
+	server_id: u64,
+	channel_id: u64,
+    }
 }
 
 #[derive(Clap)]
@@ -127,6 +131,26 @@ impl Read {
 	    }
 	    Read::AllChannelUsers => {
 		let users = db.show_channel_users().expect("unable to retrieve channel users");
+		if users.len() == 0 {
+		    println!("no users retrieved");
+		}
+		for user in users {
+		    let server_id = user
+			.server_id()
+			.expect("unable to parse server id from db output");
+		    let channel_id = user
+			.channel_id()
+			.expect("unable to parse server id from db output");
+		    let user_id = user
+			.user_id()
+			.expect("unable to parse user id from db output");
+
+		    println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
+		}
+	    }
+	    Read::ChannelUsers { server_id, channel_id } => {
+		let users = db.channel_users(&server_id, &channel_id)
+		    .expect("unable to get channel users from db");
 		if users.len() == 0 {
 		    println!("no users retrieved");
 		}
