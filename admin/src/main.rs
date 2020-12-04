@@ -52,6 +52,10 @@ enum Read {
     ChannelUsers {
 	server_id: u64,
 	channel_id: u64,
+    },
+    ChannelUserBalances {
+	server_id: u64,
+	channel_id: u64,
     }
 }
 
@@ -166,6 +170,26 @@ impl Read {
 			.expect("unable to parse user id from db output");
 
 		    println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
+		}
+	    }
+	    Read::ChannelUserBalances { server_id, channel_id } => {
+		let accounts = db.channel_user_balances(&server_id, &channel_id)
+		    .expect("unable to get user accounts from db");
+		if accounts.len() == 0 {
+		    println!("no accounts returned");
+		}
+		for account in accounts {
+		    let server_id = account
+			.server_id()
+			.expect("unable to parse server id from db output");
+		    let user_id = account
+			.user_id()
+			.expect("unable to parse user id from db output");
+		    let balance = account.balance;
+		    println!(
+			"server_id: {}, user_id: {}, balance: {}",
+			server_id, user_id, balance
+		    )
 		}
 	    }
 	}
