@@ -3,7 +3,7 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{self, model::ChannelUser, Db as Database, model::BankAccount};
+use db::{self, model::BankAccount, model::ChannelUser, Db as Database};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -63,6 +63,8 @@ struct Read {
 enum ReadOp {
     /// show all balances from all servers
     AllBalances,
+    /// show user balance
+    UserBalance { server_id: u64, user_id: u64 },
     /// show all users and their associated channels
     AllChannelUsers,
     /// show users in a channel
@@ -99,7 +101,7 @@ struct User {
 struct Account {
     server_id: u64,
     user_id: u64,
-    balance: i32,
+    balance: i64,
 }
 
 impl Create {
@@ -134,13 +136,13 @@ impl ReadOp {
         match self {
             ReadOp::AllBalances => {
                 let accounts = db.show_accounts().expect("unable to retrieve accounts");
-		print_accounts(accounts);
+                print_accounts(accounts);
             }
             ReadOp::AllChannelUsers => {
                 let users = db
                     .show_channel_users()
                     .expect("unable to retrieve channel users");
-		print_channel_users(users);
+                print_channel_users(users);
             }
             ReadOp::ChannelUsers {
                 server_id,
@@ -149,7 +151,7 @@ impl ReadOp {
                 let users = db
                     .channel_users(&server_id, &channel_id)
                     .expect("unable to get channel users from db");
-		print_channel_users(users);
+                print_channel_users(users);
             }
             ReadOp::ChannelUserBalances {
                 server_id,
@@ -158,7 +160,13 @@ impl ReadOp {
                 let accounts = db
                     .channel_user_balances(&server_id, &channel_id)
                     .expect("unable to get user accounts from db");
-		print_accounts(accounts);
+                print_accounts(accounts);
+            }
+            ReadOp::UserBalance { server_id, user_id } => {
+                let account = db
+                    .user_account(&server_id, &user_id)
+                    .expect("unable to get user balance");
+		print_account(account);
             }
         }
     }
@@ -166,20 +174,20 @@ impl ReadOp {
 
 fn print_channel_users(users: Vec<ChannelUser>) {
     if users.len() == 0 {
-	println!("no users retrieved");
+        println!("no users retrieved");
     }
     for user in users {
-	let server_id = user
-	    .server_id()
-	    .expect("unable to parse server id from db output");
-	let channel_id = user
-	    .channel_id()
-	    .expect("unable to parse server id from db output");
-	let user_id = user
-	    .user_id()
-	    .expect("unable to parse user id from db output");
+        let server_id = user
+            .server_id()
+            .expect("unable to parse server id from db output");
+        let channel_id = user
+            .channel_id()
+            .expect("unable to parse server id from db output");
+        let user_id = user
+            .user_id()
+            .expect("unable to parse user id from db output");
 
-	println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
+        println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
     }
 }
 
@@ -188,18 +196,22 @@ fn print_accounts(accounts: Vec<BankAccount>) {
         println!("no accounts returned");
     }
     for account in accounts {
-        let server_id = account
-            .server_id()
-            .expect("unable to parse server id from db output");
-        let user_id = account
-            .user_id()
-            .expect("unable to parse user id from db output");
-        let balance = account.balance;
-        println!(
-            "server_id: {}, user_id: {}, balance: {}",
-            server_id, user_id, balance
-        )
+	print_account(account)
     }
+}
+
+fn print_account(account: BankAccount) {
+    let server_id = account
+	.server_id()
+	.expect("unable to parse server id from db output");
+    let user_id = account
+	.user_id()
+	.expect("unable to parse user id from db output");
+    let balance = account.balance;
+    println!(
+	"#s{} #u{} ${}",
+	server_id, user_id, balance
+    )
 }
 
 fn main() {

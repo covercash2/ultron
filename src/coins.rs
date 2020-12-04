@@ -192,11 +192,15 @@ impl Bank {
                     // award daily
                     debug!("awarding daily to user{} on channel{}", user_id, server_id);
 
-                    self.add_daily(&server_id, &user_id);
-
+                    let status = if let Err(err) = self.add_daily(&server_id, &user_id).await {
+			error!("unable to add daily to account: {:?}", err);
+			TransactionStatus::DbError
+		    } else {
+			TransactionStatus::Complete
+		    };
                     let account_results = self.get_balances(&server_id, vec![user_id]);
-                    let status = TransactionStatus::Complete;
 
+		    // TODO db daily_log?
                     if let Err(err) = self.daily_log.save().await {
                         error!("error saving daily log: {:?}", err);
                     }
@@ -290,9 +294,17 @@ impl Bank {
         ledger.transfer(from_user, to_user, amount);
     }
 
-    fn add_daily(&mut self, server_id: &u64, user_id: &u64) {
+    async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<()> {
+	let db = self.db.lock().await;
+	let user_balance: i64 = db.user_account(server_id, user_id)?.balance.into();
+	let new_balance: i64 = user_balance + DAILY_AMOUNT;
+	let _record_num = db.update_balance(server_id, user_id, &new_balance)?;
+
+	// legacy json
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(user_id, DAILY_AMOUNT);
+
+	Ok(())
     }
 
     fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) {
