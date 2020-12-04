@@ -3,7 +3,7 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{self, Db as Database};
+use db::{self, model::ChannelUser, Db as Database, model::BankAccount};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -49,14 +49,8 @@ struct Create {
 enum Read {
     AllBalances,
     AllChannelUsers,
-    ChannelUsers {
-	server_id: u64,
-	channel_id: u64,
-    },
-    ChannelUserBalances {
-	server_id: u64,
-	channel_id: u64,
-    }
+    ChannelUsers { server_id: u64, channel_id: u64 },
+    ChannelUserBalances { server_id: u64, channel_id: u64 },
 }
 
 #[derive(Clap)]
@@ -100,12 +94,15 @@ impl Create {
             }
             Record::ChannelUser(channel_user) => {
                 // create channel user
-		let server_id = &channel_user.server_id;
-		let channel_id = &channel_user.channel_id;
-		let user_id = &channel_user.user_id;
-		db.insert_channel_user(server_id, channel_id, user_id)
-		    .expect("unable to insert channel user");
-		println!("user inserted: #s{} #c{} #u{}", server_id, channel_id, user_id);
+                let server_id = &channel_user.server_id;
+                let channel_id = &channel_user.channel_id;
+                let user_id = &channel_user.user_id;
+                db.insert_channel_user(server_id, channel_id, user_id)
+                    .expect("unable to insert channel user");
+                println!(
+                    "user inserted: #s{} #c{} #u{}",
+                    server_id, channel_id, user_id
+                );
             }
         }
     }
@@ -113,86 +110,74 @@ impl Create {
 
 impl Read {
     fn handle(self, db: &Database) {
-	match self {
-	    Read::AllBalances => {
-		let accounts = db.show_accounts().expect("unable to retrieve accounts");
-		if accounts.len() == 0 {
-		    println!("no accounts returned");
-		}
-		for account in accounts {
-		    let server_id = account
-			.server_id()
-			.expect("unable to parse server id from db output");
-		    let user_id = account
-			.user_id()
-			.expect("unable to parse user id from db output");
-		    let balance = account.balance;
-		    println!(
-			"server_id: {}, user_id: {}, balance: {}",
-			server_id, user_id, balance
-		    )
-		}
-	    }
-	    Read::AllChannelUsers => {
-		let users = db.show_channel_users().expect("unable to retrieve channel users");
-		if users.len() == 0 {
-		    println!("no users retrieved");
-		}
-		for user in users {
-		    let server_id = user
-			.server_id()
-			.expect("unable to parse server id from db output");
-		    let channel_id = user
-			.channel_id()
-			.expect("unable to parse server id from db output");
-		    let user_id = user
-			.user_id()
-			.expect("unable to parse user id from db output");
+        match self {
+            Read::AllBalances => {
+                let accounts = db.show_accounts().expect("unable to retrieve accounts");
+		print_accounts(accounts);
+            }
+            Read::AllChannelUsers => {
+                let users = db
+                    .show_channel_users()
+                    .expect("unable to retrieve channel users");
+		print_channel_users(users);
+            }
+            Read::ChannelUsers {
+                server_id,
+                channel_id,
+            } => {
+                let users = db
+                    .channel_users(&server_id, &channel_id)
+                    .expect("unable to get channel users from db");
+		print_channel_users(users);
+            }
+            Read::ChannelUserBalances {
+                server_id,
+                channel_id,
+            } => {
+                let accounts = db
+                    .channel_user_balances(&server_id, &channel_id)
+                    .expect("unable to get user accounts from db");
+		print_accounts(accounts);
+            }
+        }
+    }
+}
 
-		    println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
-		}
-	    }
-	    Read::ChannelUsers { server_id, channel_id } => {
-		let users = db.channel_users(&server_id, &channel_id)
-		    .expect("unable to get channel users from db");
-		if users.len() == 0 {
-		    println!("no users retrieved");
-		}
-		for user in users {
-		    let server_id = user
-			.server_id()
-			.expect("unable to parse server id from db output");
-		    let channel_id = user
-			.channel_id()
-			.expect("unable to parse server id from db output");
-		    let user_id = user
-			.user_id()
-			.expect("unable to parse user id from db output");
+fn print_channel_users(users: Vec<ChannelUser>) {
+    if users.len() == 0 {
+	println!("no users retrieved");
+    }
+    for user in users {
+	let server_id = user
+	    .server_id()
+	    .expect("unable to parse server id from db output");
+	let channel_id = user
+	    .channel_id()
+	    .expect("unable to parse server id from db output");
+	let user_id = user
+	    .user_id()
+	    .expect("unable to parse user id from db output");
 
-		    println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
-		}
-	    }
-	    Read::ChannelUserBalances { server_id, channel_id } => {
-		let accounts = db.channel_user_balances(&server_id, &channel_id)
-		    .expect("unable to get user accounts from db");
-		if accounts.len() == 0 {
-		    println!("no accounts returned");
-		}
-		for account in accounts {
-		    let server_id = account
-			.server_id()
-			.expect("unable to parse server id from db output");
-		    let user_id = account
-			.user_id()
-			.expect("unable to parse user id from db output");
-		    let balance = account.balance;
-		    println!(
-			"server_id: {}, user_id: {}, balance: {}",
-			server_id, user_id, balance
-		    )
-		}
-	    }
-	}
+	println!("s#{} c#{} u#{}", server_id, channel_id, user_id);
+    }
+}
+
+fn print_accounts(accounts: Vec<BankAccount>) {
+    if accounts.len() == 0 {
+        println!("no accounts returned");
+    }
+    for account in accounts {
+        let server_id = account
+            .server_id()
+            .expect("unable to parse server id from db output");
+        let user_id = account
+            .user_id()
+            .expect("unable to parse user id from db output");
+        let balance = account.balance;
+        println!(
+            "server_id: {}, user_id: {}, balance: {}",
+            server_id, user_id, balance
+        )
     }
 }
 
@@ -228,7 +213,7 @@ fn main() {
                     match update.record {
                         Record::ChannelUser(_) => {
                             // shouldn't happen
-			    println!("users cannot be updated");
+                            println!("users cannot be updated");
                         }
                         Record::Balance(balance) => {
                             let server_id = &balance.server_id;
