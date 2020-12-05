@@ -332,51 +332,51 @@ impl Bank {
         from_user: &u64,
         to_user: &u64,
         amount: i64,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         let db = self.db.lock().await;
-        let _record_num = db.transfer_coins(server_id, from_user, to_user, &amount)?;
+        let record_num = db.transfer_coins(server_id, from_user, to_user, &amount)?;
 
         // legacy
         let ledger = self.ledgers.get_or_create_mut(server_id);
         ledger.transfer(from_user, to_user, amount);
 
-        Ok(())
+        Ok(record_num)
     }
 
-    async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<()> {
+    async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let _record_num = db.increment_balance(server_id, user_id, &DAILY_AMOUNT);
+        let record_num = db.increment_balance(server_id, user_id, &DAILY_AMOUNT)?;
 
         // legacy json
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(user_id, DAILY_AMOUNT);
 
-        Ok(())
+        Ok(record_num)
     }
 
-    async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+    async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let mut _record_num = db.increment_balance(&server_id, from_user, &1)?;
-        _record_num += db.increment_balance(&server_id, to_user, &2)?;
+        let mut record_num = db.increment_balance(&server_id, from_user, &1)?;
+        record_num += db.increment_balance(&server_id, to_user, &2)?;
 
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(to_user, 2);
         ledger.increment_balance(from_user, 1);
 
-        Ok(())
+        Ok(record_num)
     }
 
-    async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+    async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let mut _record_num = db.increment_balance(&server_id, from_user, &-1)?;
-        _record_num += db.increment_balance(&server_id, from_user, &-2)?;
+        let mut record_num = db.increment_balance(&server_id, from_user, &-1)?;
+        record_num += db.increment_balance(&server_id, from_user, &-2)?;
 
         // legacy
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(to_user, -2);
         ledger.increment_balance(from_user, -1);
 
-        Ok(())
+        Ok(record_num)
     }
 }
 
