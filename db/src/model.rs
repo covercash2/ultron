@@ -38,7 +38,7 @@ impl ChannelUser {
     }
 }
 
-#[derive(Clone, Insertable, Queryable)]
+#[derive(Debug, Clone, Insertable, Queryable)]
 pub struct BankAccount {
     server_id: String,
     user_id: String,

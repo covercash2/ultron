@@ -54,9 +54,18 @@ impl Db {
             })
     }
 
+    pub fn user_accounts(&self, server: &u64, users: &[u64]) -> Result<Vec<BankAccount>> {
+        let server = server.to_string();
+        let users: Vec<String> = users.iter().map(|u| u.to_string()).collect();
+        bank_accounts
+            .filter(server_id.eq(server))
+            .filter(user_id.eq_any(users))
+	    .load::<BankAccount>(&self.connection)
+            .map_err(Into::into)
+    }
+
     pub fn insert_bank_account(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
-	let amount: i32 = (*amount).try_into()
-	    .map_err(|_e| Error::CoinOverflow)?;
+        let amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
         diesel::insert_into(schema::bank_accounts::table)
             .values(&BankAccount::new(server, user, &amount))
             .execute(&self.connection)
@@ -66,12 +75,26 @@ impl Db {
     pub fn update_balance(&self, server: &u64, user: &u64, new_balance: &i64) -> Result<usize> {
         let server = server.to_string();
         let user = user.to_string();
-	let new_balance: i32 = (*new_balance).try_into()
-	    .map_err(|_e| Error::CoinOverflow)?;
+        let new_balance: i32 = (*new_balance)
+            .try_into()
+            .map_err(|_e| Error::CoinOverflow)?;
         diesel::update(bank_accounts.find((server, user)))
             .set(balance.eq(new_balance))
             .execute(&self.connection)
             .map_err(Into::into)
+    }
+
+    pub fn increment_balance(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
+	let server_s = server.to_string();
+	let user_s = user.to_string();
+	let amount: i32 = (*amount).try_into()
+	    .map_err(|_e| Error::CoinOverflow)?;
+	let current_balance: i32 = bank_accounts.select(balance)
+	    .find((server_s, user_s))
+	    .first::<i32>(&self.connection)?;
+	let new_balance: i32 = current_balance + amount;
+
+	self.update_balance(server, user, &new_balance.into())
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
