@@ -281,19 +281,22 @@ impl Bank {
         server_id: &u64,
         channel_id: &u64,
     ) -> Result<Vec<(u64, i64)>> {
-        let db = self.db.lock().await;
-        let accounts = db.show_accounts()?;
-
-        for account in accounts {
-            debug!("account from database: {:?}", account);
-        }
-
-        let channel_users = self
+        let channel_users: &Vec<u64> = self
             .user_log
             .get_channel_users(server_id, channel_id)
             .ok_or(Error::TransactionFailed(
                 "unable to get channel users".to_owned(),
             ))?;
+
+        let db = self.db.lock().await;
+
+	let accounts: Result<Vec<(u64, i64)>> = db.user_accounts(server_id, channel_users)?.iter()
+	    .map(|account| Ok((account.user_id()?, account.balance.into()))).collect();
+	let accounts = accounts?;
+        for account in accounts {
+            debug!("account from database: {:?}", account);
+        }
+
         let ledger = self.ledgers.get_or_create(server_id);
         Ok(ledger
             .get_all_balances()
