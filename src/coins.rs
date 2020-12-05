@@ -114,7 +114,8 @@ impl Bank {
 
         let receipt = match transaction.operation {
             Operation::Transfer { to_user, amount } => {
-                self.transfer_coins(&server_id, &from_user_id, &to_user, amount).await?;
+                self.transfer_coins(&server_id, &from_user_id, &to_user, amount)
+                    .await?;
 
                 let account_results = self
                     .get_balances(&server_id, vec![from_user_id, to_user])
@@ -290,17 +291,20 @@ impl Bank {
 
         let db = self.db.lock().await;
 
-	let accounts: Result<Vec<(u64, i64)>> = db.user_accounts(server_id, channel_users)?.iter()
-	    .map(|account| Ok((account.user_id()?, account.balance.into()))).collect();
-	let accounts = accounts?;
+        let accounts: Result<Vec<(u64, i64)>> = db
+            .user_accounts(server_id, channel_users)?
+            .iter()
+            .map(|account| Ok((account.user_id()?, account.balance.into())))
+            .collect();
+        let accounts = accounts?;
 
         let ledger = self.ledgers.get_or_create(server_id);
-	let _legacy_accounts: Vec<(u64, i64)> = ledger
+        let _legacy_accounts: Vec<(u64, i64)> = ledger
             .get_all_balances()
             .filter(|(user_id, _balance)| channel_users.contains(user_id))
             .collect();
 
-	Ok(accounts)
+        Ok(accounts)
     }
 
     async fn get_balances(
@@ -309,14 +313,17 @@ impl Bank {
         user_ids: Vec<u64>,
     ) -> Result<Vec<(u64, i64)>> {
         let db = self.db.lock().await;
-        let balances = db.user_accounts(server_id, &user_ids)?;
-        for balance in balances {
-            debug!("balance: {:?}", balance);
-        }
+        let balances: Vec<(u64, i64)> = db
+            .user_accounts(server_id, &user_ids)?
+            .iter()
+            .map(|account| Ok((account.user_id()?, account.balance.into())))
+            .collect::<Result<Vec<(u64, i64)>>>()?;
 
         // legacy
         let ledger = self.ledgers.get_or_create_mut(server_id);
-        Ok(ledger.get_balances(user_ids))
+        let _legacy_accounts = ledger.get_balances(user_ids);
+
+        Ok(balances)
     }
 
     async fn transfer_coins(
@@ -333,7 +340,7 @@ impl Bank {
         let ledger = self.ledgers.get_or_create_mut(server_id);
         ledger.transfer(from_user, to_user, amount);
 
-	Ok(())
+        Ok(())
     }
 
     async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<()> {
@@ -360,16 +367,16 @@ impl Bank {
     }
 
     async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
-	let db = self.db.lock().await;
-	let mut _record_num = db.increment_balance(&server_id, from_user, &-1)?;
-	_record_num += db.increment_balance(&server_id, from_user, &-2)?;
+        let db = self.db.lock().await;
+        let mut _record_num = db.increment_balance(&server_id, from_user, &-1)?;
+        _record_num += db.increment_balance(&server_id, from_user, &-2)?;
 
-	// legacy
+        // legacy
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(to_user, -2);
         ledger.increment_balance(from_user, -1);
 
-	Ok(())
+        Ok(())
     }
 }
 
