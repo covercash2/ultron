@@ -60,7 +60,7 @@ impl Db {
         bank_accounts
             .filter(server_id.eq(server))
             .filter(user_id.eq_any(users))
-	    .load::<BankAccount>(&self.connection)
+            .load::<BankAccount>(&self.connection)
             .map_err(Into::into)
     }
 
@@ -85,16 +85,41 @@ impl Db {
     }
 
     pub fn increment_balance(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
+        let server_s = server.to_string();
+        let user_s = user.to_string();
+        let amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
+        let current_balance: i32 = bank_accounts
+            .select(balance)
+            .find((server_s, user_s))
+            .first::<i32>(&self.connection)?;
+        let new_balance: i32 = current_balance + amount;
+
+        self.update_balance(server, user, &new_balance.into())
+    }
+
+    pub fn transfer_coins(
+        &self,
+        server: &u64,
+        from_user: &u64,
+        to_user: &u64,
+        amount: &i64,
+    ) -> Result<usize> {
 	let server_s = server.to_string();
-	let user_s = user.to_string();
+	let from_user_s = from_user.to_string();
+	let to_user_s = to_user.to_string();
 	let amount: i32 = (*amount).try_into()
 	    .map_err(|_e| Error::CoinOverflow)?;
-	let current_balance: i32 = bank_accounts.select(balance)
-	    .find((server_s, user_s))
+	let from_user_balance = bank_accounts.select(balance).find((&server_s, &from_user_s))
 	    .first::<i32>(&self.connection)?;
-	let new_balance: i32 = current_balance + amount;
+	let to_user_balance = bank_accounts.select(balance).find((&server_s, &to_user_s))
+	    .first::<i32>(&self.connection)?;
+	let new_from_balance = from_user_balance - amount;
+	let new_to_balance = to_user_balance + amount;
 
-	self.update_balance(server, user, &new_balance.into())
+	let mut record_num = self.update_balance(server, from_user, &new_from_balance.into())?;
+	record_num += self.update_balance(server, to_user, &new_to_balance.into())?;
+
+	Ok(record_num)
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
