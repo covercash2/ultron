@@ -293,15 +293,14 @@ impl Bank {
 	let accounts: Result<Vec<(u64, i64)>> = db.user_accounts(server_id, channel_users)?.iter()
 	    .map(|account| Ok((account.user_id()?, account.balance.into()))).collect();
 	let accounts = accounts?;
-        for account in accounts {
-            debug!("account from database: {:?}", account);
-        }
 
         let ledger = self.ledgers.get_or_create(server_id);
-        Ok(ledger
+	let _legacy_accounts: Vec<(u64, i64)> = ledger
             .get_all_balances()
             .filter(|(user_id, _balance)| channel_users.contains(user_id))
-            .collect())
+            .collect();
+
+	Ok(accounts)
     }
 
     async fn get_balances(
