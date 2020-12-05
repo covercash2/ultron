@@ -116,7 +116,9 @@ impl Bank {
             Operation::Transfer { to_user, amount } => {
                 self.transfer_coins(&server_id, &from_user_id, &to_user, amount);
 
-                let account_results = self.get_balances(&server_id, vec![from_user_id, to_user]);
+                let account_results = self
+                    .get_balances(&server_id, vec![from_user_id, to_user])
+                    .await?;
 
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
@@ -129,7 +131,7 @@ impl Bank {
                 }
             }
             Operation::GetAllBalances => {
-                let account_results = self.get_all_balances(&server_id, &channel_id)?;
+                let account_results = self.get_all_balances(&server_id, &channel_id).await?;
 
                 Receipt {
                     transaction,
@@ -146,9 +148,11 @@ impl Bank {
                         status: TransactionStatus::SelfTip,
                     }
                 } else {
-		    self.tip(&server_id, &from_user_id, &to_user);
+                    self.tip(&server_id, &from_user_id, &to_user).await?;
 
-		    let account_results = self.get_balances(&server_id, vec![from_user_id, to_user]);
+                    let account_results = self
+                        .get_balances(&server_id, vec![from_user_id, to_user])
+                        .await?;
 
                     if let Err(err) = self.ledgers.save().await {
                         error!("unable to save ledger: {:?}", err);
@@ -170,8 +174,10 @@ impl Bank {
                         status: TransactionStatus::SelfTip, // TODO new error type?
                     }
                 } else {
-		    self.untip(&server_id, &from_user_id, &to_user);
-		    let account_results = self.get_balances(&server_id, vec![from_user_id, to_user]);
+                    self.untip(&server_id, &from_user_id, &to_user);
+                    let account_results = self
+                        .get_balances(&server_id, vec![from_user_id, to_user])
+                        .await?;
 
                     if let Err(err) = self.ledgers.save().await {
                         error!("unable to save ledger: {:?}", err);
@@ -193,14 +199,14 @@ impl Bank {
                     debug!("awarding daily to user{} on channel{}", user_id, server_id);
 
                     let status = if let Err(err) = self.add_daily(&server_id, &user_id).await {
-			error!("unable to add daily to account: {:?}", err);
-			TransactionStatus::DbError
-		    } else {
-			TransactionStatus::Complete
-		    };
-                    let account_results = self.get_balances(&server_id, vec![user_id]);
+                        error!("unable to add daily to account: {:?}", err);
+                        TransactionStatus::DbError
+                    } else {
+                        TransactionStatus::Complete
+                    };
+                    let account_results = self.get_balances(&server_id, vec![user_id]).await?;
 
-		    // TODO db daily_log?
+                    // TODO db daily_log?
                     if let Err(err) = self.daily_log.save().await {
                         error!("error saving daily log: {:?}", err);
                     }
@@ -231,7 +237,7 @@ impl Bank {
             }
             Operation::GetUserBalance => {
                 let user_id = from_user_id;
-                let account_results = self.get_balances(&server_id, vec![user_id]);
+                let account_results = self.get_balances(&server_id, vec![user_id]).await?;
                 let status = TransactionStatus::Complete;
 
                 Receipt {
@@ -270,7 +276,18 @@ impl Bank {
         self.user_log.save().await
     }
 
-    fn get_all_balances(&mut self, server_id: &u64, channel_id: &u64) -> Result<Vec<(u64, i64)>> {
+    async fn get_all_balances(
+        &mut self,
+        server_id: &u64,
+        channel_id: &u64,
+    ) -> Result<Vec<(u64, i64)>> {
+        let db = self.db.lock().await;
+        let accounts = db.show_accounts()?;
+
+        for account in accounts {
+            debug!("account from database: {:?}", account);
+        }
+
         let channel_users = self
             .user_log
             .get_channel_users(server_id, channel_id)
@@ -284,39 +301,58 @@ impl Bank {
             .collect())
     }
 
-    fn get_balances(&mut self, server_id: &u64, user_ids: Vec<u64>) -> Vec<(u64, i64)> {
+    async fn get_balances(
+        &mut self,
+        server_id: &u64,
+        user_ids: Vec<u64>,
+    ) -> Result<Vec<(u64, i64)>> {
+        let db = self.db.lock().await;
+        let balances = db.user_accounts(server_id, &user_ids)?;
+	for balance in balances {
+	    debug!("balance: {:?}", balance);
+	}
+
+        // legacy
         let ledger = self.ledgers.get_or_create_mut(server_id);
-        ledger.get_balances(user_ids)
+        Ok(ledger.get_balances(user_ids))
     }
 
     fn transfer_coins(&mut self, server_id: &u64, from_user: &u64, to_user: &u64, amount: i64) {
+	//let db = self.db.lock().await;
+	// db.transfer(server_id, from_user, to_user, amount);
+
+	// legacy
         let ledger = self.ledgers.get_or_create_mut(server_id);
         ledger.transfer(from_user, to_user, amount);
     }
 
     async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<()> {
-	let db = self.db.lock().await;
-	let user_balance: i64 = db.user_account(server_id, user_id)?.balance.into();
-	let new_balance: i64 = user_balance + DAILY_AMOUNT;
-	let _record_num = db.update_balance(server_id, user_id, &new_balance)?;
+        let db = self.db.lock().await;
+	let _record_num = db.increment_balance(server_id, user_id, &DAILY_AMOUNT);
 
-	// legacy json
+        // legacy json
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(user_id, DAILY_AMOUNT);
+
+        Ok(())
+    }
+
+    async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+	let db = self.db.lock().await;
+	let mut _record_num = db.increment_balance(&server_id, from_user, &1)?;
+	_record_num += db.increment_balance(&server_id, to_user, &2)?;
+
+        let ledger = self.ledgers.get_or_create_mut(&server_id);
+        ledger.increment_balance(to_user, 2);
+        ledger.increment_balance(from_user, 1);
 
 	Ok(())
     }
 
-    fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) {
-	let ledger = self.ledgers.get_or_create_mut(&server_id);
-	ledger.increment_balance(to_user, 2);
-	ledger.increment_balance(from_user, 1);
-    }
-
     fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) {
-	let ledger = self.ledgers.get_or_create_mut(&server_id);
-	ledger.increment_balance(to_user, -2);
-	ledger.increment_balance(from_user, -1);
+        let ledger = self.ledgers.get_or_create_mut(&server_id);
+        ledger.increment_balance(to_user, -2);
+        ledger.increment_balance(from_user, -1);
     }
 }
 
