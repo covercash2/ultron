@@ -97,6 +97,54 @@ impl Db {
         self.update_balance(server, user, &new_balance.into())
     }
 
+    pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+	let from_amount: i32 = 1;
+	let from_account = BankAccount::new(server, from_user, &from_amount);
+
+	let to_amount: i32 = 2;
+	let to_account = BankAccount::new(server, to_user, &2);
+
+	let mut num_records = diesel::insert_into(bank_accounts)
+	    .values(&from_account)
+	    .on_conflict((server_id, user_id))
+	    .do_update()
+	    .set(balance.eq(balance + from_amount))
+	    .execute(&self.connection)?;
+
+	num_records += diesel::insert_into(bank_accounts)
+	    .values(&to_account)
+	    .on_conflict((server_id, user_id))
+	    .do_update()
+	    .set(balance.eq(balance + to_amount))
+	    .execute(&self.connection)?;
+
+	Ok(num_records)
+    }
+
+    pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+	let from_amount: i32 = -1;
+	let from_account = BankAccount::new(server, from_user, &from_amount);
+
+	let to_amount: i32 = -2;
+	let to_account = BankAccount::new(server, to_user, &2);
+
+	let mut num_records = diesel::insert_into(bank_accounts)
+	    .values(&from_account)
+	    .on_conflict((server_id, user_id))
+	    .do_update()
+	    .set(balance.eq(balance + from_amount))
+	    .execute(&self.connection)?;
+
+	num_records += diesel::insert_into(bank_accounts)
+	    .values(&to_account)
+	    .on_conflict((server_id, user_id))
+	    .do_update()
+	    .set(balance.eq(balance + to_amount))
+	    .execute(&self.connection)?;
+
+	Ok(num_records)
+    }
+
     pub fn transfer_coins(
         &self,
         server: &u64,
@@ -161,6 +209,13 @@ impl Db {
             .filter(schema::bank_accounts::dsl::user_id.eq_any(user_ids))
             .load::<BankAccount>(&self.connection)
             .map_err(Into::into)
+    }
+
+    pub fn log_user(&self, server: &u64, channel: &u64, user: &u64) -> Result<usize> {
+	diesel::insert_or_ignore_into(schema::channel_users::table)
+	    .values(&ChannelUser::new(server, channel, user))
+	    .execute(&self.connection)
+	    .map_err(Into::into)
     }
 }
 
