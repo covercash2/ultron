@@ -108,8 +108,7 @@ impl Bank {
         let channel_id = transaction.channel_id;
         let from_user_id = transaction.from_user;
 
-        self.user_log
-            .log_user(&server_id, &transaction.channel_id, &transaction.from_user)
+        self.log_user(&server_id, &transaction.channel_id, &transaction.from_user)
             .await?;
 
         let receipt = match transaction.operation {
@@ -356,8 +355,7 @@ impl Bank {
 
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let mut record_num = db.increment_balance(&server_id, from_user, &1)?;
-        record_num += db.increment_balance(&server_id, to_user, &2)?;
+        let record_num = db.tip(server_id, from_user, to_user)?;
 
         let ledger = self.ledgers.get_or_create_mut(&server_id);
         ledger.increment_balance(to_user, 2);
@@ -368,8 +366,7 @@ impl Bank {
 
     async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let mut record_num = db.increment_balance(&server_id, from_user, &-1)?;
-        record_num += db.increment_balance(&server_id, from_user, &-2)?;
+        let record_num = db.untip(server_id, from_user, to_user)?;
 
         // legacy
         let ledger = self.ledgers.get_or_create_mut(&server_id);
@@ -377,6 +374,24 @@ impl Bank {
         ledger.increment_balance(from_user, -1);
 
         Ok(record_num)
+    }
+
+    async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
+        let db = self.db.lock().await;
+        let record_num = db.log_user(server_id, channel_id, user_id)?;
+
+        if record_num == 1 {
+            debug!(
+                "user logged: #s{} #c{} #u{}",
+                server_id, channel_id, user_id
+            );
+        }
+
+        self.user_log
+            .log_user(server_id, channel_id, user_id)
+            .await?;
+
+        Ok(())
     }
 }
 
