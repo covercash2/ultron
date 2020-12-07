@@ -223,6 +223,7 @@ dependencies = [
  "clap",
  "diesel",
  "dotenv",
+ "log",
 ]
 
 [[package]]

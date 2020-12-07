@@ -41,20 +41,6 @@ impl Accounts {
         tokio::fs::write(DATA_FILE, json).await.map_err(Into::into)
     }
 
-    pub fn get_or_create(&mut self, ledger_id: &u64) -> &Ledger {
-        if self.ledgers.contains_key(ledger_id) {
-            return self
-                .ledgers
-                .get(ledger_id)
-                .expect("weird error retrieving ledger");
-        }
-        info!("creating accounts for channel: {:?}", ledger_id);
-        self.ledgers.insert(*ledger_id, Ledger::default());
-        self.ledgers
-            .get(ledger_id)
-            .expect("unable to get the ledger that was just created")
-    }
-
     pub fn get_or_create_mut(&mut self, ledger_id: &u64) -> &mut Ledger {
         if self.ledgers.contains_key(ledger_id) {
             return self
@@ -111,12 +97,6 @@ impl Ledger {
             .iter()
             .map(|user| (*user, self.get_balance(user)))
             .collect()
-    }
-
-    pub fn get_all_balances<'a>(&'a self) -> impl Iterator<Item = (u64, i64)> + 'a {
-        self.map
-            .iter()
-            .map(|(uid, amount)| (*uid, *amount))
     }
 }
 
