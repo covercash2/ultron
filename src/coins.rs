@@ -19,11 +19,8 @@ use chrono::{DateTime, Utc};
 
 use db::Db;
 
+use crate::data::{ChannelId, ServerId, UserId, UserLog};
 use crate::error::Result;
-use crate::{
-    data::{ChannelId, ServerId, UserId, UserLog},
-    error::Error,
-};
 
 mod ledger;
 mod transaction;
@@ -276,34 +273,18 @@ impl Bank {
         self.user_log.save().await
     }
 
+    /// this function only gets balances that have the same server and channel,
+    /// despite the name.
     async fn get_all_balances(
         &mut self,
         server_id: &u64,
         channel_id: &u64,
     ) -> Result<Vec<(u64, i64)>> {
-        let channel_users: &Vec<u64> = self
-            .user_log
-            .get_channel_users(server_id, channel_id)
-            .ok_or(Error::TransactionFailed(
-                "unable to get channel users".to_owned(),
-            ))?;
-
         let db = self.db.lock().await;
-
-        let accounts: Result<Vec<(u64, i64)>> = db
-            .user_accounts(server_id, channel_users)?
-            .iter()
+        db.channel_user_balances(server_id, channel_id)?
+            .into_iter()
             .map(|account| Ok((account.user_id()?, account.balance.into())))
-            .collect();
-        let accounts = accounts?;
-
-        let ledger = self.ledgers.get_or_create(server_id);
-        let _legacy_accounts: Vec<(u64, i64)> = ledger
-            .get_all_balances()
-            .filter(|(user_id, _balance)| channel_users.contains(user_id))
-            .collect();
-
-        Ok(accounts)
+            .collect::<Result<Vec<(u64, i64)>>>()
     }
 
     async fn get_balances(

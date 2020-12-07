@@ -214,11 +214,11 @@ impl Db {
 
         let user_ids = channel_users
             .select(user_id)
-            .filter(server_id.eq(server))
-            .filter(channel_id.eq(channel));
+            .filter(channel_id.eq(channel).and(server_id.eq(&server)));
 
         bank_accounts
             .filter(schema::bank_accounts::dsl::user_id.eq_any(user_ids))
+            .filter(schema::bank_accounts::dsl::server_id.eq(&server))
             .load::<BankAccount>(&self.connection)
             .map_err(Into::into)
     }

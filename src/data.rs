@@ -37,11 +37,6 @@ impl UserLog {
         }
     }
 
-    pub fn get_channel_users(&self, server_id: &ServerId, channel_id: &ChannelId) -> Option<&Vec<UserId>> {
-	self.map.get(server_id)
-	    .and_then(|channels| channels.get(channel_id))
-    }
-
     fn get_or_create_channel_log(
         &mut self,
         server_id: &ServerId,
