@@ -19,13 +19,12 @@ use chrono::{DateTime, Utc};
 
 use db::Db;
 
-use crate::data::{ChannelId, ServerId, UserId, UserLog};
+use crate::data::{ChannelId, ServerId, UserId};
 use crate::error::Result;
 
 mod ledger;
 mod transaction;
 
-use ledger::Accounts;
 pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
 
 /// The log file for the daily logins
@@ -91,11 +90,8 @@ pub async fn bank_loop(
 #[derive(Debug)]
 pub struct Bank {
     db: Arc<Mutex<Db>>,
-    ledgers: Accounts,
     /// A map to keep track of which users have logged in today
     daily_log: DailyLog,
-    /// a log of all users, ever
-    user_log: UserLog,
 }
 
 impl Bank {
@@ -151,10 +147,6 @@ impl Bank {
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
 
-                    if let Err(err) = self.ledgers.save().await {
-                        error!("unable to save ledger: {:?}", err);
-                    }
-
                     Receipt {
                         transaction,
                         account_results,
@@ -175,10 +167,6 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
-
-                    if let Err(err) = self.ledgers.save().await {
-                        error!("unable to save ledger: {:?}", err);
-                    }
 
                     Receipt {
                         transaction,
@@ -208,6 +196,9 @@ impl Bank {
                         error!("error saving daily log: {:?}", err);
                     }
 
+		    // save daily log
+		    self.save().await?;
+
                     Receipt {
                         transaction,
                         account_results,
@@ -224,6 +215,9 @@ impl Bank {
                     let status = TransactionStatus::BadDailyRequest {
                         next_epoch: self.daily_log.epoch.clone(),
                     };
+
+		    // save daily log
+		    self.save().await?;
 
                     Receipt {
                         transaction,
@@ -250,27 +244,22 @@ impl Bank {
 
     /// Load saved account data
     pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
-        warn!("not using database url: {}", database_url.as_ref());
+
+	info!("using database: {}", database_url.as_ref());
 
         let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
 
-        let ledgers = Accounts::load().await?;
         let daily_log = DailyLog::load().await?;
-        let user_log = UserLog::load().await?;
 
         Ok(Bank {
-            ledgers,
             daily_log,
-            user_log,
             db,
         })
     }
 
     /// Save account data
     pub async fn save(&self) -> Result<()> {
-        self.ledgers.save().await?;
-        self.daily_log.save().await?;
-        self.user_log.save().await
+        self.daily_log.save().await
     }
 
     /// this function only gets balances that have the same server and channel,
@@ -299,10 +288,6 @@ impl Bank {
             .map(|account| Ok((account.user_id()?, account.balance.into())))
             .collect::<Result<Vec<(u64, i64)>>>()?;
 
-        // legacy
-        let ledger = self.ledgers.get_or_create_mut(server_id);
-        let _legacy_accounts = ledger.get_balances(user_ids);
-
         Ok(balances)
     }
 
@@ -316,45 +301,25 @@ impl Bank {
         let db = self.db.lock().await;
         let record_num = db.transfer_coins(server_id, from_user, to_user, &amount)?;
 
-        // legacy
-        let ledger = self.ledgers.get_or_create_mut(server_id);
-        ledger.transfer(from_user, to_user, amount);
-
         Ok(record_num)
     }
 
     async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let record_num = db.increment_balance(server_id, user_id, &DAILY_AMOUNT)?;
-
-        // legacy json
-        let ledger = self.ledgers.get_or_create_mut(&server_id);
-        ledger.increment_balance(user_id, DAILY_AMOUNT);
-
-        Ok(record_num)
+        db.increment_balance(server_id, user_id, &DAILY_AMOUNT)
+            .map_err(Into::into)
     }
 
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let record_num = db.tip(server_id, from_user, to_user)?;
-
-        let ledger = self.ledgers.get_or_create_mut(&server_id);
-        ledger.increment_balance(to_user, 2);
-        ledger.increment_balance(from_user, 1);
-
-        Ok(record_num)
+        db.tip(server_id, from_user, to_user)
+            .map_err(Into::into)
     }
 
     async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        let record_num = db.untip(server_id, from_user, to_user)?;
-
-        // legacy
-        let ledger = self.ledgers.get_or_create_mut(&server_id);
-        ledger.increment_balance(to_user, -2);
-        ledger.increment_balance(from_user, -1);
-
-        Ok(record_num)
+        db.untip(server_id, from_user, to_user)
+            .map_err(Into::into)
     }
 
     async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
@@ -367,10 +332,6 @@ impl Bank {
                 server_id, channel_id, user_id
             );
         }
-
-        self.user_log
-            .log_user(server_id, channel_id, user_id)
-            .await?;
 
         Ok(())
     }
