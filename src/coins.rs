@@ -22,7 +22,6 @@ use db::Db;
 use crate::data::{ChannelId, ServerId, UserId};
 use crate::error::Result;
 
-mod ledger;
 mod transaction;
 
 pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
