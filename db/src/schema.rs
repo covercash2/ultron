@@ -23,7 +23,7 @@ table! {
 
 table! {
     items (id) {
-        id -> Nullable<Integer>,
+        id -> Integer,
         name -> Text,
         description -> Text,
         emoji -> Text,

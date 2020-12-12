@@ -9,7 +9,7 @@ pub mod model;
 pub mod schema;
 
 use error::*;
-use model::{BankAccount, ChannelUser};
+use model::{BankAccount, ChannelUser, Item, NewItem};
 use schema::bank_accounts::dsl::*;
 
 pub struct Db {
@@ -227,6 +227,26 @@ impl Db {
 	diesel::insert_or_ignore_into(schema::channel_users::table)
 	    .values(&ChannelUser::new(server, channel, user))
 	    .execute(&self.connection)
+	    .map_err(Into::into)
+    }
+
+    pub fn create_item(&self, name: &str, description: &str, emoji: &str) -> Result<()> {
+	let num_changed = diesel::insert_into(schema::items::table)
+	    .values(&NewItem { name, description, emoji })
+	    .execute(&self.connection)?;
+
+	if num_changed == 1 {
+	    Ok(())
+	} else {
+	    Err(Error::Unexpected("no records changed".to_owned()))
+	}
+    }
+
+    pub fn all_items(&self) -> Result<Vec<Item>> {
+	use schema::items::dsl::*;
+
+	items.
+	    load::<Item>(&self.connection)
 	    .map_err(Into::into)
     }
 }
