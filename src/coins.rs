@@ -243,8 +243,7 @@ impl Bank {
 
     /// Load saved account data
     pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
-
-	info!("using database: {}", database_url.as_ref());
+	debug!("using database: {}", database_url.as_ref());
 
         let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
 
