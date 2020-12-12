@@ -14,7 +14,27 @@ table! {
     }
 }
 
+table! {
+    inventory (user_id, item_id) {
+        user_id -> Text,
+        item_id -> Integer,
+    }
+}
+
+table! {
+    items (id) {
+        id -> Nullable<Integer>,
+        name -> Text,
+        description -> Text,
+        emoji -> Text,
+    }
+}
+
+joinable!(inventory -> items (item_id));
+
 allow_tables_to_appear_in_same_query!(
     bank_accounts,
     channel_users,
+    inventory,
+    items,
 );
