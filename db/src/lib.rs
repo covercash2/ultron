@@ -9,7 +9,7 @@ pub mod model;
 pub mod schema;
 
 use error::*;
-use model::{BankAccount, ChannelUser, Item, NewItem};
+use model::{BankAccount, ChannelUser};
 use schema::bank_accounts::dsl::*;
 
 pub struct Db {
@@ -98,55 +98,55 @@ impl Db {
     }
 
     pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
-	let from_amount: i32 = 1;
-	let from_account = BankAccount::new(server, from_user, &from_amount);
+        let from_amount: i32 = 1;
+        let from_account = BankAccount::new(server, from_user, &from_amount);
 
-	let to_amount: i32 = 2;
-	let to_account = BankAccount::new(server, to_user, &2);
+        let to_amount: i32 = 2;
+        let to_account = BankAccount::new(server, to_user, &2);
 
-	self.connection.transaction::<_, Error, _>(|| {
-	    let mut num_records = diesel::insert_into(bank_accounts)
-		.values(&from_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + from_amount))
-		.execute(&self.connection)?;
+        self.connection.transaction::<_, Error, _>(|| {
+            let mut num_records = diesel::insert_into(bank_accounts)
+                .values(&from_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + from_amount))
+                .execute(&self.connection)?;
 
-	    num_records += diesel::insert_into(bank_accounts)
-		.values(&to_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + to_amount))
-		.execute(&self.connection)?;
+            num_records += diesel::insert_into(bank_accounts)
+                .values(&to_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + to_amount))
+                .execute(&self.connection)?;
 
-	    Ok(num_records)
-	})
+            Ok(num_records)
+        })
     }
 
     pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
-	let from_amount: i32 = -1;
-	let from_account = BankAccount::new(server, from_user, &from_amount);
+        let from_amount: i32 = -1;
+        let from_account = BankAccount::new(server, from_user, &from_amount);
 
-	let to_amount: i32 = -2;
-	let to_account = BankAccount::new(server, to_user, &2);
+        let to_amount: i32 = -2;
+        let to_account = BankAccount::new(server, to_user, &2);
 
-	self.connection.transaction::<_, Error, _>(|| {
-	    let mut num_records = diesel::insert_into(bank_accounts)
-		.values(&from_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + from_amount))
-		.execute(&self.connection)?;
+        self.connection.transaction::<_, Error, _>(|| {
+            let mut num_records = diesel::insert_into(bank_accounts)
+                .values(&from_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + from_amount))
+                .execute(&self.connection)?;
 
-	    num_records += diesel::insert_into(bank_accounts)
-		.values(&to_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + to_amount))
-		.execute(&self.connection)?;
+            num_records += diesel::insert_into(bank_accounts)
+                .values(&to_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + to_amount))
+                .execute(&self.connection)?;
 
-	    Ok(num_records)
-	})
+            Ok(num_records)
+        })
     }
 
     pub fn transfer_coins(
@@ -156,30 +156,29 @@ impl Db {
         to_user: &u64,
         amount: &i64,
     ) -> Result<usize> {
-	let to_amount: i32 = (*amount).try_into()
-	    .map_err(|_e| Error::CoinOverflow)?;
-	let from_amount: i32 = -to_amount;
+        let to_amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
+        let from_amount: i32 = -to_amount;
 
-	let from_account = BankAccount::new(server, from_user, &from_amount);
-	let to_account = BankAccount::new(server, to_user, &to_amount);
+        let from_account = BankAccount::new(server, from_user, &from_amount);
+        let to_account = BankAccount::new(server, to_user, &to_amount);
 
-	self.connection.transaction::<_, Error, _>(|| {
-	    let mut record_num = diesel::insert_into(bank_accounts)
-		.values(&from_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + from_amount))
-		.execute(&self.connection)?;
+        self.connection.transaction::<_, Error, _>(|| {
+            let mut record_num = diesel::insert_into(bank_accounts)
+                .values(&from_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + from_amount))
+                .execute(&self.connection)?;
 
-	    record_num += diesel::insert_into(bank_accounts)
-		.values(&to_account)
-		.on_conflict((server_id, user_id))
-		.do_update()
-		.set(balance.eq(balance + to_amount))
-		.execute(&self.connection)?;
+            record_num += diesel::insert_into(bank_accounts)
+                .values(&to_account)
+                .on_conflict((server_id, user_id))
+                .do_update()
+                .set(balance.eq(balance + to_amount))
+                .execute(&self.connection)?;
 
-	    Ok(record_num)
-	})
+            Ok(record_num)
+        })
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
@@ -224,30 +223,10 @@ impl Db {
     }
 
     pub fn log_user(&self, server: &u64, channel: &u64, user: &u64) -> Result<usize> {
-	diesel::insert_or_ignore_into(schema::channel_users::table)
-	    .values(&ChannelUser::new(server, channel, user))
-	    .execute(&self.connection)
-	    .map_err(Into::into)
-    }
-
-    pub fn create_item(&self, name: &str, description: &str, emoji: &str) -> Result<()> {
-	let num_changed = diesel::insert_into(schema::items::table)
-	    .values(&NewItem { name, description, emoji })
-	    .execute(&self.connection)?;
-
-	if num_changed == 1 {
-	    Ok(())
-	} else {
-	    Err(Error::Unexpected("no records changed".to_owned()))
-	}
-    }
-
-    pub fn all_items(&self) -> Result<Vec<Item>> {
-	use schema::items::dsl::*;
-
-	items.
-	    load::<Item>(&self.connection)
-	    .map_err(Into::into)
+        diesel::insert_or_ignore_into(schema::channel_users::table)
+            .values(&ChannelUser::new(server, channel, user))
+            .execute(&self.connection)
+            .map_err(Into::into)
     }
 }
 
