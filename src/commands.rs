@@ -29,6 +29,8 @@ pub enum Command {
     /// Make a coin transaction
     Coin(Transaction),
     Gamble(Gamble),
+    /// Show available items
+    Shop,
     None,
 }
 
@@ -65,7 +67,7 @@ impl Command {
                     let transaction = Transaction {
                         from_user,
                         server_id,
-			channel_id,
+                        channel_id,
                         operation,
                     };
                     Ok(Command::Coin(transaction))
@@ -74,17 +76,21 @@ impl Command {
                     info!("request daily");
                     let timestamp = message.timestamp;
                     let from_user = message.user.id;
-		    let channel_id = message.channel.id;
+                    let channel_id = message.channel.id;
                     let operation = Operation::Daily { timestamp };
                     let transaction = Transaction {
                         from_user,
                         server_id,
-			channel_id,
+                        channel_id,
                         operation,
                     };
 
                     Ok(Command::Coin(transaction))
                 }
+		"shop" => {
+		    info!("shop items requested");
+		    Ok(Command::Shop)
+		}
                 _ => Err(Error::UnknownCommand(format!(
                     "unknown command: {}",
                     command_str
@@ -138,12 +144,12 @@ impl Command {
                         })
                     })?;
 
-		let channel_id = message.channel.id;
+                let channel_id = message.channel.id;
                 let operation = Operation::Transfer { to_user, amount };
 
                 let transaction = Transaction {
                     server_id,
-		    channel_id,
+                    channel_id,
                     from_user,
                     operation,
                 };
@@ -160,7 +166,7 @@ impl Command {
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
         let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user: UserId = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -175,13 +181,13 @@ impl Command {
             let operation = Operation::Tip { to_user };
             let transaction = Transaction {
                 server_id,
-		channel_id,
+                channel_id,
                 from_user,
                 operation,
             };
             Ok(Command::Coin(transaction))
         } else {
-	    Ok(Command::None)
+            Ok(Command::None)
         }
     }
 }
