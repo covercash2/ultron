@@ -65,14 +65,15 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .map_err(Into::into)
 }
 
-pub async fn daily_response(channel: ChannelId, pipe: &Http) -> Result<Message> {
+pub async fn daily_response(channel: ChannelId, pipe: &Http, balance: i64) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
                 embed.color(Colour::GOLD);
 
-                embed.description("Granted");
-
+		embed.title("Granted");
+		embed.description(format!("You now have {}🪙", balance));
+    
                 embed
             });
 

@@ -127,7 +127,7 @@ impl Handler {
         let operation = Operation::GetUserBalance;
         let transaction = Transaction {
             server_id,
-	    channel_id,
+            channel_id,
             from_user,
             operation,
         };
@@ -159,7 +159,7 @@ impl Handler {
     pub async fn process_command(
         &self,
         server_id: u64,
-	channel_id: u64,
+        channel_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -180,7 +180,9 @@ impl Handler {
                 let ultron_id = self.ultron_id().await?;
                 let user_id = gamble.player_id;
 
-                let player_balance = self.get_user_balance(server_id, channel_id, user_id).await?;
+                let player_balance = self
+                    .get_user_balance(server_id, channel_id, user_id)
+                    .await?;
                 let amount = match gamble.prize {
                     Prize::Coins(n) => n,
                     Prize::AllCoins => player_balance,
@@ -214,7 +216,7 @@ impl Handler {
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
                                     server_id,
-				    channel_id,
+                                    channel_id,
                                     from_user,
                                     operation,
                                 };
@@ -236,7 +238,7 @@ impl Handler {
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
                                     server_id,
-				    channel_id,
+                                    channel_id,
                                     from_user,
                                     operation,
                                 };
@@ -265,9 +267,7 @@ impl Handler {
                 }
             }
             Command::None => Ok(None),
-            Command::Shop => {
-		Ok(Some(Output::Say("there are no items avaiable".to_owned())))
-	    }
+            Command::Shop => Ok(Some(Output::Say("there are no items avaiable".to_owned()))),
         }
     }
 
@@ -374,7 +374,7 @@ impl Handler {
                     }
                     _ => Err(Error::TransactionFailed(format!(
                         "unexpected transaction status: {:?}",
-			receipt.status
+                        receipt.status
                     ))),
                 }
             }
@@ -420,7 +420,10 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(message.server.id, message.channel.id, &ctx, command).await {
+        let output = match self
+            .process_command(message.server.id, message.channel.id, &ctx, command)
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -458,7 +461,19 @@ impl EventHandler for Handler {
             }
             Output::DailyResponse => {
                 debug!("responding to daily request");
-                if let Err(err) = messages::daily_response(discord_channel, &ctx.http).await {
+                let balance = match self
+                    .get_user_balance(message.server.id, message.channel.id, message.user.id)
+                    .await
+                {
+                    Ok(b) => b,
+                    Err(err) => {
+                        error!("error getting user balance: {:?}", err);
+                        0
+                    }
+                };
+                if let Err(err) =
+                    messages::daily_response(discord_channel, &ctx.http, balance).await
+                {
                     error!("error sending daily confirmation message: {:?}", err);
                 }
             }
@@ -528,13 +543,13 @@ impl EventHandler for Handler {
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
-	    Ok(Command::None) => {
-		debug!("unused react: {:?}", reaction);
-		return;
-	    }
+            Ok(Command::None) => {
+                debug!("unused react: {:?}", reaction);
+                return;
+            }
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse reaction: {:?}", err);
@@ -543,7 +558,10 @@ impl EventHandler for Handler {
         };
 
         // no reacts need output right now
-        let output = match self.process_command(server_id, channel_id, &ctx, command).await {
+        let output = match self
+            .process_command(server_id, channel_id, &ctx, command)
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -560,29 +578,27 @@ impl EventHandler for Handler {
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
-	    Ok(Command::Coin(transaction)) => {
-		match transaction.operation {
-		    Operation::Tip { to_user } => {
-			let from_user = transaction.from_user;
-			let server_id = transaction.server_id;
-			let operation = Operation::Untip { to_user };
-			let transaction = Transaction {
-			    from_user,
-			    server_id,
-			    channel_id,
-			    operation,
-			};
-			Command::Coin(transaction)
-		    }
-		    _ => {
-			error!("unexpected operation: {:?}", transaction.operation);
-			return;
-		    }
-		}
-	    }
+            Ok(Command::Coin(transaction)) => match transaction.operation {
+                Operation::Tip { to_user } => {
+                    let from_user = transaction.from_user;
+                    let server_id = transaction.server_id;
+                    let operation = Operation::Untip { to_user };
+                    let transaction = Transaction {
+                        from_user,
+                        server_id,
+                        channel_id,
+                        operation,
+                    };
+                    Command::Coin(transaction)
+                }
+                _ => {
+                    error!("unexpected operation: {:?}", transaction.operation);
+                    return;
+                }
+            },
             Ok(command) => {
                 error!("unexpectedly parsed reaction remove command: {:?}", command);
                 return;
@@ -593,7 +609,10 @@ impl EventHandler for Handler {
             }
         };
 
-        let _output = match self.process_command(server_id, channel_id, &context, command).await {
+        let _output = match self
+            .process_command(server_id, channel_id, &context, command)
+            .await
+        {
             Ok(receipt) => receipt,
             Err(err) => {
                 error!("unable to process command: {:?}", err);
