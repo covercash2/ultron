@@ -13,6 +13,7 @@ mod coins;
 mod commands;
 mod data;
 mod error;
+mod items;
 
 mod discord;
 mod gambling;

@@ -3,7 +3,12 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{self, model::BankAccount, model::ChannelUser, Db as Database};
+use db::{
+    self,
+    model::BankAccount,
+    model::ChannelUser,
+    Db as Database,
+};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -166,7 +171,7 @@ impl ReadOp {
                 let account = db
                     .user_account(&server_id, &user_id)
                     .expect("unable to get user balance");
-		print_account(account);
+                print_account(account);
             }
         }
     }
@@ -196,22 +201,19 @@ fn print_accounts(accounts: Vec<BankAccount>) {
         println!("no accounts returned");
     }
     for account in accounts {
-	print_account(account)
+        print_account(account)
     }
 }
 
 fn print_account(account: BankAccount) {
     let server_id = account
-	.server_id()
-	.expect("unable to parse server id from db output");
+        .server_id()
+        .expect("unable to parse server id from db output");
     let user_id = account
-	.user_id()
-	.expect("unable to parse user id from db output");
+        .user_id()
+        .expect("unable to parse user id from db output");
     let balance = account.balance;
-    println!(
-	"#s{} #u{} ${}",
-	server_id, user_id, balance
-    )
+    println!("#s{} #u{} ${}", server_id, user_id, balance)
 }
 
 fn main() {

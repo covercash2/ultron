@@ -1,6 +1,6 @@
 use diesel::{Insertable, Queryable};
 
-use super::schema::{bank_accounts, channel_users, items};
+use super::schema::{bank_accounts, channel_users};
 
 use crate::error::Result;
 
@@ -64,20 +64,4 @@ impl BankAccount {
     pub fn server_id(&self) -> Result<u64> {
         self.server_id.parse().map_err(Into::into)
     }
-}
-
-#[derive(Insertable)]
-#[table_name="items"]
-pub struct NewItem<'a> {
-    pub name: &'a str,
-    pub description: &'a str,
-    pub emoji: &'a str,
-}
-
-#[derive(Queryable)]
-pub struct Item {
-    pub id: i32,
-    pub name: String,
-    pub description: String,
-    pub emoji: String,
 }
