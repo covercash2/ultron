@@ -528,6 +528,10 @@ impl EventHandler for Handler {
 	let channel_id = *reaction.channel_id.as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
+	    Ok(Command::None) => {
+		debug!("unused react: {:?}", reaction);
+		return;
+	    }
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse reaction: {:?}", err);

@@ -7,8 +7,11 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+db = { path = "./db" }
+
 log = "0.4"
 fern = { version = "0.5", features = ["colored"] }
+dotenv = "0.15.0"
 
 chrono = "0.4"
 rand = "0.7"

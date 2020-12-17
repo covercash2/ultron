@@ -1,0 +1,15 @@
+[package]
+name = "db"
+version = "0.1.0"
+authors = ["Chris Overcash <covercash2@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+log = "0.4"
+
+diesel = { git = "https://github.com/diesel-rs/diesel", features = ["sqlite"] }
+dotenv = "0.15.0"
+
+clap = "3.0.0-beta.2"

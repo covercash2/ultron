@@ -2,6 +2,4 @@
 accounts.json
 daily_log.json
 users.json
-*.db
 *.bak
-.env

@@ -181,9 +181,7 @@ impl Command {
             };
             Ok(Command::Coin(transaction))
         } else {
-            Err(Error::CommandParse(
-                "couldn't parse command from reaction".to_owned(),
-            ))
+	    Ok(Command::None)
         }
     }
 }
