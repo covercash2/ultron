@@ -265,6 +265,9 @@ impl Handler {
                 }
             }
             Command::None => Ok(None),
+            Command::Shop => {
+		Ok(Some(Output::Say("there are no items avaiable".to_owned())))
+	    }
         }
     }
 
