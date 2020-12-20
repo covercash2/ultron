@@ -85,16 +85,17 @@ impl Db {
     }
 
     pub fn increment_balance(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
-        let server_s = server.to_string();
-        let user_s = user.to_string();
         let amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
-        let current_balance: i32 = bank_accounts
-            .select(balance)
-            .find((server_s, user_s))
-            .first::<i32>(&self.connection)?;
-        let new_balance: i32 = current_balance + amount;
 
-        self.update_balance(server, user, &new_balance.into())
+	let account = BankAccount::new(server, user, &amount);
+
+	diesel::insert_into(bank_accounts)
+	    .values(&account)
+	    .on_conflict((server_id, user_id))
+	    .do_update()
+	    .set(balance.eq(balance + amount))
+	    .execute(&self.connection)
+	    .map_err(Into::into)
     }
 
     pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
