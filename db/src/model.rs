@@ -1,8 +1,17 @@
 use diesel::{Insertable, Queryable};
 
-use super::schema::{bank_accounts, channel_users};
+use super::schema::{bank_accounts, channel_users, items};
 
 use crate::error::Result;
+
+#[derive(Insertable, Queryable)]
+pub struct Item {
+    id: i32,
+    name: String,
+    description: String,
+    emoji: String,
+    price: i32,
+}
 
 #[derive(Insertable, Queryable)]
 pub struct ChannelUser {

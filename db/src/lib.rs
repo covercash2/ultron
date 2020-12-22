@@ -1,16 +1,22 @@
 #[macro_use]
 extern crate diesel;
-use diesel::{prelude::*, sqlite::SqliteConnection};
+use diesel::{prelude::*, sqlite::{SqliteConnection, Sqlite}};
 
 use std::{convert::TryInto, fmt};
 
+mod schema;
+
+mod ids;
+mod items;
+
 pub mod error;
 pub mod model;
-pub mod schema;
 
 use error::*;
 use model::{BankAccount, ChannelUser};
 use schema::bank_accounts::dsl::*;
+
+type Backend = Sqlite;
 
 pub struct Db {
     connection: SqliteConnection,
