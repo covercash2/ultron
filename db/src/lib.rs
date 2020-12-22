@@ -13,7 +13,7 @@ pub mod error;
 pub mod model;
 
 use error::*;
-use model::{BankAccount, ChannelUser, Item};
+use model::{BankAccount, ChannelUser, Item, UpdateItem};
 use schema::bank_accounts::dsl::*;
 
 type Backend = Sqlite;
@@ -242,6 +242,10 @@ impl Db {
 
     pub fn create_item(&self, item: Item) -> Result<()> {
 	items::create(&self.connection, item)
+    }
+
+    pub fn update_item(&self, item: UpdateItem) -> Result<()> {
+	items::update(&self.connection, item)
     }
 }
 
