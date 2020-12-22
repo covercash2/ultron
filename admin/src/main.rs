@@ -3,12 +3,7 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{
-    self,
-    model::BankAccount,
-    model::{ChannelUser, Item as DbItem},
-    Db as Database,
-};
+use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, Item as DbItem, UpdateItem}};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -116,10 +111,14 @@ struct Account {
 #[derive(Clap)]
 struct Item {
     id: u16,
-    name: String,
-    description: String,
-    emoji: String,
-    price: i32,
+    #[clap(short, long)]
+    name: Option<String>,
+    #[clap(short, long)]
+    description: Option<String>,
+    #[clap(short, long)]
+    emoji: Option<String>,
+    #[clap(short, long)]
+    price: Option<i32>,
 }
 
 impl Create {
@@ -146,7 +145,7 @@ impl Create {
                 );
             }
             Record::Item(item) => {
-		let item = item.to_db_item();
+		let item = item.to_db_item().expect("unable to create insertable item from input");
 		db.create_item(item).expect("unable to create new item");
 	    }
         }
@@ -204,8 +203,8 @@ fn print_items(items: Vec<DbItem>) {
     }
     for item in items {
         println!(
-            "{} {} {}🪙:\n{}",
-            item.emoji, item.name, item.price, item.description
+            "#{} - {} {} {}🪙:\n{}",
+            item.id, item.emoji, item.name, item.price, item.description
         );
     }
 }
@@ -293,8 +292,8 @@ fn main() {
                             println!("updated {} record to ${}", records, new_balance);
                         }
                         Record::Item(item) => {
-			    // TODO items should be able to update single fields
-			    todo!()
+			    let item = item.to_db_update_item();
+			    db.update_item(item).expect("unable to update item");
 			}
                     }
                 }
@@ -304,13 +303,23 @@ fn main() {
 }
 
 impl Item {
-    fn to_db_item(self) -> DbItem {
-        DbItem {
+    fn to_db_item(self) -> Result<DbItem, String> {
+        Ok(DbItem {
             id: self.id.into(),
-            name: self.name,
-            description: self.description,
-            emoji: self.emoji,
-            price: self.price,
-        }
+            name: self.name.ok_or("name cannot be null".to_owned())?,
+            description: self.description.ok_or("description cannot be null".to_owned())?,
+            emoji: self.emoji.ok_or("emoji cannot be null".to_owned())?,
+            price: self.price.ok_or("price cannot be null".to_owned())?,
+        })
+    }
+
+    fn to_db_update_item(self) -> UpdateItem {
+	UpdateItem {
+	    id: self.id.into(),
+	    name: self.name,
+	    description: self.description,
+	    emoji: self.emoji,
+	    price: self.price,
+	}
     }
 }
