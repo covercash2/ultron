@@ -6,11 +6,11 @@ use crate::error::Result;
 
 #[derive(Insertable, Queryable)]
 pub struct Item {
-    id: i32,
-    name: String,
-    description: String,
-    emoji: String,
-    price: i32,
+    pub id: i32,
+    pub name: String,
+    pub description: String,
+    pub emoji: String,
+    pub price: i32,
 }
 
 #[derive(Insertable, Queryable)]

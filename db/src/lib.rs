@@ -13,7 +13,7 @@ pub mod error;
 pub mod model;
 
 use error::*;
-use model::{BankAccount, ChannelUser};
+use model::{BankAccount, ChannelUser, Item};
 use schema::bank_accounts::dsl::*;
 
 type Backend = Sqlite;
@@ -234,6 +234,10 @@ impl Db {
             .values(&ChannelUser::new(server, channel, user))
             .execute(&self.connection)
             .map_err(Into::into)
+    }
+
+    pub fn all_items(&self) -> Result<Vec<Item>> {
+	items::show_all(&self.connection)
     }
 }
 
