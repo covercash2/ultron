@@ -13,7 +13,8 @@ pub enum Error {
     Db(DieselError),
     IdParse(ParseIntError),
     Env(VarError),
-    Connection(ConnectionError)
+    Connection(ConnectionError),
+    RecordExists,
 }
 
 impl From<DieselError> for Error {

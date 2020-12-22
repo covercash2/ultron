@@ -3,7 +3,12 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, Item}};
+use db::{
+    self,
+    model::BankAccount,
+    model::{ChannelUser, Item as DbItem},
+    Db as Database,
+};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -88,6 +93,8 @@ enum Record {
     ChannelUser(User),
     /// server_id, user_id, balance record
     Balance(Account),
+    /// id, name, description, emoji, price
+    Item(Item),
 }
 
 /// a user in the channel user log
@@ -104,6 +111,15 @@ struct Account {
     server_id: u64,
     user_id: u64,
     balance: i64,
+}
+
+#[derive(Clap)]
+struct Item {
+    id: u16,
+    name: String,
+    description: String,
+    emoji: String,
+    price: i32,
 }
 
 impl Create {
@@ -129,6 +145,10 @@ impl Create {
                     server_id, channel_id, user_id
                 );
             }
+            Record::Item(item) => {
+		let item = item.to_db_item();
+		db.create_item(item).expect("unable to create new item");
+	    }
         }
     }
 }
@@ -171,20 +191,22 @@ impl ReadOp {
                 print_account(account);
             }
             ReadOp::AllItems => {
-		let items = db.all_items()
-		    .expect("unable to get items");
-		print_items(items);
-	    }
+                let items = db.all_items().expect("unable to get items");
+                print_items(items);
+            }
         }
     }
 }
 
-fn print_items(items: Vec<Item>) {
+fn print_items(items: Vec<DbItem>) {
     if items.len() == 0 {
         println!("no items retrieved");
     }
     for item in items {
-	println!("{} {} {}:\n{}", item.emoji, item.name, item.price, item.description);
+        println!(
+            "{} {} {}🪙:\n{}",
+            item.emoji, item.name, item.price, item.description
+        );
     }
 }
 
@@ -270,9 +292,25 @@ fn main() {
                                 .expect("unable to update balance");
                             println!("updated {} record to ${}", records, new_balance);
                         }
+                        Record::Item(item) => {
+			    // TODO items should be able to update single fields
+			    todo!()
+			}
                     }
                 }
             }
+        }
+    }
+}
+
+impl Item {
+    fn to_db_item(self) -> DbItem {
+        DbItem {
+            id: self.id.into(),
+            name: self.name,
+            description: self.description,
+            emoji: self.emoji,
+            price: self.price,
         }
     }
 }
