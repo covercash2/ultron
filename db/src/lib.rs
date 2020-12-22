@@ -239,6 +239,10 @@ impl Db {
     pub fn all_items(&self) -> Result<Vec<Item>> {
 	items::show_all(&self.connection)
     }
+
+    pub fn create_item(&self, item: Item) -> Result<()> {
+	items::create(&self.connection, item)
+    }
 }
 
 fn establish_connection(database_url: &str) -> Result<SqliteConnection> {

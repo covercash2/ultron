@@ -13,6 +13,16 @@ pub struct Item {
     pub price: i32,
 }
 
+#[derive(AsChangeset)]
+#[table_name = "items"]
+pub struct UpdateItem {
+    pub id: i32,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub emoji: Option<String>,
+    pub price: Option<i32>,
+}
+
 #[derive(Insertable, Queryable)]
 pub struct ChannelUser {
     server_id: String,
