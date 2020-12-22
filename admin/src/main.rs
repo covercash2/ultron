@@ -273,6 +273,8 @@ fn main() {
 
             let db = db::Db::open(&database_url).expect("unable to open database");
 
+	    println!("using database: {}", database_url);
+
             match db_command.subcmd {
                 DbCommand::Create(create_command) => create_command.handle(&db),
                 DbCommand::Read(read) => read.op.handle(&db),
