@@ -4,6 +4,8 @@ use serenity::model::channel::Message;
 use serenity::model::id::ChannelId;
 use serenity::utils::Colour;
 
+use db::model::Item;
+
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{GambleOutput, State as GambleState};
@@ -349,6 +351,34 @@ async fn dice_roll_draw(
                     "You may try again.",
                     false,
                 );
+
+                embed
+            });
+
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn shop(
+    channel: ChannelId,
+    pipe: &Http,
+    items: Vec<Item>
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.color(Colour::DARK_GOLD);
+                embed.title("Available Wares");
+
+		for item in items {
+		    embed.field(
+			format!("{}: {}", item.emoji, item.name),
+			format!("{} -- {}", item.price, item.description),
+			false,
+		    );
+		}
 
                 embed
             });

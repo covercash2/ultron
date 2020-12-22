@@ -14,6 +14,8 @@ use serenity::{
 
 use tokio::sync::Mutex;
 
+use db::model::Item;
+
 use crate::chat::{
     Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
 };
@@ -56,6 +58,7 @@ pub enum Output {
         player_balance: i64,
     },
     Help,
+    Shop(Vec<Item>),
 }
 
 impl From<String> for Output {
@@ -122,6 +125,20 @@ impl Handler {
         }
     }
 
+    async fn shop_items(&self, server_id: u64, channel_id: u64, from_user: u64) -> Result<Vec<Item>> {
+	let operation = Operation::GetAllItems;
+	let transaction = Transaction {
+	    server_id,
+	    channel_id,
+	    from_user,
+	    operation
+	};
+
+	let receipt = self.send_transaction(transaction).await?;
+
+	todo!()
+    }
+
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
         let from_user = user_id.into();
         let operation = Operation::GetUserBalance;
@@ -160,6 +177,7 @@ impl Handler {
         &self,
         server_id: u64,
         channel_id: u64,
+	user_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -267,7 +285,11 @@ impl Handler {
                 }
             }
             Command::None => Ok(None),
-            Command::Shop => Ok(Some(Output::Say("there are no items avaiable".to_owned()))),
+            Command::Shop => {
+		let items = self.shop_items(server_id, channel_id, user_id).await?;
+		Ok(Some(Output::Shop(items)))
+		//Ok(Some(Output::Say("there are no items avaiable".to_owned())))
+	    },
         }
     }
 
@@ -384,6 +406,9 @@ impl Handler {
                     "no message implementation ready for user balance".to_owned(),
                 ))
             }
+            Operation::GetAllItems => {
+		todo!()
+	    }
         }
     }
 }
@@ -421,7 +446,7 @@ impl EventHandler for Handler {
         };
 
         let output = match self
-            .process_command(message.server.id, message.channel.id, &ctx, command)
+            .process_command(message.server.id, message.channel.id, message.user.id, &ctx, command)
             .await
         {
             Ok(Some(output)) => output,
@@ -538,12 +563,18 @@ impl EventHandler for Handler {
                     error!("error sending 'bet too high' message: {:?}", err);
                 }
             }
+            Output::Shop(items) => {
+		if let Err(err) = messages::shop(discord_channel, &ctx.http, items).await {
+		    error!("error sending shop response: {:?}", err);
+		}
+	    }
         }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
         let channel_id = *reaction.channel_id.as_u64();
+	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(Command::None) => {
@@ -559,7 +590,7 @@ impl EventHandler for Handler {
 
         // no reacts need output right now
         let output = match self
-            .process_command(server_id, channel_id, &ctx, command)
+            .process_command(server_id, channel_id, user_id, &ctx, command)
             .await
         {
             Ok(Some(output)) => output,
@@ -579,6 +610,7 @@ impl EventHandler for Handler {
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
         let channel_id = *reaction.channel_id.as_u64();
+	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
             Ok(Command::Coin(transaction)) => match transaction.operation {
@@ -610,7 +642,7 @@ impl EventHandler for Handler {
         };
 
         let _output = match self
-            .process_command(server_id, channel_id, &context, command)
+            .process_command(server_id, channel_id, user_id, &context, command)
             .await
         {
             Ok(receipt) => receipt,
