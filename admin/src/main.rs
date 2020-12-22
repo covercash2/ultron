@@ -3,12 +3,7 @@ use std::env;
 use clap::Clap;
 use dotenv::dotenv;
 
-use db::{
-    self,
-    model::BankAccount,
-    model::ChannelUser,
-    Db as Database,
-};
+use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, Item}};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -76,6 +71,8 @@ enum ReadOp {
     ChannelUsers { server_id: u64, channel_id: u64 },
     /// show balances for users in a channel
     ChannelUserBalances { server_id: u64, channel_id: u64 },
+    /// show all items
+    AllItems,
 }
 
 /// update a database
@@ -173,7 +170,21 @@ impl ReadOp {
                     .expect("unable to get user balance");
                 print_account(account);
             }
+            ReadOp::AllItems => {
+		let items = db.all_items()
+		    .expect("unable to get items");
+		print_items(items);
+	    }
         }
+    }
+}
+
+fn print_items(items: Vec<Item>) {
+    if items.len() == 0 {
+        println!("no items retrieved");
+    }
+    for item in items {
+	println!("{} {} {}:\n{}", item.emoji, item.name, item.price, item.description);
     }
 }
 
