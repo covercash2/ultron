@@ -70,6 +70,8 @@ pub enum Operation {
     Daily {
         timestamp: DateTime<Utc>,
     },
+    /// Dump items table
+    GetAllItems,
 }
 
 #[derive(Debug, Clone)]

@@ -236,6 +236,9 @@ impl Bank {
                     status,
                 }
             }
+            Operation::GetAllItems => {
+		todo!()
+	    }
         };
 
         Ok(receipt)
