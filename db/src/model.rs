@@ -4,7 +4,7 @@ use super::schema::{bank_accounts, channel_users, items};
 
 use crate::error::Result;
 
-#[derive(Insertable, Queryable, Debug)]
+#[derive(Insertable, Queryable, Debug, Clone)]
 pub struct Item {
     pub id: i32,
     pub name: String,

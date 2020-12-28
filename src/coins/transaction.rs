@@ -74,6 +74,12 @@ pub enum Operation {
     GetAllItems,
 }
 
+// impl Transaction {
+//     pub fn process(self, data: &Bank) -> Result<Receipt> {
+	
+//     }
+// }
+
 #[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
