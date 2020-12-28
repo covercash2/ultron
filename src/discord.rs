@@ -153,7 +153,7 @@ impl Handler {
 
         if let TransactionStatus::Complete = receipt.status {
             receipt
-                .iter()
+                .accounts()?
                 .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
                 .ok_or(Error::ReceiptProcess(format!(
                     "no balance found for user: {:?}",
