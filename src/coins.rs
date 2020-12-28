@@ -20,7 +20,7 @@ use chrono::{DateTime, Utc};
 use db::{model::Item, Db};
 
 use crate::data::{ChannelId, ServerId, UserId};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 mod transaction;
 
@@ -55,8 +55,12 @@ pub struct Receipt {
 }
 
 impl Receipt {
-    pub fn iter(&self) -> impl Iterator<Item = &Account> {
-        self.account_results.iter()
+    /// Return account results of the transaction or an error if the Results contain the wrong variant.
+    pub fn accounts(&self) -> Result<impl Iterator<Item = &Account>> {
+	match &self.results {
+	    Results::Accounts(accounts) => Ok(accounts.iter()),
+	    _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
+	}
     }
 }
 
@@ -116,12 +120,12 @@ impl Bank {
                 self.transfer_coins(&server_id, &from_user_id, &to_user, amount)
                     .await?;
 
-		// TODO deprecate
+                // TODO deprecate
                 let account_results = self
                     .get_balances(&server_id, vec![from_user_id, to_user])
                     .await?;
 
-		let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results.clone());
 
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
@@ -130,29 +134,29 @@ impl Bank {
                 Receipt {
                     transaction,
                     account_results,
-		    results,
+                    results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::GetAllBalances => {
                 let account_results = self.get_all_balances(&server_id, &channel_id).await?;
-		let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results.clone());
 
                 Receipt {
                     transaction,
                     account_results,
-		    results,
+                    results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::Tip { to_user } => {
                 if from_user_id == to_user {
                     let account_results = Vec::new();
-		    let results = Results::None;
+                    let results = Results::None;
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status: TransactionStatus::SelfTip,
                     }
                 } else {
@@ -161,12 +165,12 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
-		    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results.clone());
 
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status: TransactionStatus::Complete,
                     }
                 }
@@ -174,11 +178,11 @@ impl Bank {
             Operation::Untip { to_user } => {
                 if from_user_id == to_user {
                     let account_results = Vec::new();
-		    let results = Results::None;
+                    let results = Results::None;
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status: TransactionStatus::SelfTip, // TODO new error type?
                     }
                 } else {
@@ -186,12 +190,12 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
-		    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results.clone());
 
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status: TransactionStatus::Complete,
                     }
                 }
@@ -211,20 +215,20 @@ impl Bank {
                         TransactionStatus::Complete
                     };
                     let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-		    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results.clone());
 
                     // TODO db daily_log?
                     if let Err(err) = self.daily_log.save().await {
                         error!("error saving daily log: {:?}", err);
                     }
 
-		    // save daily log
-		    self.save().await?;
+                    // save daily log
+                    self.save().await?;
 
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status,
                     }
                 } else {
@@ -235,18 +239,18 @@ impl Bank {
                         user_id, server_id
                     );
                     let account_results = vec![];
-		    let results = Results::None;
+                    let results = Results::None;
                     let status = TransactionStatus::BadDailyRequest {
                         next_epoch: self.daily_log.epoch.clone(),
                     };
 
-		    // save daily log
-		    self.save().await?;
+                    // save daily log
+                    self.save().await?;
 
                     Receipt {
                         transaction,
                         account_results,
-			results,
+                        results,
                         status,
                     }
                 }
@@ -254,19 +258,19 @@ impl Bank {
             Operation::GetUserBalance => {
                 let user_id = from_user_id;
                 let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-		let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results.clone());
                 let status = TransactionStatus::Complete;
 
                 Receipt {
                     transaction,
                     account_results,
-		    results,
+                    results,
                     status,
                 }
             }
             Operation::GetAllItems => {
-		todo!()
-	    }
+                todo!()
+            }
         };
 
         Ok(receipt)
@@ -274,16 +278,13 @@ impl Bank {
 
     /// Load saved account data
     pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
-	debug!("using database: {}", database_url.as_ref());
+        debug!("using database: {}", database_url.as_ref());
 
         let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
 
         let daily_log = DailyLog::load().await?;
 
-        Ok(Bank {
-            daily_log,
-            db,
-        })
+        Ok(Bank { daily_log, db })
     }
 
     /// Save account data
@@ -341,14 +342,12 @@ impl Bank {
 
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        db.tip(server_id, from_user, to_user)
-            .map_err(Into::into)
+        db.tip(server_id, from_user, to_user).map_err(Into::into)
     }
 
     async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        db.untip(server_id, from_user, to_user)
-            .map_err(Into::into)
+        db.untip(server_id, from_user, to_user).map_err(Into::into)
     }
 
     async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
