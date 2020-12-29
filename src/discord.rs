@@ -136,6 +136,8 @@ impl Handler {
 
 	let receipt = self.send_transaction(transaction).await?;
 
+	debug!("receipt for shop items: {:?}", receipt);
+
 	todo!()
     }
 
@@ -300,10 +302,11 @@ impl Handler {
         server_id: u64,
     ) -> Result<Option<Output>> {
         let user_id = receipt.transaction.from_user;
-        let operation = receipt.transaction.operation;
-        let mut account_results = receipt.account_results;
+        let operation = &receipt.transaction.operation;
+        //let mut account_results = receipt.account_results;
         match operation {
             Operation::GetAllBalances => {
+		let mut account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
                 if account_results.is_empty() {
                     return Ok(Some(Output::Say(
                         "Coin transactions have yet to occur on this channel".to_owned(),
@@ -327,8 +330,11 @@ impl Handler {
                 to_user, amount, ..
             } => {
                 debug!("transfer complete");
+		let account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
 
                 let from_user = user_id;
+		let to_user = *to_user;
+		let amount = *amount;
 
                 let to_balance = *account_results
                     .iter()

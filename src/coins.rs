@@ -49,7 +49,6 @@ fn daily_epoch() -> DateTime<Utc> {
 #[derive(Debug, Clone)]
 pub struct Receipt {
     pub transaction: Transaction,
-    pub account_results: Vec<Account>,
     pub status: TransactionStatus,
     pub results: Results,
 }
@@ -57,10 +56,10 @@ pub struct Receipt {
 impl Receipt {
     /// Return account results of the transaction or an error if the Results contain the wrong variant.
     pub fn accounts(&self) -> Result<impl Iterator<Item = &Account>> {
-	match &self.results {
-	    Results::Accounts(accounts) => Ok(accounts.iter()),
-	    _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
-	}
+        match &self.results {
+            Results::Accounts(accounts) => Ok(accounts.iter()),
+            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
+        }
     }
 }
 
@@ -120,12 +119,10 @@ impl Bank {
                 self.transfer_coins(&server_id, &from_user_id, &to_user, amount)
                     .await?;
 
-                // TODO deprecate
                 let account_results = self
                     .get_balances(&server_id, vec![from_user_id, to_user])
                     .await?;
-
-                let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results);
 
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
@@ -133,29 +130,25 @@ impl Bank {
 
                 Receipt {
                     transaction,
-                    account_results,
                     results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::GetAllBalances => {
                 let account_results = self.get_all_balances(&server_id, &channel_id).await?;
-                let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results);
 
                 Receipt {
                     transaction,
-                    account_results,
                     results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::Tip { to_user } => {
                 if from_user_id == to_user {
-                    let account_results = Vec::new();
                     let results = Results::None;
                     Receipt {
                         transaction,
-                        account_results,
                         results,
                         status: TransactionStatus::SelfTip,
                     }
@@ -165,11 +158,10 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
-                    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results);
 
                     Receipt {
                         transaction,
-                        account_results,
                         results,
                         status: TransactionStatus::Complete,
                     }
@@ -177,12 +169,9 @@ impl Bank {
             }
             Operation::Untip { to_user } => {
                 if from_user_id == to_user {
-                    let account_results = Vec::new();
-                    let results = Results::None;
                     Receipt {
                         transaction,
-                        account_results,
-                        results,
+                        results: Results::None,
                         status: TransactionStatus::SelfTip, // TODO new error type?
                     }
                 } else {
@@ -190,11 +179,10 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
-                    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results);
 
                     Receipt {
                         transaction,
-                        account_results,
                         results,
                         status: TransactionStatus::Complete,
                     }
@@ -215,7 +203,7 @@ impl Bank {
                         TransactionStatus::Complete
                     };
                     let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-                    let results = Results::Accounts(account_results.clone());
+                    let results = Results::Accounts(account_results);
 
                     // TODO db daily_log?
                     if let Err(err) = self.daily_log.save().await {
@@ -227,7 +215,6 @@ impl Bank {
 
                     Receipt {
                         transaction,
-                        account_results,
                         results,
                         status,
                     }
@@ -238,7 +225,6 @@ impl Bank {
                         "rejecting daily request from user{} on channel{}",
                         user_id, server_id
                     );
-                    let account_results = vec![];
                     let results = Results::None;
                     let status = TransactionStatus::BadDailyRequest {
                         next_epoch: self.daily_log.epoch.clone(),
@@ -249,7 +235,6 @@ impl Bank {
 
                     Receipt {
                         transaction,
-                        account_results,
                         results,
                         status,
                     }
@@ -258,12 +243,11 @@ impl Bank {
             Operation::GetUserBalance => {
                 let user_id = from_user_id;
                 let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-                let results = Results::Accounts(account_results.clone());
+                let results = Results::Accounts(account_results);
                 let status = TransactionStatus::Complete;
 
                 Receipt {
                     transaction,
-                    account_results,
                     results,
                     status,
                 }
