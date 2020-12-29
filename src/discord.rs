@@ -136,9 +136,13 @@ impl Handler {
 
 	let receipt = self.send_transaction(transaction).await?;
 
-	debug!("receipt for shop items: {:?}", receipt);
-
-	todo!()
+        if let TransactionStatus::Complete = receipt.status {
+            Ok(receipt.items()?.cloned().collect())
+        } else {
+            Err(Error::TransactionFailed(
+                "error getting items from bank".to_owned(),
+            ))
+        }
     }
 
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
@@ -290,7 +294,6 @@ impl Handler {
             Command::Shop => {
 		let items = self.shop_items(server_id, channel_id, user_id).await?;
 		Ok(Some(Output::Shop(items)))
-		//Ok(Some(Output::Say("there are no items avaiable".to_owned())))
 	    },
         }
     }
