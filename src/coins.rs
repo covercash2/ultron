@@ -61,6 +61,14 @@ impl Receipt {
             _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
         }
     }
+
+    /// Return item results of the transaction or an error if the Results contain the wrong variant.
+    pub fn items(&self) -> Result<impl Iterator<Item = &Item>> {
+        match &self.results {
+            Results::Items(items) => Ok(items.iter()),
+            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -253,7 +261,13 @@ impl Bank {
                 }
             }
             Operation::GetAllItems => {
-                todo!()
+		let items = self.get_all_items().await?;
+
+		Receipt {
+		    transaction,
+		    results: Results::Items(items),
+		    status: TransactionStatus::Complete,
+		}
             }
         };
 
@@ -274,6 +288,13 @@ impl Bank {
     /// Save account data
     pub async fn save(&self) -> Result<()> {
         self.daily_log.save().await
+    }
+
+    /// dump all items in the database
+    async fn get_all_items(&mut self) -> Result<Vec<Item>> {
+	let db = self.db.lock().await;
+	db.all_items()
+	    .map_err(Into::into)
     }
 
     /// this function only gets balances that have the same server and channel,
