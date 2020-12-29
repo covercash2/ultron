@@ -372,10 +372,12 @@ pub async fn shop(
                 embed.color(Colour::DARK_GOLD);
                 embed.title("Available Wares");
 
+		embed.description("purchase items by responding with the corresponding emoji");
+
 		for item in items {
 		    embed.field(
 			format!("{}: {}", item.emoji, item.name),
-			format!("{} -- {}", item.price, item.description),
+			format!("🪙{} -- {}", item.price, item.description),
 			false,
 		    );
 		}
