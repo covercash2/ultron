@@ -444,12 +444,12 @@ impl EventHandler for Handler {
 	    context: &ctx
 	};
 
-        debug!("chat message: {:?}", message);
+        trace!("chat message: {:?}", message);
 
         match self.ultron_id().await {
             Ok(user_id) => {
                 if &message.user.id == &user_id {
-                    debug!("ignoring message sent by ultron");
+                    trace!("ignoring message sent by ultron");
                     return;
                 }
             }
@@ -460,7 +460,7 @@ impl EventHandler for Handler {
 
         let command = match Command::parse_message(&message).await {
             Ok(Command::None) => {
-                debug!("no command parsed: {:?}", message.content);
+                trace!("no command parsed: {:?}", message.content);
                 return;
             }
             Ok(command) => command,
@@ -609,7 +609,7 @@ impl EventHandler for Handler {
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(Command::None) => {
-                debug!("unused react: {:?}", reaction);
+                trace!("unused react: {:?}", reaction);
                 return;
             }
             Ok(command) => command,
@@ -619,14 +619,13 @@ impl EventHandler for Handler {
             }
         };
 
-        // no reacts need output right now
         let output = match self
             .process_command(server_id, channel_id, user_id, &ctx, command)
             .await
         {
             Ok(Some(output)) => output,
             Ok(None) => {
-                debug!("command finished with no output");
+                trace!("command finished with no output");
                 return;
             }
             Err(err) => {
@@ -635,7 +634,7 @@ impl EventHandler for Handler {
             }
         };
 
-        info!("react output: {:?}", output);
+        trace!("react output: {:?}", output);
     }
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
@@ -667,7 +666,7 @@ impl EventHandler for Handler {
                 return;
             }
             Err(err) => {
-                debug!("unable to parse reaction: {:?}", err);
+                error!("unable to parse reaction: {:?}", err);
                 return;
             }
         };
