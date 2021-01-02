@@ -4,10 +4,12 @@ use log::*;
 
 use chrono::{DateTime, Utc};
 
-use serenity::model::channel::{Reaction, ReactionType};
+use serenity::model::channel::Reaction;
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
+    collector::reaction_collector::ReactionAction,
+    futures::StreamExt,
     model::{channel::Message as DiscordMessage, gateway::Ready, prelude::*},
     prelude::*,
 };
@@ -27,6 +29,8 @@ use crate::gambling::Prize;
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
 
 mod messages;
+
+const SHOP_TIMEOUT: Duration = Duration::from_secs(100);
 
 /// Run the main thread for the chat client.
 pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
@@ -105,7 +109,7 @@ pub struct Socket<'a> {
 
 impl<'a> Socket<'a> {
     pub fn channel(&self) -> ChannelId {
-	self.message.channel_id
+        self.message.channel_id
     }
 }
 
@@ -439,10 +443,10 @@ impl EventHandler for Handler {
         let discord_channel = msg.channel_id.clone();
         let message: ChatMessage = msg.clone().into();
 
-	let socket = Socket {
-	    message: msg.clone(),
-	    context: &ctx
-	};
+        let socket = Socket {
+            message: msg.clone(),
+            context: &ctx,
+        };
 
         trace!("chat message: {:?}", message);
 
@@ -595,9 +599,9 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-                if let Err(err) = shop(socket, items).await {
-		    error!("unable to run shop: {:?}", err);
-		}
+                if let Err(err) = shop(socket, &items).await {
+                    error!("unable to run shop: {:?}", err);
+                }
             }
         }
     }
@@ -661,6 +665,10 @@ impl EventHandler for Handler {
                     return;
                 }
             },
+	    Ok(Command::None) => {
+		trace!("no command parsed");
+		return;
+	    }
             Ok(command) => {
                 error!("unexpectedly parsed reaction remove command: {:?}", command);
                 return;
@@ -685,28 +693,49 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         // set user id for ultron
-	// TODO get ultron id in main
+        // TODO get ultron id in main
         self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
     }
 }
 
 /// post a shop embed and await reactions
-async fn shop(socket: Socket<'_>, items: Vec<Item>) -> Result<()> {
-    match messages::shop(socket.channel(), &socket.context.http, items).await {
-	Ok(reply) => {
-	    while let Some(reaction) = &reply
-		.await_reaction(&socket.context)
-		.timeout(Duration::from_secs(100))
-		.await
-	    {
-		debug!("reaction on shop message: {:?}", reaction);
+async fn shop(socket: Socket<'_>, items: &Vec<Item>) -> Result<()> {
+    let channel = socket.channel();
+    let http = &socket.context.http;
+    let reply = messages::shop(socket.channel(), http, &items).await?;
+    &reply
+	.await_reactions(&socket.context)
+	.timeout(SHOP_TIMEOUT)
+        .removed(true)
+	.await
+	.for_each(|reaction| async move {
+	    debug!("reaction: {:?}", reaction);
+	    match reaction.as_ref() {
+		ReactionAction::Added(reaction) => {
+		    // find the item with the corresponding emoji
+		    if let Some(item) = items
+			.iter()
+			.find(|item| item.emoji == reaction.emoji.as_data())
+		    {
+			// add to player inventory
+			debug!("player is trying to purchase item: {:?}", item);
+		    }
+		}
+		ReactionAction::Removed(reaction) => {
+		    debug!("reaction removed");
+		    // find the item with the corresponding emoji
+		    if let Some(_item) = items
+			.iter()
+			.find(|item| item.emoji == reaction.emoji.as_data())
+		    {
+			if let Err(err) = messages::say(channel, http, "No refunds.").await {
+			    error!("unable to send message to discord: {:?}", err);
+			}
+		    }
+		}
 	    }
-	}
-	Err(err) => {
-	    return Err(err);
-	}
-    }
-
+	})
+	.await;
     Ok(())
 }

@@ -364,7 +364,7 @@ async fn dice_roll_draw(
 pub async fn shop(
     channel: ChannelId,
     pipe: &Http,
-    items: Vec<Item>
+    items: &Vec<Item>
 ) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
