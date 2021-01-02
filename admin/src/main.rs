@@ -1,6 +1,6 @@
 use std::env;
 
-use clap::Clap;
+use clap::{AppSettings, Clap};
 use dotenv::dotenv;
 
 use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, Item as DbItem, UpdateItem}};
@@ -119,6 +119,8 @@ struct Item {
     emoji: Option<String>,
     #[clap(short, long)]
     price: Option<i32>,
+    #[clap(short, long, allow_hyphen_values = true)]
+    available: Option<i32>,
 }
 
 impl Create {
@@ -203,8 +205,8 @@ fn print_items(items: Vec<DbItem>) {
     }
     for item in items {
         println!(
-            "#{} - {} {} {}🪙:\n{}",
-            item.id, item.emoji, item.name, item.price, item.description
+            "#{} - {} {} {}🪙:\navailable: {}\n{}",
+            item.id, item.emoji, item.name, item.price, item.available, item.description
         );
     }
 }
@@ -312,6 +314,7 @@ impl Item {
             description: self.description.ok_or("description cannot be null".to_owned())?,
             emoji: self.emoji.ok_or("emoji cannot be null".to_owned())?,
             price: self.price.ok_or("price cannot be null".to_owned())?,
+	    available: self.available.ok_or("availability cannot be null".to_owned())?,
         })
     }
 
@@ -322,6 +325,7 @@ impl Item {
 	    description: self.description,
 	    emoji: self.emoji,
 	    price: self.price,
+	    available: self.available,
 	}
     }
 }
