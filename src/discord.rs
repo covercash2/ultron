@@ -98,6 +98,17 @@ impl From<DiscordMessage> for ChatMessage {
     }
 }
 
+pub struct Socket<'a> {
+    pub context: &'a Context,
+    pub message: DiscordMessage,
+}
+
+impl<'a> Socket<'a> {
+    pub fn channel(&self) -> ChannelId {
+	self.message.channel_id
+    }
+}
+
 /// This struct is the main handler for the [`serenity`] Discord API crate.
 /// It communicates with the bank thread though the `transaction_sender` and
 /// `receipt_receiver` [`tokio::sync::mpsc`] channels.
@@ -127,6 +138,7 @@ impl Handler {
         }
     }
 
+    /// get shop items from the database
     async fn shop_items(
         &self,
         server_id: u64,
@@ -152,6 +164,27 @@ impl Handler {
         }
     }
 
+    /// post a shop embed and await reactions
+    async fn shop(&self, socket: Socket<'_>, items: Vec<Item>) -> Result<()> {
+        match messages::shop(socket.channel(), &socket.context.http, items).await {
+            Ok(reply) => {
+                while let Some(reaction) = &reply
+                    .await_reaction(&socket.context)
+                    .timeout(Duration::from_secs(100))
+                    .await
+                {
+                    debug!("reaction on shop message: {:?}", reaction);
+                }
+            }
+            Err(err) => {
+		return Err(err);
+            }
+        }
+
+	Ok(())
+    }
+
+    /// get the user balance from the database
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
         let from_user = user_id.into();
         let operation = Operation::GetUserBalance;
@@ -418,10 +451,6 @@ impl Handler {
             }
         }
     }
-
-    async fn shop_purchase(&self, server_id: u64, user_id: u64, emoji: String) -> Result<()> {
-        todo!()
-    }
 }
 
 #[async_trait]
@@ -429,6 +458,11 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: DiscordMessage) {
         let discord_channel = msg.channel_id.clone();
         let message: ChatMessage = msg.clone().into();
+
+	let socket = Socket {
+	    message: msg.clone(),
+	    context: &ctx
+	};
 
         debug!("chat message: {:?}", message);
 
@@ -581,18 +615,9 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-                match messages::shop(discord_channel, &ctx.http, items).await {
-                    Ok(message) => {
-			while let Some(reaction) = &message.await_reaction(&ctx)
-			    .timeout(Duration::from_secs(100))
-			    .await {
-				debug!("reaction on shop message: {:?}", reaction);
-			    }
-                    }
-                    Err(err) => {
-                        error!("error sending shop response: {:?}", err);
-                    }
-                }
+                if let Err(err) = self.shop(socket, items).await {
+		    error!("unable to run shop: {:?}", err);
+		}
             }
         }
     }
@@ -681,16 +706,8 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         // set user id for ultron
+	// TODO get ultron id in main
         self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
-    }
-
-}
-
-fn reaction_string(reaction: &ReactionType) -> Option<String> {
-    match reaction {
-        ReactionType::Unicode(string) => Some(string.clone()),
-        ReactionType::Custom { name, .. } => name.clone(),
-        _ => None,
     }
 }
