@@ -164,26 +164,6 @@ impl Handler {
         }
     }
 
-    /// post a shop embed and await reactions
-    async fn shop(&self, socket: Socket<'_>, items: Vec<Item>) -> Result<()> {
-        match messages::shop(socket.channel(), &socket.context.http, items).await {
-            Ok(reply) => {
-                while let Some(reaction) = &reply
-                    .await_reaction(&socket.context)
-                    .timeout(Duration::from_secs(100))
-                    .await
-                {
-                    debug!("reaction on shop message: {:?}", reaction);
-                }
-            }
-            Err(err) => {
-		return Err(err);
-            }
-        }
-
-	Ok(())
-    }
-
     /// get the user balance from the database
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
         let from_user = user_id.into();
@@ -615,7 +595,7 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-                if let Err(err) = self.shop(socket, items).await {
+                if let Err(err) = shop(socket, items).await {
 		    error!("unable to run shop: {:?}", err);
 		}
             }
@@ -710,4 +690,24 @@ impl EventHandler for Handler {
         self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
     }
+}
+
+/// post a shop embed and await reactions
+async fn shop(socket: Socket<'_>, items: Vec<Item>) -> Result<()> {
+    match messages::shop(socket.channel(), &socket.context.http, items).await {
+	Ok(reply) => {
+	    while let Some(reaction) = &reply
+		.await_reaction(&socket.context)
+		.timeout(Duration::from_secs(100))
+		.await
+	    {
+		debug!("reaction on shop message: {:?}", reaction);
+	    }
+	}
+	Err(err) => {
+	    return Err(err);
+	}
+    }
+
+    Ok(())
 }
