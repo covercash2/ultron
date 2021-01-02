@@ -11,6 +11,7 @@ pub struct Item {
     pub description: String,
     pub emoji: String,
     pub price: i32,
+    pub available: i32,
 }
 
 #[derive(AsChangeset)]
@@ -21,6 +22,7 @@ pub struct UpdateItem {
     pub description: Option<String>,
     pub emoji: Option<String>,
     pub price: Option<i32>,
+    pub available: Option<i32>,
 }
 
 #[derive(Insertable, Queryable)]

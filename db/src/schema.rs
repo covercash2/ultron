@@ -28,6 +28,7 @@ table! {
         description -> Text,
         emoji -> Text,
         price -> Integer,
+        available -> Integer,
     }
 }
 

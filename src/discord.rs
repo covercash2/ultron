@@ -1,14 +1,14 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use log::*;
 
 use chrono::{DateTime, Utc};
 
-use serenity::model::channel::Reaction;
+use serenity::model::channel::{Reaction, ReactionType};
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
-    model::{channel::Message as DiscordMessage, gateway::Ready},
+    model::{channel::Message as DiscordMessage, gateway::Ready, prelude::*},
     prelude::*,
 };
 
@@ -69,6 +69,7 @@ impl From<String> for Output {
 
 impl From<DiscordMessage> for ChatMessage {
     fn from(discord_message: DiscordMessage) -> Self {
+        let id = *discord_message.id.as_u64();
         let content: String = discord_message.content;
         let user: ChatUser = (*discord_message.author.id.as_u64()).into();
         let channel: ChatChannel = (*discord_message.channel_id.as_u64()).into();
@@ -86,6 +87,7 @@ impl From<DiscordMessage> for ChatMessage {
             .collect();
 
         ChatMessage {
+            id,
             content,
             user,
             channel,
@@ -125,16 +127,21 @@ impl Handler {
         }
     }
 
-    async fn shop_items(&self, server_id: u64, channel_id: u64, from_user: u64) -> Result<Vec<Item>> {
-	let operation = Operation::GetAllItems;
-	let transaction = Transaction {
-	    server_id,
-	    channel_id,
-	    from_user,
-	    operation
-	};
+    async fn shop_items(
+        &self,
+        server_id: u64,
+        channel_id: u64,
+        from_user: u64,
+    ) -> Result<Vec<Item>> {
+        let operation = Operation::GetAllItems;
+        let transaction = Transaction {
+            server_id,
+            channel_id,
+            from_user,
+            operation,
+        };
 
-	let receipt = self.send_transaction(transaction).await?;
+        let receipt = self.send_transaction(transaction).await?;
 
         if let TransactionStatus::Complete = receipt.status {
             Ok(receipt.items()?.cloned().collect())
@@ -183,7 +190,7 @@ impl Handler {
         &self,
         server_id: u64,
         channel_id: u64,
-	user_id: u64,
+        user_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -196,11 +203,6 @@ impl Handler {
                 self.process_receipt(context, receipt, server_id).await
             }
             Command::Gamble(gamble) => {
-                // gamble
-                // .play()
-                // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
-                //     .map_err(Into::into)
-
                 let ultron_id = self.ultron_id().await?;
                 let user_id = gamble.player_id;
 
@@ -278,10 +280,7 @@ impl Handler {
                                     ))),
                                 }
                             }
-                            GambleState::Draw => {
-                                // no transaction necessary
-                                Ok(Some(Output::Gamble(gamble_output)))
-                            }
+                            GambleState::Draw => Ok(Some(Output::Gamble(gamble_output))),
                             GambleState::Waiting => {
                                 // invalid state
                                 Err(Error::GambleError(GambleError::InvalidState(state.clone())))
@@ -292,9 +291,9 @@ impl Handler {
             }
             Command::None => Ok(None),
             Command::Shop => {
-		let items = self.shop_items(server_id, channel_id, user_id).await?;
-		Ok(Some(Output::Shop(items)))
-	    },
+                let items = self.shop_items(server_id, channel_id, user_id).await?;
+                Ok(Some(Output::Shop(items)))
+            }
         }
     }
 
@@ -306,10 +305,9 @@ impl Handler {
     ) -> Result<Option<Output>> {
         let user_id = receipt.transaction.from_user;
         let operation = &receipt.transaction.operation;
-        //let mut account_results = receipt.account_results;
         match operation {
             Operation::GetAllBalances => {
-		let mut account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
+                let mut account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
                 if account_results.is_empty() {
                     return Ok(Some(Output::Say(
                         "Coin transactions have yet to occur on this channel".to_owned(),
@@ -333,11 +331,11 @@ impl Handler {
                 to_user, amount, ..
             } => {
                 debug!("transfer complete");
-		let account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
+                let account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
 
                 let from_user = user_id;
-		let to_user = *to_user;
-		let amount = *amount;
+                let to_user = *to_user;
+                let amount = *amount;
 
                 let to_balance = *account_results
                     .iter()
@@ -416,9 +414,13 @@ impl Handler {
                 ))
             }
             Operation::GetAllItems => {
-		todo!()
-	    }
+                todo!()
+            }
         }
+    }
+
+    async fn shop_purchase(&self, server_id: u64, user_id: u64, emoji: String) -> Result<()> {
+        todo!()
     }
 }
 
@@ -426,7 +428,7 @@ impl Handler {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: DiscordMessage) {
         let discord_channel = msg.channel_id.clone();
-        let message: ChatMessage = msg.into();
+        let message: ChatMessage = msg.clone().into();
 
         debug!("chat message: {:?}", message);
 
@@ -455,7 +457,13 @@ impl EventHandler for Handler {
         };
 
         let output = match self
-            .process_command(message.server.id, message.channel.id, message.user.id, &ctx, command)
+            .process_command(
+                message.server.id,
+                message.channel.id,
+                message.user.id,
+                &ctx,
+                command,
+            )
             .await
         {
             Ok(Some(output)) => output,
@@ -573,17 +581,26 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-		if let Err(err) = messages::shop(discord_channel, &ctx.http, items).await {
-		    error!("error sending shop response: {:?}", err);
-		}
-	    }
+                match messages::shop(discord_channel, &ctx.http, items).await {
+                    Ok(message) => {
+			while let Some(reaction) = &message.await_reaction(&ctx)
+			    .timeout(Duration::from_secs(100))
+			    .await {
+				debug!("reaction on shop message: {:?}", reaction);
+			    }
+                    }
+                    Err(err) => {
+                        error!("error sending shop response: {:?}", err);
+                    }
+                }
+            }
         }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
         let channel_id = *reaction.channel_id.as_u64();
-	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
+        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(Command::None) => {
@@ -619,7 +636,7 @@ impl EventHandler for Handler {
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
         let channel_id = *reaction.channel_id.as_u64();
-	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
+        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
             Ok(Command::Coin(transaction)) => match transaction.operation {
@@ -666,5 +683,14 @@ impl EventHandler for Handler {
         // set user id for ultron
         self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
+    }
+
+}
+
+fn reaction_string(reaction: &ReactionType) -> Option<String> {
+    match reaction {
+        ReactionType::Unicode(string) => Some(string.clone()),
+        ReactionType::Custom { name, .. } => name.clone(),
+        _ => None,
     }
 }
