@@ -257,6 +257,12 @@ impl Db {
     pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<usize> {
 	inventory::add_item(&self.connection, inventory_item)
     }
+
+    pub fn user_inventory(&self, server: u64, user: u64) -> Result<Vec<Item>> {
+	let server = server.to_string();
+	let user = user.to_string();
+	inventory::user_inventory(&self.connection, server, user)
+    }
 }
 
 fn establish_connection(database_url: impl AsRef<str>) -> Result<SqliteConnection> {
