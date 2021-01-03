@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 use std::{env, path::PathBuf};
 
+use db::Db;
 use dotenv::dotenv;
 use log::*;
 
@@ -50,9 +51,11 @@ async fn main() {
         channel(100);
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
+    let db = Db::open(&database_url).expect("unable to open database connection");
+
     let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
 
-    let event_handler = Handler::new(bank_channel);
+    let event_handler = Handler::new(db, bank_channel);
 
     let bank = Bank::load(database_url)
         .await

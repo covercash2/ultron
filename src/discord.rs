@@ -16,7 +16,7 @@ use serenity::{
 
 use tokio::sync::Mutex;
 
-use db::model::Item;
+use db::{Db, model::Item};
 
 use crate::chat::{
     Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
@@ -123,14 +123,17 @@ pub struct Handler {
     /// ultron's user id
     user_id: Arc<Mutex<Option<UserId>>>,
     transaction_sender: TransactionSender,
+    db: Arc<Mutex<Db>>,
 }
 
 impl Handler {
-    pub fn new(transaction_sender: TransactionSender) -> Handler {
+    pub fn new(db: Db, transaction_sender: TransactionSender) -> Handler {
         let user_id = Default::default();
+	let db = Arc::new(Mutex::new(db));
         Handler {
             user_id,
             transaction_sender,
+	    db,
         }
     }
 
