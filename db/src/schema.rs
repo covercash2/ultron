@@ -18,6 +18,7 @@ table! {
     inventory (user_id, item_id) {
         user_id -> Text,
         item_id -> Integer,
+        server_id -> Text,
     }
 }
 

@@ -8,12 +8,13 @@ mod schema;
 
 mod ids;
 mod items;
+mod inventory;
 
 pub mod error;
 pub mod model;
 
 use error::*;
-use model::{BankAccount, ChannelUser, Item, UpdateItem};
+use model::{BankAccount, ChannelUser, InventoryItem, Item, UpdateItem};
 use schema::bank_accounts::dsl::*;
 
 type Backend = Sqlite;
@@ -246,6 +247,10 @@ impl Db {
 
     pub fn update_item(&self, item: UpdateItem) -> Result<()> {
 	items::update(&self.connection, item)
+    }
+
+    pub fn dump_inventory(&self) -> Result<Vec<InventoryItem>> {
+	inventory::show_all(&self.connection)
     }
 }
 
