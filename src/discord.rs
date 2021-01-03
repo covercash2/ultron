@@ -16,7 +16,7 @@ use serenity::{
 
 use tokio::sync::Mutex;
 
-use db::{Db, model::Item};
+use db::{Db, model::{InventoryItem, Item}};
 
 use crate::chat::{
     Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
@@ -438,6 +438,62 @@ impl Handler {
             }
         }
     }
+
+    /// post a shop embed and await reactions
+    async fn shop(&self, socket: Socket<'_>, items: &Vec<Item>) -> Result<()> {
+	let channel = socket.channel();
+	let http = &socket.context.http;
+	let reply = messages::shop(socket.channel(), http, &items).await?;
+	&reply
+	    .await_reactions(&socket.context)
+	    .timeout(SHOP_TIMEOUT)
+	    .removed(true)
+	    .await
+	    .for_each(|reaction| async move {
+		debug!("reaction: {:?}", reaction);
+		match reaction.as_ref() {
+		    ReactionAction::Added(reaction) => {
+			// find the item with the corresponding emoji
+			if let Some(item) = items
+			    .iter()
+			    .find(|item| item.emoji == reaction.emoji.as_data())
+			{
+			    let server_id = reaction.guild_id.map(|id| *id.as_u64());
+			    let user_id = reaction.user_id.map(|id| *id.as_u64());
+
+			    match add_inventory_item(&self.db, server_id, user_id, &item.id).await {
+				Ok(0) => {
+				    // user already has item
+				}
+				Ok(1) => {
+				    // purchase was successful
+				}
+				Ok(n) => {
+				    error!("unexpectedly inserted {} records", n);
+				}
+				Err(err) => {
+				    error!("error adding inventory item: {:?}", err)
+				}
+			    }
+			}
+		    }
+		    ReactionAction::Removed(reaction) => {
+			debug!("reaction removed");
+			// find the item with the corresponding emoji
+			if let Some(_item) = items
+			    .iter()
+			    .find(|item| item.emoji == reaction.emoji.as_data())
+			{
+			    if let Err(err) = messages::say(channel, http, "No refunds.").await {
+				error!("unable to send message to discord: {:?}", err);
+			    }
+			}
+		    }
+		}
+	    })
+	    .await;
+	Ok(())
+    }
 }
 
 #[async_trait]
@@ -602,7 +658,7 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-                if let Err(err) = shop(socket, &items).await {
+                if let Err(err) = self.shop(socket, &items).await {
                     error!("unable to run shop: {:?}", err);
                 }
             }
@@ -702,43 +758,14 @@ impl EventHandler for Handler {
     }
 }
 
-/// post a shop embed and await reactions
-async fn shop(socket: Socket<'_>, items: &Vec<Item>) -> Result<()> {
-    let channel = socket.channel();
-    let http = &socket.context.http;
-    let reply = messages::shop(socket.channel(), http, &items).await?;
-    &reply
-	.await_reactions(&socket.context)
-	.timeout(SHOP_TIMEOUT)
-        .removed(true)
-	.await
-	.for_each(|reaction| async move {
-	    debug!("reaction: {:?}", reaction);
-	    match reaction.as_ref() {
-		ReactionAction::Added(reaction) => {
-		    // find the item with the corresponding emoji
-		    if let Some(item) = items
-			.iter()
-			.find(|item| item.emoji == reaction.emoji.as_data())
-		    {
-			// add to player inventory
-			debug!("player is trying to purchase item: {:?}", item);
-		    }
-		}
-		ReactionAction::Removed(reaction) => {
-		    debug!("reaction removed");
-		    // find the item with the corresponding emoji
-		    if let Some(_item) = items
-			.iter()
-			.find(|item| item.emoji == reaction.emoji.as_data())
-		    {
-			if let Err(err) = messages::say(channel, http, "No refunds.").await {
-			    error!("unable to send message to discord: {:?}", err);
-			}
-		    }
-		}
-	    }
-	})
-	.await;
-    Ok(())
+/// server_id and user_id are optional to clean up calling code.
+/// seems like code smell to me, but this function is private, so
+/// TODO cleanup
+async fn add_inventory_item(db: &Arc<Mutex<Db>>, server_id: Option<u64>, user_id: Option<u64>, item_id: &i32) -> Result<usize> {
+    let server_id = server_id.ok_or(Error::Unknown("unable to get server id".to_owned()))?;
+    let user_id = user_id.ok_or(Error::Unknown("unable to get user id".to_owned()))?;
+    let inventory_item = InventoryItem::new(&server_id, &user_id, item_id)?;
+    let db = db.lock().await;
+    db.add_inventory_item(inventory_item)
+        .map_err(Into::into)
 }

@@ -31,6 +31,7 @@ pub enum Error {
     GambleError(GambleError),
     ServerState(String),
     MessageBuild(String),
+    Unknown(String),
 }
 
 impl From<DbError> for Error {
