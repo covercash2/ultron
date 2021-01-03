@@ -252,6 +252,11 @@ impl Db {
     pub fn dump_inventory(&self) -> Result<Vec<InventoryItem>> {
 	inventory::show_all(&self.connection)
     }
+
+    /// returns Ok(0) if the item already exists
+    pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<usize> {
+	inventory::add_item(&self.connection, inventory_item)
+    }
 }
 
 fn establish_connection(database_url: &str) -> Result<SqliteConnection> {
