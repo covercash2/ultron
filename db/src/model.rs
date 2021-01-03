@@ -1,6 +1,6 @@
 use diesel::{Insertable, Queryable};
 
-use super::schema::{bank_accounts, channel_users, items};
+use super::schema::{bank_accounts, channel_users, inventory, items};
 
 use crate::error::Result;
 
@@ -49,7 +49,6 @@ impl ChannelUser {
         self.server_id.parse().map_err(Into::into)
     }
 
-
     pub fn channel_id(&self) -> Result<u64> {
         self.channel_id.parse().map_err(Into::into)
     }
@@ -78,6 +77,24 @@ impl BankAccount {
         }
     }
 
+    pub fn user_id(&self) -> Result<u64> {
+        self.user_id.parse().map_err(Into::into)
+    }
+
+    pub fn server_id(&self) -> Result<u64> {
+        self.server_id.parse().map_err(Into::into)
+    }
+}
+
+#[derive(Debug, Clone, Insertable, Queryable)]
+#[table_name = "inventory"]
+pub struct InventoryItem {
+    user_id: String,
+    pub item_id: i32,
+    server_id: String,
+}
+
+impl InventoryItem {
     pub fn user_id(&self) -> Result<u64> {
         self.user_id.parse().map_err(Into::into)
     }

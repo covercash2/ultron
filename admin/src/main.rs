@@ -1,9 +1,9 @@
 use std::env;
 
-use clap::{AppSettings, Clap};
+use clap::Clap;
 use dotenv::dotenv;
 
-use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, Item as DbItem, UpdateItem}};
+use db::{self, Db as Database, model::BankAccount, model::{ChannelUser, InventoryItem, Item as DbItem, UpdateItem}};
 
 /// This doc string acts as a help message when the user runs '--help'
 /// as do all doc strings on fields
@@ -73,6 +73,8 @@ enum ReadOp {
     ChannelUserBalances { server_id: u64, channel_id: u64 },
     /// show all items
     AllItems,
+    /// dumb inventory table
+    AllInventoryItems,
 }
 
 /// update a database
@@ -195,7 +197,26 @@ impl ReadOp {
                 let items = db.all_items().expect("unable to get items");
                 print_items(items);
             }
+            ReadOp::AllInventoryItems => {
+		let inventory_items = db.dump_inventory().expect("unable to get inventory items");
+		print_inventory_items(inventory_items);
+	    }
         }
+    }
+}
+
+fn print_inventory_items(inventory_items: Vec<InventoryItem>) {
+    if inventory_items.len() == 0 {
+	println!("no inventory items retrieved");
+    }
+    for inventory_item in inventory_items {
+	let server_id = inventory_item
+	    .server_id()
+	    .expect("unable to parse server id from db output");
+        let user_id = inventory_item
+            .user_id()
+            .expect("unable to parse user id from db output");
+	println!("s#{} u#{} i#{}", server_id, user_id, inventory_item.item_id);
     }
 }
 
