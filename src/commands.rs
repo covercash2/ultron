@@ -31,6 +31,11 @@ pub enum Command {
     Gamble(Gamble),
     /// Show available items
     Shop,
+    /// Show a users items
+    Inventory {
+        server_id: u64,
+        user_id: u64,
+    },
     None,
 }
 
@@ -87,10 +92,14 @@ impl Command {
 
                     Ok(Command::Coin(transaction))
                 }
-		"shop" => {
-		    info!("shop items requested");
-		    Ok(Command::Shop)
-		}
+                "shop" => {
+                    info!("shop items requested");
+                    Ok(Command::Shop)
+                }
+                "inventory" => {
+                    trace!("inventory request");
+                    Ok(Command::Inventory { server_id, user_id })
+                }
                 _ => Err(Error::UnknownCommand(format!(
                     "unknown command: {}",
                     command_str

@@ -390,3 +390,27 @@ pub async fn shop(
         .await
         .map_err(Into::into)
 }
+
+/// Show the users inventory
+pub async fn inventory(channel: ChannelId, pipe: &Http, items: &Vec<Item>) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.title("Your items");
+                embed.color(Colour::ROSEWATER);
+
+		for item in items {
+		    embed.field(
+			format!("{} {}", item.emoji, item.name),
+			&item.description,
+			true
+		    );
+		}
+
+                embed
+            });
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
