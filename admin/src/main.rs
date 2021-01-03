@@ -380,10 +380,10 @@ impl Item {
 }
 
 impl InventoryItem {
-    fn to_db_item(self) -> Result<DbInventoryItem, TryFromIntError> {
-	Ok(DbInventoryItem::new(&self.server_id,
+    fn to_db_item(self) -> Result<DbInventoryItem, db::error::Error> {
+	DbInventoryItem::new(&self.server_id,
 	    &self.user_id,
 	    &self.item_id.try_into()?,
-	))
+	)
     }
 }

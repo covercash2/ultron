@@ -95,16 +95,16 @@ pub struct InventoryItem {
 }
 
 impl InventoryItem {
-    pub fn new(server: &u64, user: &u64, item_id: &i32) -> InventoryItem {
+    pub fn new(server: &u64, user: &u64, item_id: &i32) -> Result<InventoryItem> {
 	let server_id = server.to_string();
 	let user_id = user.to_string();
 	let item_id = *item_id;
 
-	InventoryItem {
+	Ok(InventoryItem {
 	    server_id,
 	    user_id,
 	    item_id,
-	}
+	})
     }
 
     pub fn user_id(&self) -> Result<u64> {
