@@ -30,7 +30,7 @@ impl fmt::Debug for Db {
 }
 
 impl Db {
-    pub fn open(database_url: &str) -> Result<Db> {
+    pub fn open(database_url: impl AsRef<str>) -> Result<Db> {
         let connection = establish_connection(database_url)?;
 
         Ok(Db { connection })
@@ -259,8 +259,8 @@ impl Db {
     }
 }
 
-fn establish_connection(database_url: &str) -> Result<SqliteConnection> {
-    SqliteConnection::establish(&database_url).map_err(Into::into)
+fn establish_connection(database_url: impl AsRef<str>) -> Result<SqliteConnection> {
+    SqliteConnection::establish(database_url.as_ref()).map_err(Into::into)
 }
 
 #[cfg(test)]
