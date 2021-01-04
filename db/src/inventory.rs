@@ -60,3 +60,16 @@ pub fn user_has_item<C: Connection<Backend = Backend>>(
 	}
     }
 }
+
+pub fn delete_item<C: Connection<Backend = Backend>>(
+    connection: &C,
+    inventory_item: InventoryItem
+) -> Result<usize> {
+    let server = inventory_item.server_id()?.to_string();
+    let user = inventory_item.user_id()?.to_string();
+    let item = inventory_item.item_id;
+    let item = inventory.find((&server, &user, &item));
+    diesel::delete(item)
+        .execute(connection)
+        .map_err(Into::into)
+}

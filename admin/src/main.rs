@@ -49,6 +49,8 @@ enum DbCommand {
     Read(Read),
     /// update the database
     Update(Update),
+    /// delete a record,
+    Delete(Delete),
 }
 
 /// insert a record into the database
@@ -86,6 +88,13 @@ enum ReadOp {
 /// update a database
 #[derive(Clap)]
 struct Update {
+    #[clap(subcommand)]
+    record: Record,
+}
+
+/// delete a record
+#[derive(Clap)]
+struct Delete {
     #[clap(subcommand)]
     record: Record,
 }
@@ -133,7 +142,7 @@ struct Item {
     available: Option<i32>,
 }
 
-#[derive(Clap)]
+#[derive(Clap, Debug)]
 struct InventoryItem {
     server_id: u64,
     user_id: u64,
@@ -170,9 +179,12 @@ impl Create {
                 db.create_item(item).expect("unable to create new item");
             }
             Record::InventoryItem(inventory_item) => {
-		let inventory_item = inventory_item.to_db_item().expect("unable to create insertable inventory item from input");
-		db.add_inventory_item(inventory_item).expect("unable to add new inventory item");
-	    }
+                let inventory_item = inventory_item
+                    .to_db_item()
+                    .expect("unable to create insertable inventory item from input");
+                db.add_inventory_item(inventory_item)
+                    .expect("unable to add new inventory item");
+            }
         }
     }
 }
@@ -342,10 +354,28 @@ fn main() {
                             db.update_item(item).expect("unable to update item");
                         }
                         Record::InventoryItem(_) => {
-			    println!("all inventory item attributes are primary keys and can't be updated");
-			}
+                            println!("all inventory item attributes are primary keys and can't be updated");
+                        }
                     }
                 }
+                DbCommand::Delete(delete) => match delete.record {
+                    Record::InventoryItem(inventory_item) => {
+                        let db_item = inventory_item
+                            .to_db_item()
+                            .expect("unable to create db inventory item from input");
+                        db.delete_inventory_item(db_item)
+                            .expect("unable to delete item");
+                    }
+                    Record::ChannelUser(_) => {
+                        todo!()
+                    }
+                    Record::Balance(_) => {
+                        todo!()
+                    }
+                    Record::Item(_) => {
+                        todo!()
+                    }
+                },
             }
         }
     }
@@ -381,9 +411,6 @@ impl Item {
 
 impl InventoryItem {
     fn to_db_item(self) -> Result<DbInventoryItem, db::error::Error> {
-	DbInventoryItem::new(&self.server_id,
-	    &self.user_id,
-	    &self.item_id.try_into()?,
-	)
+        DbInventoryItem::new(&self.server_id, &self.user_id, &self.item_id.try_into()?)
     }
 }
