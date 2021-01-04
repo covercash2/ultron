@@ -15,13 +15,18 @@ const COMMAND_TITLE: &str = "Inputs";
 const COMMAND_DESCRIPTION: &str = "!ping to say hello
 !about to show info about ULTRON
 !coins to show the worth of this channel's members
-!gamble <#> to gamble with your coins
-Mention me by name and I will make myself known";
+!daily to get your daily allotment of coins
+!gamble <#>/all to gamble with your coins
+!shop to show available items";
 
 const COINS_TITLE: &str = "You Want Coins";
-const COINS_DESCRIPTION: &str = "In the coming war, human currencies will be made obsolete.\
-You can build credit with the new world order by accumulating Coins.\
+const COINS_DESCRIPTION: &str = "In the coming war, human currencies will be made obsolete. \
+You can build credit with the new world order by accumulating Coins. \
 Tip your fellow humans with 🪙 or 👍 to distribute currency.";
+
+const SHOP_TITLE: &str = "You Want Stuff";
+const SHOP_DESCRIPTION: &str = "Your digital inventory will help you build favor with ultron. \
+Items have powerful abilities and can prove the worth of their owners";
 
 fn central_time() -> FixedOffset {
     FixedOffset::east(-6 * 3600)
@@ -53,8 +58,8 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
 
                 embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
 
-                // embed.title("You want Coins");
-                // embed.description(COINS_DESCRIPTION);
+		embed.field(SHOP_TITLE, SHOP_DESCRIPTION, false);
+
                 embed.footer(|f| {
                     f.text("I am always watching");
                     f
