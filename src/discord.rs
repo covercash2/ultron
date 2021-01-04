@@ -421,10 +421,6 @@ impl Handler {
                             receipt.status
                         )))
                     }
-                    _ => Err(Error::TransactionFailed(format!(
-                        "unexpected transaction status: {:?}",
-                        receipt.status
-                    ))),
                 }
             }
             Operation::Untip { .. } => match receipt.status {
@@ -437,24 +433,6 @@ impl Handler {
                     receipt.status
                 ))),
             },
-            Operation::Daily { .. } => {
-                match receipt.status {
-                    TransactionStatus::Complete => {
-                        debug!("daily complete");
-                        Ok(Some(Output::DailyResponse))
-                    }
-                    TransactionStatus::BadDailyRequest { next_epoch } => {
-                        // bad daily request
-                        info!("bad daily request: {:?}", next_epoch);
-                        // TODO chastize
-                        Ok(Some(Output::BadDailyResponse { next_epoch }))
-                    }
-                    _ => Err(Error::TransactionFailed(format!(
-                        "unexpected transaction status: {:?}",
-                        receipt.status
-                    ))),
-                }
-            }
             Operation::GetUserBalance { .. } => {
                 // TODO raw balance query response
                 Err(Error::ReceiptProcess(
