@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use log::*;
 
 use serenity::client::Context;
@@ -28,7 +30,18 @@ pub enum Command {
     About,
     /// Make a coin transaction
     Coin(Transaction),
+    Daily {
+        server_id: u64,
+        user_id: u64,
+    },
     Gamble(Gamble),
+    /// Show available items
+    Shop,
+    /// Show a users items
+    Inventory {
+        server_id: u64,
+        user_id: u64,
+    },
     None,
 }
 
@@ -65,25 +78,25 @@ impl Command {
                     let transaction = Transaction {
                         from_user,
                         server_id,
-			channel_id,
+                        channel_id,
                         operation,
                     };
                     Ok(Command::Coin(transaction))
                 }
                 "daily" => {
-                    info!("request daily");
-                    let timestamp = message.timestamp;
-                    let from_user = message.user.id;
-		    let channel_id = message.channel.id;
-                    let operation = Operation::Daily { timestamp };
-                    let transaction = Transaction {
-                        from_user,
-                        server_id,
-			channel_id,
-                        operation,
-                    };
+                    trace!("request daily");
+                    let server_id = message.server.id;
+                    let user_id = message.user.id;
 
-                    Ok(Command::Coin(transaction))
+                    Ok(Command::Daily { server_id, user_id })
+                }
+                "shop" => {
+                    info!("shop items requested");
+                    Ok(Command::Shop)
+                }
+                "inventory" => {
+                    trace!("inventory request");
+                    Ok(Command::Inventory { server_id, user_id })
                 }
                 _ => Err(Error::UnknownCommand(format!(
                     "unknown command: {}",
@@ -130,20 +143,33 @@ impl Command {
                         "unable to get amount argument".to_owned(),
                     ))
                     .and_then(|arg| {
-                        arg.parse::<i64>().map_err(|err| {
-                            Error::CommandParse(format!(
-                                "command should end with amount: {}\n{:?}",
-                                content, err
-                            ))
-                        })
+                        arg.parse::<i64>()
+                            .map_err(|err| {
+                                Error::CommandParse(format!(
+                                    "command should end with amount: {}\n{:?}",
+                                    content, err
+                                ))
+                            })
+                            .and_then(|amount| {
+                                if amount < 0 {
+                                    Err(Error::CommandParse(format!(
+                                        "cannot transfer a negative amount"
+                                    )))
+                                } else {
+                                    Ok(amount)
+                                }
+                            })
                     })?;
 
-		let channel_id = message.channel.id;
+                let channel_id = message.channel.id;
+                let amount: i64 = amount.try_into().map_err(|err| {
+                    Error::CommandParse(format!("amount integer overflowed: {:?}", err))
+                })?;
                 let operation = Operation::Transfer { to_user, amount };
 
                 let transaction = Transaction {
                     server_id,
-		    channel_id,
+                    channel_id,
                     from_user,
                     operation,
                 };
@@ -160,7 +186,7 @@ impl Command {
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
         let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user: UserId = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -175,13 +201,13 @@ impl Command {
             let operation = Operation::Tip { to_user };
             let transaction = Transaction {
                 server_id,
-		channel_id,
+                channel_id,
                 from_user,
                 operation,
             };
             Ok(Command::Coin(transaction))
         } else {
-	    Ok(Command::None)
+            Ok(Command::None)
         }
     }
 }

@@ -17,15 +17,17 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use db::Db;
+use db::{model::Item, Db};
 
 use crate::data::{ChannelId, ServerId, UserId};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 mod transaction;
 
 pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
 
+/// the id of the member card in the database
+const ITEM_ID_MEMBER_CARD: u64 = 1;
 /// The log file for the daily logins
 const DAILY_LOG_FILE: &str = "daily_log.json";
 /// The amount of coins to give to each user that asks once per day
@@ -34,7 +36,7 @@ const DAILY_AMOUNT: i64 = 10;
 type Account = (UserId, i64);
 
 /// Get the next epoch for the daily allowances.
-fn daily_epoch() -> DateTime<Utc> {
+pub fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
     if epoch < Utc::now() {
         epoch + Duration::days(1)
@@ -49,14 +51,33 @@ fn daily_epoch() -> DateTime<Utc> {
 #[derive(Debug, Clone)]
 pub struct Receipt {
     pub transaction: Transaction,
-    pub account_results: Vec<Account>,
     pub status: TransactionStatus,
+    pub results: Results,
 }
 
 impl Receipt {
-    pub fn iter(&self) -> impl Iterator<Item = &Account> {
-        self.account_results.iter()
+    /// Return account results of the transaction or an error if the Results contain the wrong variant.
+    pub fn accounts(&self) -> Result<impl Iterator<Item = &Account>> {
+        match &self.results {
+            Results::Accounts(accounts) => Ok(accounts.iter()),
+            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
+        }
     }
+
+    /// Return item results of the transaction or an error if the Results contain the wrong variant.
+    pub fn items(&self) -> Result<impl Iterator<Item = &Item>> {
+        match &self.results {
+            Results::Items(items) => Ok(items.iter()),
+            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Results {
+    Accounts(Vec<Account>),
+    Items(Vec<Item>),
+    None,
 }
 
 /// This function runs a loop that waits for transactions to come in on the
@@ -85,6 +106,38 @@ pub async fn bank_loop(
     debug!("bank loop finished");
 }
 
+pub async fn add_daily(
+    db: &Arc<Mutex<Db>>,
+    daily_log: &Arc<Mutex<DailyLog>>,
+    server_id: u64,
+    user_id: u64,
+) -> Result<bool> {
+    let gets_daily = {
+        let mut daily_log = daily_log.lock().await;
+        let gets_daily = daily_log.log_user(&server_id, user_id);
+	daily_log.save().await?;
+	gets_daily
+    };
+
+    if gets_daily {
+        let db = db.lock().await;
+        let is_member = db.user_has_item(server_id, user_id, ITEM_ID_MEMBER_CARD)?;
+        let amount = if is_member {
+            DAILY_AMOUNT * 2
+        } else {
+            DAILY_AMOUNT
+        };
+        let num_records = db.increment_balance(&server_id, &user_id, &amount)?;
+        if num_records == 0 {
+            Err(Error::Unknown("no records changed".to_owned()))
+        } else {
+            Ok(true)
+        }
+    } else {
+        Ok(false)
+    }
+}
+
 /// The main structure for storing account information.
 #[derive(Debug)]
 pub struct Bank {
@@ -111,6 +164,7 @@ impl Bank {
                 let account_results = self
                     .get_balances(&server_id, vec![from_user_id, to_user])
                     .await?;
+                let results = Results::Accounts(account_results);
 
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
@@ -118,25 +172,26 @@ impl Bank {
 
                 Receipt {
                     transaction,
-                    account_results,
+                    results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::GetAllBalances => {
                 let account_results = self.get_all_balances(&server_id, &channel_id).await?;
+                let results = Results::Accounts(account_results);
 
                 Receipt {
                     transaction,
-                    account_results,
+                    results,
                     status: TransactionStatus::Complete,
                 }
             }
             Operation::Tip { to_user } => {
                 if from_user_id == to_user {
-                    let account_results = Vec::new();
+                    let results = Results::None;
                     Receipt {
                         transaction,
-                        account_results,
+                        results,
                         status: TransactionStatus::SelfTip,
                     }
                 } else {
@@ -145,20 +200,20 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
+                    let results = Results::Accounts(account_results);
 
                     Receipt {
                         transaction,
-                        account_results,
+                        results,
                         status: TransactionStatus::Complete,
                     }
                 }
             }
             Operation::Untip { to_user } => {
                 if from_user_id == to_user {
-                    let account_results = Vec::new();
                     Receipt {
                         transaction,
-                        account_results,
+                        results: Results::None,
                         status: TransactionStatus::SelfTip, // TODO new error type?
                     }
                 } else {
@@ -166,74 +221,34 @@ impl Bank {
                     let account_results = self
                         .get_balances(&server_id, vec![from_user_id, to_user])
                         .await?;
+                    let results = Results::Accounts(account_results);
 
                     Receipt {
                         transaction,
-                        account_results,
+                        results,
                         status: TransactionStatus::Complete,
-                    }
-                }
-            }
-            Operation::Daily { timestamp } => {
-                let user_id = from_user_id;
-                info!("unhandled timestamp: {:?}", timestamp);
-                if self.daily_log.log_user(&server_id, user_id) {
-                    // first log today
-                    // award daily
-                    debug!("awarding daily to user{} on channel{}", user_id, server_id);
-
-                    let status = if let Err(err) = self.add_daily(&server_id, &user_id).await {
-                        error!("unable to add daily to account: {:?}", err);
-                        TransactionStatus::DbError
-                    } else {
-                        TransactionStatus::Complete
-                    };
-                    let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-
-                    // TODO db daily_log?
-                    if let Err(err) = self.daily_log.save().await {
-                        error!("error saving daily log: {:?}", err);
-                    }
-
-		    // save daily log
-		    self.save().await?;
-
-                    Receipt {
-                        transaction,
-                        account_results,
-                        status,
-                    }
-                } else {
-                    // user has already logged today
-                    // return bad user message
-                    debug!(
-                        "rejecting daily request from user{} on channel{}",
-                        user_id, server_id
-                    );
-                    let account_results = vec![];
-                    let status = TransactionStatus::BadDailyRequest {
-                        next_epoch: self.daily_log.epoch.clone(),
-                    };
-
-		    // save daily log
-		    self.save().await?;
-
-                    Receipt {
-                        transaction,
-                        account_results,
-                        status,
                     }
                 }
             }
             Operation::GetUserBalance => {
                 let user_id = from_user_id;
                 let account_results = self.get_balances(&server_id, vec![user_id]).await?;
+                let results = Results::Accounts(account_results);
                 let status = TransactionStatus::Complete;
 
                 Receipt {
                     transaction,
-                    account_results,
+                    results,
                     status,
+                }
+            }
+            Operation::GetAllItems => {
+                let items = self.get_all_items().await?;
+
+                Receipt {
+                    transaction,
+                    results: Results::Items(items),
+                    status: TransactionStatus::Complete,
                 }
             }
         };
@@ -243,21 +258,24 @@ impl Bank {
 
     /// Load saved account data
     pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
-	debug!("using database: {}", database_url.as_ref());
+        debug!("using database: {}", database_url.as_ref());
 
         let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
 
         let daily_log = DailyLog::load().await?;
 
-        Ok(Bank {
-            daily_log,
-            db,
-        })
+        Ok(Bank { daily_log, db })
     }
 
     /// Save account data
     pub async fn save(&self) -> Result<()> {
         self.daily_log.save().await
+    }
+
+    /// dump all items in the database
+    async fn get_all_items(&mut self) -> Result<Vec<Item>> {
+        let db = self.db.lock().await;
+        db.all_items().map_err(Into::into)
     }
 
     /// this function only gets balances that have the same server and channel,
@@ -302,22 +320,14 @@ impl Bank {
         Ok(record_num)
     }
 
-    async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<usize> {
-        let db = self.db.lock().await;
-        db.increment_balance(server_id, user_id, &DAILY_AMOUNT)
-            .map_err(Into::into)
-    }
-
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        db.tip(server_id, from_user, to_user)
-            .map_err(Into::into)
+        db.tip(server_id, from_user, to_user).map_err(Into::into)
     }
 
     async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
         let db = self.db.lock().await;
-        db.untip(server_id, from_user, to_user)
-            .map_err(Into::into)
+        db.untip(server_id, from_user, to_user).map_err(Into::into)
     }
 
     async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {

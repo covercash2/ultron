@@ -3,11 +3,9 @@ use std::sync::Arc;
 use serenity::futures::lock::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use chrono::{DateTime, Utc};
-
 use crate::error::{Error, Result};
 
-use super::{ChannelId, ServerId, UserId, Receipt};
+use super::{ChannelId, Receipt, ServerId, UserId};
 
 pub struct TransactionSender {
     send_channel: Sender<Transaction>,
@@ -16,13 +14,12 @@ pub struct TransactionSender {
 }
 
 impl TransactionSender {
-
     pub fn new(send_channel: Sender<Transaction>, receive_channel: Receiver<Receipt>) -> Self {
         let receive_channel = Arc::new(Mutex::new(receive_channel));
-	TransactionSender {
-	    send_channel,
-	    receive_channel
-	}
+        TransactionSender {
+            send_channel,
+            receive_channel,
+        }
     }
 
     /// Send a transaction to the bank thread.
@@ -47,14 +44,14 @@ pub struct Transaction {
     pub from_user: UserId,
     pub server_id: ServerId,
     pub channel_id: ChannelId,
-    pub operation: Operation
+    pub operation: Operation,
 }
 
 #[derive(Debug, Clone)]
 pub enum Operation {
     Transfer {
-	to_user: UserId,
-	amount: i64,
+        to_user: UserId,
+        amount: i64,
     },
     GetAllBalances,
     GetUserBalance,
@@ -66,16 +63,18 @@ pub enum Operation {
     Untip {
         to_user: UserId,
     },
-    /// Give some coins to a user once per day
-    Daily {
-        timestamp: DateTime<Utc>,
-    },
+    /// Dump items table
+    GetAllItems,
 }
+
+// impl Transaction {
+//     pub fn process(self, data: &Bank) -> Result<Receipt> {
+
+//     }
+// }
 
 #[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
-    DbError,
-    BadDailyRequest { next_epoch: DateTime<Utc> },
     SelfTip,
 }

@@ -1,12 +1,13 @@
-use std::env;
+use std::{convert::TryInto, env, num::TryFromIntError};
 
 use clap::Clap;
 use dotenv::dotenv;
 
 use db::{
     self,
-    model::BankAccount,
-    model::ChannelUser,
+    model::{
+        BankAccount, ChannelUser, InventoryItem as DbInventoryItem, Item as DbItem, UpdateItem,
+    },
     Db as Database,
 };
 
@@ -76,6 +77,10 @@ enum ReadOp {
     ChannelUsers { server_id: u64, channel_id: u64 },
     /// show balances for users in a channel
     ChannelUserBalances { server_id: u64, channel_id: u64 },
+    /// show all items
+    AllItems,
+    /// dumb inventory table
+    AllInventoryItems,
 }
 
 /// update a database
@@ -91,6 +96,10 @@ enum Record {
     ChannelUser(User),
     /// server_id, user_id, balance record
     Balance(Account),
+    /// id, name, description, emoji, price
+    Item(Item),
+    /// server_id, user_id, item_id
+    InventoryItem(InventoryItem),
 }
 
 /// a user in the channel user log
@@ -107,6 +116,28 @@ struct Account {
     server_id: u64,
     user_id: u64,
     balance: i64,
+}
+
+#[derive(Clap)]
+struct Item {
+    id: u16,
+    #[clap(short, long)]
+    name: Option<String>,
+    #[clap(short, long)]
+    description: Option<String>,
+    #[clap(short, long)]
+    emoji: Option<String>,
+    #[clap(short, long)]
+    price: Option<i32>,
+    #[clap(short, long, allow_hyphen_values = true)]
+    available: Option<i32>,
+}
+
+#[derive(Clap)]
+struct InventoryItem {
+    server_id: u64,
+    user_id: u64,
+    item_id: u64,
 }
 
 impl Create {
@@ -132,6 +163,16 @@ impl Create {
                     server_id, channel_id, user_id
                 );
             }
+            Record::Item(item) => {
+                let item = item
+                    .to_db_item()
+                    .expect("unable to create insertable item from input");
+                db.create_item(item).expect("unable to create new item");
+            }
+            Record::InventoryItem(inventory_item) => {
+		let inventory_item = inventory_item.to_db_item().expect("unable to create insertable inventory item from input");
+		db.add_inventory_item(inventory_item).expect("unable to add new inventory item");
+	    }
         }
     }
 }
@@ -173,7 +214,42 @@ impl ReadOp {
                     .expect("unable to get user balance");
                 print_account(account);
             }
+            ReadOp::AllItems => {
+                let items = db.all_items().expect("unable to get items");
+                print_items(items);
+            }
+            ReadOp::AllInventoryItems => {
+                let inventory_items = db.dump_inventory().expect("unable to get inventory items");
+                print_inventory_items(inventory_items);
+            }
         }
+    }
+}
+
+fn print_inventory_items(inventory_items: Vec<DbInventoryItem>) {
+    if inventory_items.len() == 0 {
+        println!("no inventory items retrieved");
+    }
+    for inventory_item in inventory_items {
+        let server_id = inventory_item
+            .server_id()
+            .expect("unable to parse server id from db output");
+        let user_id = inventory_item
+            .user_id()
+            .expect("unable to parse user id from db output");
+        println!("s#{} u#{} i#{}", server_id, user_id, inventory_item.item_id);
+    }
+}
+
+fn print_items(items: Vec<DbItem>) {
+    if items.len() == 0 {
+        println!("no items retrieved");
+    }
+    for item in items {
+        println!(
+            "#{} - {} {} {}🪙:\navailable: {}\n{}",
+            item.id, item.emoji, item.name, item.price, item.available, item.description
+        );
     }
 }
 
@@ -241,6 +317,8 @@ fn main() {
 
             let db = db::Db::open(&database_url).expect("unable to open database");
 
+            println!("using database: {}", database_url);
+
             match db_command.subcmd {
                 DbCommand::Create(create_command) => create_command.handle(&db),
                 DbCommand::Read(read) => read.op.handle(&db),
@@ -259,9 +337,53 @@ fn main() {
                                 .expect("unable to update balance");
                             println!("updated {} record to ${}", records, new_balance);
                         }
+                        Record::Item(item) => {
+                            let item = item.to_db_update_item();
+                            db.update_item(item).expect("unable to update item");
+                        }
+                        Record::InventoryItem(_) => {
+			    println!("all inventory item attributes are primary keys and can't be updated");
+			}
                     }
                 }
             }
         }
+    }
+}
+
+impl Item {
+    fn to_db_item(self) -> Result<DbItem, String> {
+        Ok(DbItem {
+            id: self.id.into(),
+            name: self.name.ok_or("name cannot be null".to_owned())?,
+            description: self
+                .description
+                .ok_or("description cannot be null".to_owned())?,
+            emoji: self.emoji.ok_or("emoji cannot be null".to_owned())?,
+            price: self.price.ok_or("price cannot be null".to_owned())?,
+            available: self
+                .available
+                .ok_or("availability cannot be null".to_owned())?,
+        })
+    }
+
+    fn to_db_update_item(self) -> UpdateItem {
+        UpdateItem {
+            id: self.id.into(),
+            name: self.name,
+            description: self.description,
+            emoji: self.emoji,
+            price: self.price,
+            available: self.available,
+        }
+    }
+}
+
+impl InventoryItem {
+    fn to_db_item(self) -> Result<DbInventoryItem, db::error::Error> {
+	DbInventoryItem::new(&self.server_id,
+	    &self.user_id,
+	    &self.item_id.try_into()?,
+	)
     }
 }

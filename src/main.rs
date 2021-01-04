@@ -1,6 +1,7 @@
 #![feature(async_closure)]
 use std::{env, path::PathBuf};
 
+use db::Db;
 use dotenv::dotenv;
 use log::*;
 
@@ -19,7 +20,7 @@ mod discord;
 mod gambling;
 mod tokens;
 
-use coins::{bank_loop, Bank, Receipt, Transaction, TransactionSender};
+use coins::{bank_loop, Bank, DailyLog, Receipt, Transaction, TransactionSender};
 use discord::Handler;
 use tokens::load_token;
 
@@ -50,9 +51,12 @@ async fn main() {
         channel(100);
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
+    let db = Db::open(&database_url).expect("unable to open database connection");
+    let daily_log = DailyLog::load().await.expect("unable to load daily log");
+
     let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
 
-    let event_handler = Handler::new(bank_channel);
+    let event_handler = Handler::new(db, daily_log, bank_channel);
 
     let bank = Bank::load(database_url)
         .await
