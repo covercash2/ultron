@@ -114,7 +114,9 @@ pub async fn add_daily(
 ) -> Result<bool> {
     let gets_daily = {
         let mut daily_log = daily_log.lock().await;
-        daily_log.log_user(&server_id, user_id)
+        let gets_daily = daily_log.log_user(&server_id, user_id);
+	daily_log.save().await?;
+	gets_daily
     };
 
     if gets_daily {
@@ -228,58 +230,6 @@ impl Bank {
                     }
                 }
             }
-            Operation::Daily { timestamp } => {
-                let user_id = from_user_id;
-                info!("unhandled timestamp: {:?}", timestamp);
-                if self.daily_log.log_user(&server_id, user_id) {
-                    // first log today
-                    // award daily
-                    debug!("awarding daily to user{} on channel{}", user_id, server_id);
-
-                    let status = if let Err(err) = self.add_daily(&server_id, &user_id).await {
-                        error!("unable to add daily to account: {:?}", err);
-                        TransactionStatus::DbError
-                    } else {
-                        TransactionStatus::Complete
-                    };
-                    let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-                    let results = Results::Accounts(account_results);
-
-                    // TODO db daily_log?
-                    if let Err(err) = self.daily_log.save().await {
-                        error!("error saving daily log: {:?}", err);
-                    }
-
-                    // save daily log
-                    self.save().await?;
-
-                    Receipt {
-                        transaction,
-                        results,
-                        status,
-                    }
-                } else {
-                    // user has already logged today
-                    // return bad user message
-                    debug!(
-                        "rejecting daily request from user{} on channel{}",
-                        user_id, server_id
-                    );
-                    let results = Results::None;
-                    let status = TransactionStatus::BadDailyRequest {
-                        next_epoch: self.daily_log.epoch.clone(),
-                    };
-
-                    // save daily log
-                    self.save().await?;
-
-                    Receipt {
-                        transaction,
-                        results,
-                        status,
-                    }
-                }
-            }
             Operation::GetUserBalance => {
                 let user_id = from_user_id;
                 let account_results = self.get_balances(&server_id, vec![user_id]).await?;
@@ -368,12 +318,6 @@ impl Bank {
         let record_num = db.transfer_coins(server_id, from_user, to_user, &amount)?;
 
         Ok(record_num)
-    }
-
-    async fn add_daily(&mut self, server_id: &u64, user_id: &u64) -> Result<usize> {
-        let db = self.db.lock().await;
-        db.increment_balance(server_id, user_id, &DAILY_AMOUNT)
-            .map_err(Into::into)
     }
 
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {

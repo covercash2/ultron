@@ -3,8 +3,6 @@ use std::sync::Arc;
 use serenity::futures::lock::Mutex;
 use tokio::sync::mpsc::{Receiver, Sender};
 
-use chrono::{DateTime, Utc};
-
 use crate::error::{Error, Result};
 
 use super::{ChannelId, Receipt, ServerId, UserId};
@@ -65,10 +63,6 @@ pub enum Operation {
     Untip {
         to_user: UserId,
     },
-    /// Give some coins to a user once per day
-    Daily {
-        timestamp: DateTime<Utc>,
-    },
     /// Dump items table
     GetAllItems,
 }
@@ -82,7 +76,5 @@ pub enum Operation {
 #[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
-    DbError,
-    BadDailyRequest { next_epoch: DateTime<Utc> },
     SelfTip,
 }
