@@ -11,7 +11,7 @@ use crate::gambling::Prize;
 use crate::gambling::{GambleOutput, State as GambleState};
 
 const HELP_TITLE: &str = "What ULTRON can do for you";
-const COMMAND_TITLE: &str = "Inputs";
+const COMMAND_TITLE: &str = "Commands";
 const COMMAND_DESCRIPTION: &str = "!ping to say hello
 !about to show info about ULTRON
 !coins to show the worth of this channel's members
