@@ -338,6 +338,22 @@ impl Handler {
                     }))
                 }
             }
+            Command::Transfer { from_user, to_user, amount } => {
+		let db = self.db.lock().await;
+		let transfer_result = db.transfer_coins(&server_id, &from_user, &to_user, &amount)?;
+
+		let to_account = transfer_result.to_account;
+		let to_user = to_account.user_id()?;
+		let to_balance = to_account.balance.into();
+
+		let from_account = transfer_result.from_account;
+		let from_user = from_account.user_id()?;
+		let from_balance = from_account.balance.into();
+
+		Ok(Some(Output::TransferSuccess {
+		    to_user, to_balance, from_user, from_balance, amount
+		}))
+	    }
         }
     }
 

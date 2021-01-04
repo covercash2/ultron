@@ -17,7 +17,7 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use db::{model::Item, Db};
+use db::{model::Item, Db, TransferResult};
 
 use crate::data::{ChannelId, ServerId, UserId};
 use crate::error::{Error, Result};
@@ -313,11 +313,11 @@ impl Bank {
         from_user: &u64,
         to_user: &u64,
         amount: i64,
-    ) -> Result<usize> {
+    ) -> Result<TransferResult> {
         let db = self.db.lock().await;
-        let record_num = db.transfer_coins(server_id, from_user, to_user, &amount)?;
+        let transfer_results = db.transfer_coins(server_id, from_user, to_user, &amount)?;
 
-        Ok(record_num)
+        Ok(transfer_results)
     }
 
     async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {

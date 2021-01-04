@@ -9,6 +9,7 @@ use std::{convert::TryInto, fmt};
 
 mod schema;
 
+mod accounts;
 mod ids;
 mod inventory;
 mod items;
@@ -19,6 +20,8 @@ pub mod model;
 use error::*;
 use model::{BankAccount, ChannelUser, InventoryItem, Item, UpdateItem};
 use schema::bank_accounts::dsl::*;
+
+pub use accounts::TransferResult;
 
 type Backend = Sqlite;
 
@@ -167,30 +170,8 @@ impl Db {
         from_user: &u64,
         to_user: &u64,
         amount: &i64,
-    ) -> Result<usize> {
-        let to_amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
-        let from_amount: i32 = -to_amount;
-
-        let from_account = BankAccount::new(server, from_user, &from_amount);
-        let to_account = BankAccount::new(server, to_user, &to_amount);
-
-        self.connection.transaction::<_, Error, _>(|| {
-            let mut record_num = diesel::insert_into(bank_accounts)
-                .values(&from_account)
-                .on_conflict((server_id, user_id))
-                .do_update()
-                .set(balance.eq(balance + from_amount))
-                .execute(&self.connection)?;
-
-            record_num += diesel::insert_into(bank_accounts)
-                .values(&to_account)
-                .on_conflict((server_id, user_id))
-                .do_update()
-                .set(balance.eq(balance + to_amount))
-                .execute(&self.connection)?;
-
-            Ok(record_num)
-        })
+    ) -> Result<TransferResult> {
+        accounts::transfer_coins(&self.connection, server, from_user, to_user, amount)
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
@@ -273,18 +254,18 @@ impl Db {
                     .select(schema::bank_accounts::dsl::balance)
                     .first::<i32>(&self.connection)?;
 
-		if account_balance > price {
-		    inventory::add_item(&self.connection, inventory_item)?;
-		    diesel::update(account)
-			.set(
-			    schema::bank_accounts::dsl::balance
-				.eq(schema::bank_accounts::dsl::balance - price),
-			)
-			.execute(&self.connection)
-			.map_err(Into::into)
-		} else {
-		    Err(Error::InsufficientFunds)
-		}
+                if account_balance > price {
+                    inventory::add_item(&self.connection, inventory_item)?;
+                    diesel::update(account)
+                        .set(
+                            schema::bank_accounts::dsl::balance
+                                .eq(schema::bank_accounts::dsl::balance - price),
+                        )
+                        .execute(&self.connection)
+                        .map_err(Into::into)
+                } else {
+                    Err(Error::InsufficientFunds)
+                }
             })
             .map_err(Into::into)
     }
@@ -307,16 +288,16 @@ impl Db {
     }
 
     pub fn delete_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
-	inventory::delete_item(&self.connection, inventory_item)
-	    .and_then(|num_records| match num_records {
-		0 => {
-		    Err(Error::NotFound("no record found to delete".to_owned()))
-		}
-		1 => {
-		    Ok(())
-		}
-		n => Err(Error::Unexpected(format!("unexpected number of records returned:{}", n)))
-	    })
+        inventory::delete_item(&self.connection, inventory_item).and_then(|num_records| {
+            match num_records {
+                0 => Err(Error::NotFound("no record found to delete".to_owned())),
+                1 => Ok(()),
+                n => Err(Error::Unexpected(format!(
+                    "unexpected number of records returned:{}",
+                    n
+                ))),
+            }
+        })
     }
 }
 

@@ -30,6 +30,11 @@ pub enum Command {
     About,
     /// Make a coin transaction
     Coin(Transaction),
+    Transfer {
+	from_user: u64,
+	to_user: u64,
+	amount: i64,
+    },
     Daily {
         server_id: u64,
         user_id: u64,
@@ -192,7 +197,6 @@ async fn parse_gamble<S: AsRef<str>>(user_id: u64, args: S) -> Result<Command> {
 }
 
 fn parse_give(message: &Message, args: &[&str]) -> Result<Command> {
-    let server_id = message.server.id;
     let to_user = if message.mentions.len() == 1 {
         message.mentions[0].id
     } else if message.mentions.len() == 0 {
@@ -226,20 +230,11 @@ fn parse_give(message: &Message, args: &[&str]) -> Result<Command> {
                 })
         })?;
 
-    let channel_id = message.channel.id;
     let amount: i64 = amount
         .try_into()
         .map_err(|err| Error::CommandParse(format!("amount integer overflowed: {:?}", err)))?;
-    let operation = Operation::Transfer { to_user, amount };
 
-    let transaction = Transaction {
-        server_id,
-        channel_id,
-        from_user,
-        operation,
-    };
-
-    Ok(Command::Coin(transaction))
+    Ok(Command::Transfer { from_user, to_user, amount })
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
