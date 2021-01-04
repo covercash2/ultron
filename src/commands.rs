@@ -123,58 +123,9 @@ impl Command {
                         "unknown 3 arg command: {:?}",
                         content
                     )));
-                }
-
-                let to_user = if message.mentions.len() == 1 {
-                    message.mentions[0].id
-                } else if message.mentions.len() == 0 {
-                    return Err(Error::CommandParse(
-                        "no users mentioned in give command".to_owned(),
-                    ));
                 } else {
-                    return Err(Error::CommandParse(
-                        "for now you can only give one user coins".to_owned(),
-                    ));
-                };
-                let from_user = message.user.id;
-                let amount = args
-                    .get(1)
-                    .ok_or(Error::CommandParse(
-                        "unable to get amount argument".to_owned(),
-                    ))
-                    .and_then(|arg| {
-                        arg.parse::<i64>()
-                            .map_err(|err| {
-                                Error::CommandParse(format!(
-                                    "command should end with amount: {}\n{:?}",
-                                    content, err
-                                ))
-                            })
-                            .and_then(|amount| {
-                                if amount < 0 {
-                                    Err(Error::CommandParse(format!(
-                                        "cannot transfer a negative amount"
-                                    )))
-                                } else {
-                                    Ok(amount)
-                                }
-                            })
-                    })?;
-
-                let channel_id = message.channel.id;
-                let amount: i64 = amount.try_into().map_err(|err| {
-                    Error::CommandParse(format!("amount integer overflowed: {:?}", err))
-                })?;
-                let operation = Operation::Transfer { to_user, amount };
-
-                let transaction = Transaction {
-                    server_id,
-                    channel_id,
-                    from_user,
-                    operation,
-                };
-
-                Ok(Command::Coin(transaction))
+		    parse_give(&message, args)
+		}
             }
             _ => Err(Error::UnknownCommand(format!(
                 "command has too many args: {}",
@@ -238,6 +189,57 @@ async fn parse_gamble<S: AsRef<str>>(user_id: u64, args: S) -> Result<Command> {
             args
         )))
     }
+}
+
+fn parse_give(message: &Message, args: &[&str]) -> Result<Command> {
+    let server_id = message.server.id;
+    let to_user = if message.mentions.len() == 1 {
+        message.mentions[0].id
+    } else if message.mentions.len() == 0 {
+        return Err(Error::CommandParse(
+            "no users mentioned in give command".to_owned(),
+        ));
+    } else {
+        return Err(Error::CommandParse(
+            "for now you can only give one user coins".to_owned(),
+        ));
+    };
+    let from_user = message.user.id;
+    let amount = args
+        .get(1)
+        .ok_or(Error::CommandParse(
+            "unable to get amount argument".to_owned(),
+        ))
+        .and_then(|arg| {
+            arg.parse::<i64>()
+                .map_err(|err| {
+                    Error::CommandParse(format!("command should end with amount: {:?}", err))
+                })
+                .and_then(|amount| {
+                    if amount < 0 {
+                        Err(Error::CommandParse(format!(
+                            "cannot transfer a negative amount"
+                        )))
+                    } else {
+                        Ok(amount)
+                    }
+                })
+        })?;
+
+    let channel_id = message.channel.id;
+    let amount: i64 = amount
+        .try_into()
+        .map_err(|err| Error::CommandParse(format!("amount integer overflowed: {:?}", err)))?;
+    let operation = Operation::Transfer { to_user, amount };
+
+    let transaction = Transaction {
+        server_id,
+        channel_id,
+        from_user,
+        operation,
+    };
+
+    Ok(Command::Coin(transaction))
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
