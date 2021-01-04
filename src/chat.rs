@@ -21,6 +21,7 @@ pub struct Server {
 
 #[derive(Debug)]
 pub struct Message {
+    pub id: u64,
     pub content: String,
     pub user: User,
     pub channel: Channel,

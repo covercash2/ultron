@@ -1,4 +1,4 @@
-use std::{num::ParseIntError, env::VarError};
+use std::{env::VarError, num::{ParseIntError, TryFromIntError}};
 
 use diesel::result::Error as DieselError;
 use diesel::ConnectionError;
@@ -12,8 +12,17 @@ pub enum Error {
     Unexpected(String),
     Db(DieselError),
     IdParse(ParseIntError),
+    BadId(TryFromIntError),
     Env(VarError),
-    Connection(ConnectionError)
+    Connection(ConnectionError),
+    RecordExists,
+    InsufficientFunds,
+}
+
+impl From<TryFromIntError> for Error {
+    fn from(err: TryFromIntError) -> Error {
+	Error::BadId(err)
+    }
 }
 
 impl From<DieselError> for Error {

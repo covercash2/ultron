@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use log::*;
 
@@ -8,23 +8,37 @@ use serenity::model::channel::Reaction;
 use serenity::model::id::UserId;
 use serenity::{
     async_trait,
-    model::{channel::Message as DiscordMessage, gateway::Ready},
+    collector::reaction_collector::ReactionAction,
+    futures::StreamExt,
+    model::{channel::Message as DiscordMessage, gateway::Ready, prelude::*},
     prelude::*,
 };
 
 use tokio::sync::Mutex;
 
-use crate::chat::{
-    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+use db::{
+    error::Error as DbError,
+    model::{InventoryItem, Item},
+    Db,
 };
+
 use crate::coins::Operation;
-use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
+use crate::coins::{self, Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
+use crate::{
+    chat::{
+        Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+    },
+    coins::DailyLog,
+    error::DataError,
+};
 
 mod messages;
+
+const SHOP_TIMEOUT: Duration = Duration::from_secs(100);
 
 /// Run the main thread for the chat client.
 pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
@@ -56,6 +70,9 @@ pub enum Output {
         player_balance: i64,
     },
     Help,
+    Shop(Vec<Item>),
+    /// show user's items
+    Inventory(Vec<Item>),
 }
 
 impl From<String> for Output {
@@ -66,6 +83,7 @@ impl From<String> for Output {
 
 impl From<DiscordMessage> for ChatMessage {
     fn from(discord_message: DiscordMessage) -> Self {
+        let id = *discord_message.id.as_u64();
         let content: String = discord_message.content;
         let user: ChatUser = (*discord_message.author.id.as_u64()).into();
         let channel: ChatChannel = (*discord_message.channel_id.as_u64()).into();
@@ -83,6 +101,7 @@ impl From<DiscordMessage> for ChatMessage {
             .collect();
 
         ChatMessage {
+            id,
             content,
             user,
             channel,
@@ -90,6 +109,17 @@ impl From<DiscordMessage> for ChatMessage {
             timestamp,
             mentions,
         }
+    }
+}
+
+pub struct Socket<'a> {
+    pub context: &'a Context,
+    pub message: DiscordMessage,
+}
+
+impl<'a> Socket<'a> {
+    pub fn channel(&self) -> ChannelId {
+        self.message.channel_id
     }
 }
 
@@ -103,14 +133,20 @@ pub struct Handler {
     /// ultron's user id
     user_id: Arc<Mutex<Option<UserId>>>,
     transaction_sender: TransactionSender,
+    db: Arc<Mutex<Db>>,
+    daily_log: Arc<Mutex<DailyLog>>,
 }
 
 impl Handler {
-    pub fn new(transaction_sender: TransactionSender) -> Handler {
+    pub fn new(db: Db, daily_log: DailyLog, transaction_sender: TransactionSender) -> Handler {
         let user_id = Default::default();
+        let db = Arc::new(Mutex::new(db));
+        let daily_log = Arc::new(Mutex::new(daily_log));
         Handler {
             user_id,
             transaction_sender,
+            db,
+            daily_log,
         }
     }
 
@@ -122,12 +158,39 @@ impl Handler {
         }
     }
 
+    /// get shop items from the database
+    async fn shop_items(
+        &self,
+        server_id: u64,
+        channel_id: u64,
+        from_user: u64,
+    ) -> Result<Vec<Item>> {
+        let operation = Operation::GetAllItems;
+        let transaction = Transaction {
+            server_id,
+            channel_id,
+            from_user,
+            operation,
+        };
+
+        let receipt = self.send_transaction(transaction).await?;
+
+        if let TransactionStatus::Complete = receipt.status {
+            Ok(receipt.items()?.cloned().collect())
+        } else {
+            Err(Error::TransactionFailed(
+                "error getting items from bank".to_owned(),
+            ))
+        }
+    }
+
+    /// get the user balance from the database
     async fn get_user_balance(&self, server_id: u64, channel_id: u64, user_id: u64) -> Result<i64> {
         let from_user = user_id.into();
         let operation = Operation::GetUserBalance;
         let transaction = Transaction {
             server_id,
-	    channel_id,
+            channel_id,
             from_user,
             operation,
         };
@@ -136,7 +199,7 @@ impl Handler {
 
         if let TransactionStatus::Complete = receipt.status {
             receipt
-                .iter()
+                .accounts()?
                 .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
                 .ok_or(Error::ReceiptProcess(format!(
                     "no balance found for user: {:?}",
@@ -159,7 +222,8 @@ impl Handler {
     pub async fn process_command(
         &self,
         server_id: u64,
-	channel_id: u64,
+        channel_id: u64,
+        user_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -172,15 +236,12 @@ impl Handler {
                 self.process_receipt(context, receipt, server_id).await
             }
             Command::Gamble(gamble) => {
-                // gamble
-                // .play()
-                // .map(|gamble_output| Some(Output::Gamble(gamble_output)))
-                //     .map_err(Into::into)
-
                 let ultron_id = self.ultron_id().await?;
                 let user_id = gamble.player_id;
 
-                let player_balance = self.get_user_balance(server_id, channel_id, user_id).await?;
+                let player_balance = self
+                    .get_user_balance(server_id, channel_id, user_id)
+                    .await?;
                 let amount = match gamble.prize {
                     Prize::Coins(n) => n,
                     Prize::AllCoins => player_balance,
@@ -214,7 +275,7 @@ impl Handler {
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
                                     server_id,
-				    channel_id,
+                                    channel_id,
                                     from_user,
                                     operation,
                                 };
@@ -236,7 +297,7 @@ impl Handler {
                                 let operation = Operation::Transfer { to_user, amount };
                                 let transaction = Transaction {
                                     server_id,
-				    channel_id,
+                                    channel_id,
                                     from_user,
                                     operation,
                                 };
@@ -252,10 +313,7 @@ impl Handler {
                                     ))),
                                 }
                             }
-                            GambleState::Draw => {
-                                // no transaction necessary
-                                Ok(Some(Output::Gamble(gamble_output)))
-                            }
+                            GambleState::Draw => Ok(Some(Output::Gamble(gamble_output))),
                             GambleState::Waiting => {
                                 // invalid state
                                 Err(Error::GambleError(GambleError::InvalidState(state.clone())))
@@ -265,6 +323,25 @@ impl Handler {
                 }
             }
             Command::None => Ok(None),
+            Command::Shop => {
+                let items = self.shop_items(server_id, channel_id, user_id).await?;
+                Ok(Some(Output::Shop(items)))
+            }
+            Command::Inventory { server_id, user_id } => {
+                let items = self.user_inventory(server_id, user_id).await?;
+                Ok(Some(Output::Inventory(items)))
+            }
+            Command::Daily { server_id, user_id } => {
+                let good_daily: bool =
+                    coins::add_daily(&self.db, &self.daily_log, server_id, user_id).await?;
+                if good_daily {
+                    Ok(Some(Output::DailyResponse))
+                } else {
+                    Ok(Some(Output::BadDailyResponse {
+                        next_epoch: coins::daily_epoch(),
+                    }))
+                }
+            }
         }
     }
 
@@ -275,10 +352,10 @@ impl Handler {
         server_id: u64,
     ) -> Result<Option<Output>> {
         let user_id = receipt.transaction.from_user;
-        let operation = receipt.transaction.operation;
-        let mut account_results = receipt.account_results;
+        let operation = &receipt.transaction.operation;
         match operation {
             Operation::GetAllBalances => {
+                let mut account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
                 if account_results.is_empty() {
                     return Ok(Some(Output::Say(
                         "Coin transactions have yet to occur on this channel".to_owned(),
@@ -302,8 +379,11 @@ impl Handler {
                 to_user, amount, ..
             } => {
                 debug!("transfer complete");
+                let account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
 
                 let from_user = user_id;
+                let to_user = *to_user;
+                let amount = *amount;
 
                 let to_balance = *account_results
                     .iter()
@@ -341,10 +421,6 @@ impl Handler {
                             receipt.status
                         )))
                     }
-                    _ => Err(Error::TransactionFailed(format!(
-                        "unexpected transaction status: {:?}",
-                        receipt.status
-                    ))),
                 }
             }
             Operation::Untip { .. } => match receipt.status {
@@ -357,31 +433,39 @@ impl Handler {
                     receipt.status
                 ))),
             },
-            Operation::Daily { .. } => {
-                match receipt.status {
-                    TransactionStatus::Complete => {
-                        debug!("daily complete");
-                        Ok(Some(Output::DailyResponse))
-                    }
-                    TransactionStatus::BadDailyRequest { next_epoch } => {
-                        // bad daily request
-                        info!("bad daily request: {:?}", next_epoch);
-                        // TODO chastize
-                        Ok(Some(Output::BadDailyResponse { next_epoch }))
-                    }
-                    _ => Err(Error::TransactionFailed(format!(
-                        "unexpected transaction status: {:?}",
-			receipt.status
-                    ))),
-                }
-            }
             Operation::GetUserBalance { .. } => {
                 // TODO raw balance query response
                 Err(Error::ReceiptProcess(
                     "no message implementation ready for user balance".to_owned(),
                 ))
             }
+            Operation::GetAllItems => {
+                todo!()
+            }
         }
+    }
+
+    /// post a shop embed and await reactions
+    async fn shop(&self, socket: &Socket<'_>, items: &Vec<Item>) -> Result<()> {
+        let http = &socket.context.http;
+        let reply = messages::shop(socket.channel(), http, &items).await?;
+        &reply
+            .await_reactions(&socket.context)
+            .timeout(SHOP_TIMEOUT)
+            .removed(true)
+            .await
+            .for_each(|reaction| async move {
+		if let Err(err) = handle_shop_reaction(&self.db, &socket.context, reaction.as_ref(), items).await {
+		    error!("unable to handle shop reaction: {:?}", err);
+		}
+	    })
+            .await;
+        Ok(())
+    }
+
+    async fn user_inventory(&self, server_id: u64, user_id: u64) -> Result<Vec<Item>> {
+        let db = self.db.lock().await;
+        db.user_inventory(server_id, user_id).map_err(Into::into)
     }
 }
 
@@ -389,14 +473,19 @@ impl Handler {
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: DiscordMessage) {
         let discord_channel = msg.channel_id.clone();
-        let message: ChatMessage = msg.into();
+        let message: ChatMessage = msg.clone().into();
 
-        debug!("chat message: {:?}", message);
+        let socket = Socket {
+            message: msg.clone(),
+            context: &ctx,
+        };
+
+        trace!("chat message: {:?}", message);
 
         match self.ultron_id().await {
             Ok(user_id) => {
                 if &message.user.id == &user_id {
-                    debug!("ignoring message sent by ultron");
+                    trace!("ignoring message sent by ultron");
                     return;
                 }
             }
@@ -407,7 +496,7 @@ impl EventHandler for Handler {
 
         let command = match Command::parse_message(&message).await {
             Ok(Command::None) => {
-                debug!("no command parsed: {:?}", message.content);
+                trace!("no command parsed: {:?}", message.content);
                 return;
             }
             Ok(command) => command,
@@ -417,7 +506,16 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(message.server.id, message.channel.id, &ctx, command).await {
+        let output = match self
+            .process_command(
+                message.server.id,
+                message.channel.id,
+                message.user.id,
+                &ctx,
+                command,
+            )
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -455,7 +553,19 @@ impl EventHandler for Handler {
             }
             Output::DailyResponse => {
                 debug!("responding to daily request");
-                if let Err(err) = messages::daily_response(discord_channel, &ctx.http).await {
+                let balance = match self
+                    .get_user_balance(message.server.id, message.channel.id, message.user.id)
+                    .await
+                {
+                    Ok(b) => b,
+                    Err(err) => {
+                        error!("error getting user balance: {:?}", err);
+                        0
+                    }
+                };
+                if let Err(err) =
+                    messages::daily_response(discord_channel, &ctx.http, balance).await
+                {
                     error!("error sending daily confirmation message: {:?}", err);
                 }
             }
@@ -520,18 +630,29 @@ impl EventHandler for Handler {
                     error!("error sending 'bet too high' message: {:?}", err);
                 }
             }
+            Output::Shop(items) => {
+                if let Err(err) = self.shop(&socket, &items).await {
+                    error!("unable to run shop: {:?}", err);
+                }
+            }
+            Output::Inventory(items) => {
+                if let Err(err) = messages::inventory(discord_channel, &ctx.http, &items).await {
+                    error!("error sending inventory response: {:?}", err);
+                }
+            }
         }
     }
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
+        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
-	    Ok(Command::None) => {
-		debug!("unused react: {:?}", reaction);
-		return;
-	    }
+            Ok(Command::None) => {
+                trace!("unused react: {:?}", reaction);
+                return;
+            }
             Ok(command) => command,
             Err(err) => {
                 warn!("unable to parse reaction: {:?}", err);
@@ -539,11 +660,13 @@ impl EventHandler for Handler {
             }
         };
 
-        // no reacts need output right now
-        let output = match self.process_command(server_id, channel_id, &ctx, command).await {
+        let output = match self
+            .process_command(server_id, channel_id, user_id, &ctx, command)
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
-                debug!("command finished with no output");
+                trace!("command finished with no output");
                 return;
             }
             Err(err) => {
@@ -552,45 +675,51 @@ impl EventHandler for Handler {
             }
         };
 
-        info!("react output: {:?}", output);
+        trace!("react output: {:?}", output);
     }
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-	let channel_id = *reaction.channel_id.as_u64();
+        let channel_id = *reaction.channel_id.as_u64();
+        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&context, &reaction).await {
-	    Ok(Command::Coin(transaction)) => {
-		match transaction.operation {
-		    Operation::Tip { to_user } => {
-			let from_user = transaction.from_user;
-			let server_id = transaction.server_id;
-			let operation = Operation::Untip { to_user };
-			let transaction = Transaction {
-			    from_user,
-			    server_id,
-			    channel_id,
-			    operation,
-			};
-			Command::Coin(transaction)
-		    }
-		    _ => {
-			error!("unexpected operation: {:?}", transaction.operation);
-			return;
-		    }
-		}
-	    }
+            Ok(Command::Coin(transaction)) => match transaction.operation {
+                Operation::Tip { to_user } => {
+                    let from_user = transaction.from_user;
+                    let server_id = transaction.server_id;
+                    let operation = Operation::Untip { to_user };
+                    let transaction = Transaction {
+                        from_user,
+                        server_id,
+                        channel_id,
+                        operation,
+                    };
+                    Command::Coin(transaction)
+                }
+                _ => {
+                    error!("unexpected operation: {:?}", transaction.operation);
+                    return;
+                }
+            },
+            Ok(Command::None) => {
+                trace!("no command parsed");
+                return;
+            }
             Ok(command) => {
                 error!("unexpectedly parsed reaction remove command: {:?}", command);
                 return;
             }
             Err(err) => {
-                debug!("unable to parse reaction: {:?}", err);
+                error!("unable to parse reaction: {:?}", err);
                 return;
             }
         };
 
-        let _output = match self.process_command(server_id, channel_id, &context, command).await {
+        let _output = match self
+            .process_command(server_id, channel_id, user_id, &context, command)
+            .await
+        {
             Ok(receipt) => receipt,
             Err(err) => {
                 error!("unable to process command: {:?}", err);
@@ -601,7 +730,127 @@ impl EventHandler for Handler {
 
     async fn ready(&self, _: Context, ready: Ready) {
         // set user id for ultron
+        // TODO get ultron id in main
         self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
+    }
+}
+
+/// server_id and user_id are optional to clean up calling code.
+/// seems like code smell to me, but this function is private, so
+/// TODO cleanup
+async fn add_inventory_item(
+    db: &Arc<Mutex<Db>>,
+    server_id: Option<u64>,
+    user_id: Option<u64>,
+    item_id: &i32,
+) -> Result<()> {
+    let server_id = server_id.ok_or(Error::Unknown("unable to get server id".to_owned()))?;
+    let user_id = user_id.ok_or(Error::Unknown("unable to get user id".to_owned()))?;
+    let inventory_item = InventoryItem::new(&server_id, &user_id, item_id)?;
+    let db = db.lock().await;
+
+    match db.add_inventory_item(inventory_item) {
+        Ok(1) => Ok(()),
+        Ok(0) => Err(Error::Data(DataError::NoChange)),
+        Ok(num_records) => Err(Error::Unknown(format!(
+            "unexpected number of records changed: {}",
+            num_records
+        ))),
+        Err(DbError::InsufficientFunds) => Err(Error::Data(DataError::InsufficientFunds)),
+        Err(DbError::RecordExists) => Err(Error::Data(DataError::NoChange)),
+        Err(err) => Err(err.into()),
+    }
+}
+
+async fn handle_shop_reaction(
+    db: &Arc<Mutex<Db>>,
+    context: &Context,
+    reaction: &ReactionAction,
+    items: &Vec<Item>,
+) -> Result<()> {
+    let http = &context.http;
+    debug!("reaction: {:?}", reaction);
+    match reaction {
+        ReactionAction::Added(reaction) => {
+            // find the item with the corresponding emoji
+            if let Some(item) = items
+                .iter()
+                .find(|item| item.emoji == reaction.emoji.as_data())
+            {
+                let server_id = reaction.guild_id.map(|id| *id.as_u64());
+                let user_id = reaction.user_id.map(|id| *id.as_u64());
+
+                let user_name = reaction.user(http).await.map(|user| user.name).unwrap_or(
+                    user_id
+                        .map(|id| id.to_string())
+                        .unwrap_or("User".to_string()),
+                );
+
+                let user_nick: String = if let Some(server_id) = server_id {
+                    match reaction.user(http).await {
+                        Ok(user) => user
+                            .nick_in(http, server_id)
+                            .await
+                            .unwrap_or(user_name.clone()),
+                        Err(err) => {
+                            error!("unable to get user: {:?}", err);
+                            "User".to_owned()
+                        }
+                    }
+                } else {
+                    error!("unable to get server id");
+                    "User".to_owned()
+                };
+
+                match add_inventory_item(&db, server_id, user_id, &item.id).await {
+                    Ok(()) => {
+                        messages::item_purchased(reaction.channel_id, http, user_nick, item).await
+                            .map(|_| ())
+                    }
+                    Err(Error::Data(data_err)) => match data_err {
+                        DataError::InsufficientFunds => {
+                            messages::say(
+                                reaction.channel_id,
+                                http,
+                                format!("You cannot afford that, {}", user_name),
+                            )
+                            .await
+                            .map(|_| ())
+                        }
+                        DataError::NoChange => {
+                            messages::say(
+                                reaction.channel_id,
+                                http,
+                                format!(
+                                    "You already have a {}{}, {}",
+                                    item.emoji, item.name, user_name
+                                ),
+                            )
+                            .await
+                            .map(|_| ())
+                        }
+                    },
+                    Err(err) => {
+			Err(err)
+                    }
+                }
+            } else {
+		Ok(())
+	    }
+        }
+        ReactionAction::Removed(reaction) => {
+            debug!("reaction removed");
+            // find the item with the corresponding emoji
+            if let Some(_item) = items
+                .iter()
+                .find(|item| item.emoji == reaction.emoji.as_data())
+            {
+		messages::say(reaction.channel_id, http, "No refunds.").await
+		    .map(|_| ())
+            } else {
+		Ok(())
+	    }
+        }
     }
 }
