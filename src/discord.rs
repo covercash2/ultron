@@ -813,7 +813,7 @@ async fn handle_shop_reaction(
                             messages::say(
                                 reaction.channel_id,
                                 http,
-                                format!("You cannot afford that, {}", user_name),
+                                format!("You cannot afford that, {}", user_nick),
                             )
                             .await
                             .map(|_| ())
