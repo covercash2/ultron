@@ -398,16 +398,20 @@ pub async fn inventory(channel: ChannelId, pipe: &Http, items: &Vec<Item>) -> Re
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
-                embed.title("Your items");
-                embed.color(Colour::ROSEWATER);
+		if items.is_empty() {
+		    embed.title("You have nothing");
+		} else {
+		    embed.title("Your items");
+		    embed.color(Colour::ROSEWATER);
 
-                for item in items {
-                    embed.field(
-                        format!("{} {}", item.emoji, item.name),
-                        &item.description,
-                        true,
-                    );
-                }
+		    for item in items {
+			embed.field(
+			    format!("{} {}", item.emoji, item.name),
+			    &item.description,
+			    true,
+			);
+		    }
+		}
 
                 embed
             });
