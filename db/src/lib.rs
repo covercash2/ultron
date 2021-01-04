@@ -305,6 +305,19 @@ impl Db {
         let item: i32 = item.try_into()?;
         inventory::user_has_item(&self.connection, server, user, item)
     }
+
+    pub fn delete_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
+	inventory::delete_item(&self.connection, inventory_item)
+	    .and_then(|num_records| match num_records {
+		0 => {
+		    Err(Error::NotFound("no record found to delete".to_owned()))
+		}
+		1 => {
+		    Ok(())
+		}
+		n => Err(Error::Unexpected(format!("unexpected number of records returned:{}", n)))
+	    })
+    }
 }
 
 fn establish_connection(database_url: impl AsRef<str>) -> Result<SqliteConnection> {
