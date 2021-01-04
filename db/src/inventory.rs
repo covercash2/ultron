@@ -1,6 +1,6 @@
 use diesel::{Connection, result::Error as ResultError, prelude::*};
 
-use crate::{error::Result, model::Item};
+use crate::{error::{Error, Result}, model::Item};
 
 use crate::schema::{self, inventory::dsl::*};
 
@@ -21,6 +21,12 @@ pub fn add_item<C: Connection<Backend = Backend>>(
     diesel::insert_into(schema::inventory::table)
         .values(&inventory_item)
         .execute(connection)
+        .map_err(|err| match err {
+            ResultError::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _) => {
+		Error::RecordExists
+	    }
+	    _ => err.into()
+        })
         .map_err(Into::into)
 }
 

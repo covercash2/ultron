@@ -274,13 +274,14 @@ impl Db {
                     .first::<i32>(&self.connection)?;
 
 		if account_balance < price {
+		    inventory::add_item(&self.connection, inventory_item)?;
 		    diesel::update(account)
 			.set(
 			    schema::bank_accounts::dsl::balance
 				.eq(schema::bank_accounts::dsl::balance - price),
 			)
-			.execute(&self.connection)?;
-		    inventory::add_item(&self.connection, inventory_item)
+			.execute(&self.connection)
+			.map_err(Into::into)
 		} else {
 		    Err(Error::InsufficientFunds)
 		}
