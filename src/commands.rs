@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use log::*;
 
 use serenity::client::Context;
@@ -141,15 +143,28 @@ impl Command {
                         "unable to get amount argument".to_owned(),
                     ))
                     .and_then(|arg| {
-                        arg.parse::<i64>().map_err(|err| {
-                            Error::CommandParse(format!(
-                                "command should end with amount: {}\n{:?}",
-                                content, err
-                            ))
-                        })
+                        arg.parse::<i64>()
+                            .map_err(|err| {
+                                Error::CommandParse(format!(
+                                    "command should end with amount: {}\n{:?}",
+                                    content, err
+                                ))
+                            })
+                            .and_then(|amount| {
+                                if amount < 0 {
+                                    Err(Error::CommandParse(format!(
+                                        "cannot transfer a negative amount"
+                                    )))
+                                } else {
+                                    Ok(amount)
+                                }
+                            })
                     })?;
 
                 let channel_id = message.channel.id;
+                let amount: i64 = amount.try_into().map_err(|err| {
+                    Error::CommandParse(format!("amount integer overflowed: {:?}", err))
+                })?;
                 let operation = Operation::Transfer { to_user, amount };
 
                 let transaction = Transaction {
