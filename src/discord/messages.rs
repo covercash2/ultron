@@ -17,6 +17,7 @@ const COMMAND_DESCRIPTION: &str = "!ping to say hello
 !coins to show the worth of this channel's members
 !daily to get your daily allotment of coins
 !gamble <#>/all to gamble with your coins
+!transfer @user <amount> to transfer coins
 !shop to show available items";
 
 const COINS_TITLE: &str = "You Want Coins";
