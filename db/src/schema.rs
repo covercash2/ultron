@@ -15,10 +15,10 @@ table! {
 }
 
 table! {
-    inventory (user_id, item_id) {
+    inventory (server_id, user_id, item_id) {
+        server_id -> Text,
         user_id -> Text,
         item_id -> Integer,
-        server_id -> Text,
     }
 }
 

@@ -28,6 +28,10 @@ pub enum Command {
     About,
     /// Make a coin transaction
     Coin(Transaction),
+    Daily {
+        server_id: u64,
+        user_id: u64,
+    },
     Gamble(Gamble),
     /// Show available items
     Shop,
@@ -78,19 +82,11 @@ impl Command {
                     Ok(Command::Coin(transaction))
                 }
                 "daily" => {
-                    info!("request daily");
-                    let timestamp = message.timestamp;
-                    let from_user = message.user.id;
-                    let channel_id = message.channel.id;
-                    let operation = Operation::Daily { timestamp };
-                    let transaction = Transaction {
-                        from_user,
-                        server_id,
-                        channel_id,
-                        operation,
-                    };
+                    trace!("request daily");
+                    let server_id = message.server.id;
+                    let user_id = message.user.id;
 
-                    Ok(Command::Coin(transaction))
+                    Ok(Command::Daily { server_id, user_id })
                 }
                 "shop" => {
                     info!("shop items requested");

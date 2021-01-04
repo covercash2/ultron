@@ -17,19 +17,24 @@ use serenity::{
 use tokio::sync::Mutex;
 
 use db::{
+    error::Error as DbError,
     model::{InventoryItem, Item},
     Db,
 };
 
-use crate::chat::{
-    Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
-};
 use crate::coins::Operation;
-use crate::coins::{Receipt, Transaction, TransactionSender, TransactionStatus};
+use crate::coins::{self, Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
+use crate::{
+    chat::{
+        Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
+    },
+    coins::DailyLog,
+    error::DataError,
+};
 
 mod messages;
 
@@ -129,16 +134,19 @@ pub struct Handler {
     user_id: Arc<Mutex<Option<UserId>>>,
     transaction_sender: TransactionSender,
     db: Arc<Mutex<Db>>,
+    daily_log: Arc<Mutex<DailyLog>>,
 }
 
 impl Handler {
-    pub fn new(db: Db, transaction_sender: TransactionSender) -> Handler {
+    pub fn new(db: Db, daily_log: DailyLog, transaction_sender: TransactionSender) -> Handler {
         let user_id = Default::default();
         let db = Arc::new(Mutex::new(db));
+        let daily_log = Arc::new(Mutex::new(daily_log));
         Handler {
             user_id,
             transaction_sender,
             db,
+            daily_log,
         }
     }
 
@@ -323,6 +331,17 @@ impl Handler {
                 let items = self.user_inventory(server_id, user_id).await?;
                 Ok(Some(Output::Inventory(items)))
             }
+            Command::Daily { server_id, user_id } => {
+                let good_daily: bool =
+                    coins::add_daily(&self.db, &self.daily_log, server_id, user_id).await?;
+                if good_daily {
+                    Ok(Some(Output::DailyResponse))
+                } else {
+                    Ok(Some(Output::BadDailyResponse {
+                        next_epoch: coins::daily_epoch(),
+                    }))
+                }
+            }
         }
     }
 
@@ -469,16 +488,42 @@ impl Handler {
                         {
                             let server_id = reaction.guild_id.map(|id| *id.as_u64());
                             let user_id = reaction.user_id.map(|id| *id.as_u64());
+			    let user_name =
+				reaction.user(http).await.map(|user| user.name).unwrap_or(
+				    user_id
+					.map(|id| id.to_string())
+					.unwrap_or("User".to_string()),
+				);
 
                             match add_inventory_item(&self.db, server_id, user_id, &item.id).await {
-                                Ok(0) => {
-                                    // user already has item
+                                Ok(()) => {
+                                    // successfully added item
+                                    if let Err(err) = messages::item_purchased(
+                                        reaction.channel_id,
+                                        http,
+                                        user_name,
+                                        item,
+                                    )
+                                    .await
+                                    {
+                                        error!("unable to send item purchased response: {:?}", err);
+                                    }
                                 }
-                                Ok(1) => {
-                                    // purchase was successful
-                                }
-                                Ok(n) => {
-                                    error!("unexpectedly inserted {} records", n);
+                                Err(Error::Data(data_err)) => {
+                                    match data_err {
+                                        DataError::InsufficientFunds => {
+                                            // not enough coins
+					    if let Err(err) = messages::say(reaction.channel_id, http, format!("You cannot afford that, {}", user_name)).await {
+						error!("unable to send insufficient funds message: {:?}", err);
+					    }
+                                        }
+                                        DataError::NoChange => {
+                                            // user already has item
+					    if let Err(err) = messages::say(reaction.channel_id, http, format!("You already have a {}{}, {}", item.emoji, item.name, user_name)).await {
+						error!("unable to send duplicate item response: {:?}", err);
+					    }
+                                        }
+                                    }
                                 }
                                 Err(err) => {
                                     error!("error adding inventory item: {:?}", err)
@@ -677,10 +722,10 @@ impl EventHandler for Handler {
                 }
             }
             Output::Inventory(items) => {
-		if let Err(err) = messages::inventory(discord_channel, &ctx.http, &items).await {
-		    error!("error sending inventory response: {:?}", err);
-		}
-	    }
+                if let Err(err) = messages::inventory(discord_channel, &ctx.http, &items).await {
+                    error!("error sending inventory response: {:?}", err);
+                }
+            }
         }
     }
 
@@ -785,10 +830,20 @@ async fn add_inventory_item(
     server_id: Option<u64>,
     user_id: Option<u64>,
     item_id: &i32,
-) -> Result<usize> {
+) -> Result<()> {
     let server_id = server_id.ok_or(Error::Unknown("unable to get server id".to_owned()))?;
     let user_id = user_id.ok_or(Error::Unknown("unable to get user id".to_owned()))?;
     let inventory_item = InventoryItem::new(&server_id, &user_id, item_id)?;
     let db = db.lock().await;
-    db.add_inventory_item(inventory_item).map_err(Into::into)
+
+    match db.add_inventory_item(inventory_item) {
+        Ok(1) => Ok(()),
+        Ok(0) => Err(Error::Data(DataError::NoChange)),
+        Ok(num_records) => Err(Error::Unknown(format!(
+            "unexpected number of records changed: {}",
+            num_records
+        ))),
+        Err(DbError::InsufficientFunds) => Err(Error::Data(DataError::InsufficientFunds)),
+        Err(err) => Err(err.into()),
+    }
 }

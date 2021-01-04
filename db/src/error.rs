@@ -16,6 +16,7 @@ pub enum Error {
     Env(VarError),
     Connection(ConnectionError),
     RecordExists,
+    InsufficientFunds,
 }
 
 impl From<TryFromIntError> for Error {

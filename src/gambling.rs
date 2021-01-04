@@ -24,7 +24,7 @@ pub enum Prize {
 
 impl From<i64> for Prize {
     fn from(n: i64) -> Self {
-	Prize::Coins(n)
+        Prize::Coins(n)
     }
 }
 
@@ -63,7 +63,7 @@ impl Gamble {
 
         Gamble {
             player_id,
-	    prize,
+            prize,
             game,
             state,
         }

@@ -89,9 +89,9 @@ impl BankAccount {
 #[derive(Debug, Clone, Insertable, Queryable)]
 #[table_name = "inventory"]
 pub struct InventoryItem {
+    server_id: String,
     user_id: String,
     pub item_id: i32,
-    server_id: String,
 }
 
 impl InventoryItem {
