@@ -273,7 +273,7 @@ impl Db {
                     .select(schema::bank_accounts::dsl::balance)
                     .first::<i32>(&self.connection)?;
 
-		if account_balance < price {
+		if account_balance > price {
 		    inventory::add_item(&self.connection, inventory_item)?;
 		    diesel::update(account)
 			.set(
