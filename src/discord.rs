@@ -468,8 +468,7 @@ impl Handler {
     }
 
     /// post a shop embed and await reactions
-    async fn shop(&self, socket: Socket<'_>, items: &Vec<Item>) -> Result<()> {
-        let channel = socket.channel();
+    async fn shop(&self, socket: &Socket<'_>, items: &Vec<Item>) -> Result<()> {
         let http = &socket.context.http;
         let reply = messages::shop(socket.channel(), http, &items).await?;
         &reply
@@ -478,93 +477,10 @@ impl Handler {
             .removed(true)
             .await
             .for_each(|reaction| async move {
-                debug!("reaction: {:?}", reaction);
-                match reaction.as_ref() {
-                    ReactionAction::Added(reaction) => {
-                        // find the item with the corresponding emoji
-                        if let Some(item) = items
-                            .iter()
-                            .find(|item| item.emoji == reaction.emoji.as_data())
-                        {
-                            let server_id = reaction.guild_id.map(|id| *id.as_u64());
-                            let user_id = reaction.user_id.map(|id| *id.as_u64());
-
-			    let user_name =
-				reaction.user(http)
-				.await
-				.map(|user| user.name)
-				.unwrap_or(
-				    user_id
-					.map(|id| id.to_string())
-					.unwrap_or("User".to_string()),
-				);
-
-			    let user_nick: String = if let Some(server_id) = server_id {
-				match reaction.user(http).await {
-				    Ok(user) => {
-					user.nick_in(http, server_id).await
-					    .unwrap_or(user_name.clone())
-				    }
-				    Err(err) => {
-					error!("unable to get user: {:?}", err);
-					"User".to_owned()
-				    }
-				}
-			    } else {
-				error!("unable to get server id");
-				"User".to_owned()
-			    };
-
-                            match add_inventory_item(&self.db, server_id, user_id, &item.id).await {
-                                Ok(()) => {
-                                    // successfully added item
-                                    if let Err(err) = messages::item_purchased(
-                                        reaction.channel_id,
-                                        http,
-                                        user_nick,
-                                        item,
-                                    )
-                                    .await
-                                    {
-                                        error!("unable to send item purchased response: {:?}", err);
-                                    }
-                                }
-                                Err(Error::Data(data_err)) => {
-                                    match data_err {
-                                        DataError::InsufficientFunds => {
-                                            // not enough coins
-					    if let Err(err) = messages::say(reaction.channel_id, http, format!("You cannot afford that, {}", user_name)).await {
-						error!("unable to send insufficient funds message: {:?}", err);
-					    }
-                                        }
-                                        DataError::NoChange => {
-                                            // user already has item
-					    if let Err(err) = messages::say(reaction.channel_id, http, format!("You already have a {}{}, {}", item.emoji, item.name, user_name)).await {
-						error!("unable to send duplicate item response: {:?}", err);
-					    }
-                                        }
-                                    }
-                                }
-                                Err(err) => {
-                                    error!("error adding inventory item: {:?}", err)
-                                }
-                            }
-                        }
-                    }
-                    ReactionAction::Removed(reaction) => {
-                        debug!("reaction removed");
-                        // find the item with the corresponding emoji
-                        if let Some(_item) = items
-                            .iter()
-                            .find(|item| item.emoji == reaction.emoji.as_data())
-                        {
-                            if let Err(err) = messages::say(channel, http, "No refunds.").await {
-                                error!("unable to send message to discord: {:?}", err);
-                            }
-                        }
-                    }
-                }
-            })
+		if let Err(err) = handle_shop_reaction(&self.db, &socket.context, reaction.as_ref(), items).await {
+		    error!("unable to handle shop reaction: {:?}", err);
+		}
+	    })
             .await;
         Ok(())
     }
@@ -737,7 +653,7 @@ impl EventHandler for Handler {
                 }
             }
             Output::Shop(items) => {
-                if let Err(err) = self.shop(socket, &items).await {
+                if let Err(err) = self.shop(&socket, &items).await {
                     error!("unable to run shop: {:?}", err);
                 }
             }
@@ -866,5 +782,97 @@ async fn add_inventory_item(
         Err(DbError::InsufficientFunds) => Err(Error::Data(DataError::InsufficientFunds)),
         Err(DbError::RecordExists) => Err(Error::Data(DataError::NoChange)),
         Err(err) => Err(err.into()),
+    }
+}
+
+async fn handle_shop_reaction(
+    db: &Arc<Mutex<Db>>,
+    context: &Context,
+    reaction: &ReactionAction,
+    items: &Vec<Item>,
+) -> Result<()> {
+    let http = &context.http;
+    debug!("reaction: {:?}", reaction);
+    match reaction {
+        ReactionAction::Added(reaction) => {
+            // find the item with the corresponding emoji
+            if let Some(item) = items
+                .iter()
+                .find(|item| item.emoji == reaction.emoji.as_data())
+            {
+                let server_id = reaction.guild_id.map(|id| *id.as_u64());
+                let user_id = reaction.user_id.map(|id| *id.as_u64());
+
+                let user_name = reaction.user(http).await.map(|user| user.name).unwrap_or(
+                    user_id
+                        .map(|id| id.to_string())
+                        .unwrap_or("User".to_string()),
+                );
+
+                let user_nick: String = if let Some(server_id) = server_id {
+                    match reaction.user(http).await {
+                        Ok(user) => user
+                            .nick_in(http, server_id)
+                            .await
+                            .unwrap_or(user_name.clone()),
+                        Err(err) => {
+                            error!("unable to get user: {:?}", err);
+                            "User".to_owned()
+                        }
+                    }
+                } else {
+                    error!("unable to get server id");
+                    "User".to_owned()
+                };
+
+                match add_inventory_item(&db, server_id, user_id, &item.id).await {
+                    Ok(()) => {
+                        messages::item_purchased(reaction.channel_id, http, user_nick, item).await
+                            .map(|_| ())
+                    }
+                    Err(Error::Data(data_err)) => match data_err {
+                        DataError::InsufficientFunds => {
+                            messages::say(
+                                reaction.channel_id,
+                                http,
+                                format!("You cannot afford that, {}", user_name),
+                            )
+                            .await
+                            .map(|_| ())
+                        }
+                        DataError::NoChange => {
+                            messages::say(
+                                reaction.channel_id,
+                                http,
+                                format!(
+                                    "You already have a {}{}, {}",
+                                    item.emoji, item.name, user_name
+                                ),
+                            )
+                            .await
+                            .map(|_| ())
+                        }
+                    },
+                    Err(err) => {
+			Err(err)
+                    }
+                }
+            } else {
+		Ok(())
+	    }
+        }
+        ReactionAction::Removed(reaction) => {
+            debug!("reaction removed");
+            // find the item with the corresponding emoji
+            if let Some(_item) = items
+                .iter()
+                .find(|item| item.emoji == reaction.emoji.as_data())
+            {
+		messages::say(reaction.channel_id, http, "No refunds.").await
+		    .map(|_| ())
+            } else {
+		Ok(())
+	    }
+        }
     }
 }
