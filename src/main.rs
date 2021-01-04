@@ -5,6 +5,7 @@ use db::Db;
 use dotenv::dotenv;
 use log::*;
 
+use serenity::http::Http;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 mod logger;
@@ -47,6 +48,14 @@ async fn main() {
 
     let discord_token = load_token(tokens::DISCORD_TOKEN).expect("unable to load discord token");
 
+    let http = Http::new_with_token(&discord_token);
+
+    let ultron_id = http
+        .get_current_application_info()
+        .await
+        .map(|info| info.id)
+        .expect("unable to get discord application info");
+
     let (transaction_sender, transaction_receiver): (Sender<Transaction>, Receiver<Transaction>) =
         channel(100);
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
@@ -56,7 +65,7 @@ async fn main() {
 
     let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
 
-    let event_handler = Handler::new(db, daily_log, bank_channel);
+    let event_handler = Handler::new(db, daily_log, ultron_id, bank_channel);
 
     let bank = Bank::load(database_url)
         .await

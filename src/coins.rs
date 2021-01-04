@@ -115,8 +115,8 @@ pub async fn add_daily(
     let gets_daily = {
         let mut daily_log = daily_log.lock().await;
         let gets_daily = daily_log.log_user(&server_id, user_id);
-	daily_log.save().await?;
-	gets_daily
+        daily_log.save().await?;
+        gets_daily
     };
 
     if gets_daily {

@@ -22,7 +22,7 @@ pub fn init() {
                 target = record.target(),
                 message = message
             ))
-	})
+        })
         .level(log::LevelFilter::Trace)
         .level_for("serenity", log::LevelFilter::Info)
         .level_for("tracing::span", log::LevelFilter::Info)

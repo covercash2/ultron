@@ -30,7 +30,6 @@ pub enum Error {
     CommandParse(String),
     ReceiptProcess(String),
     GambleError(GambleError),
-    ServerState(String),
     MessageBuild(String),
     Unknown(String),
 }

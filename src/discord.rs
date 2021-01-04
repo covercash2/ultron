@@ -131,15 +131,19 @@ impl<'a> Socket<'a> {
 /// a mutable reference behind an immutable `Handler`.
 pub struct Handler {
     /// ultron's user id
-    user_id: Arc<Mutex<Option<UserId>>>,
+    user_id: UserId,
     transaction_sender: TransactionSender,
     db: Arc<Mutex<Db>>,
     daily_log: Arc<Mutex<DailyLog>>,
 }
 
 impl Handler {
-    pub fn new(db: Db, daily_log: DailyLog, transaction_sender: TransactionSender) -> Handler {
-        let user_id = Default::default();
+    pub fn new(
+        db: Db,
+        daily_log: DailyLog,
+        user_id: UserId,
+        transaction_sender: TransactionSender,
+    ) -> Handler {
         let db = Arc::new(Mutex::new(db));
         let daily_log = Arc::new(Mutex::new(daily_log));
         Handler {
@@ -147,14 +151,6 @@ impl Handler {
             transaction_sender,
             db,
             daily_log,
-        }
-    }
-
-    async fn ultron_id(&self) -> Result<u64> {
-        if let Some(id) = self.user_id.lock().await.as_ref() {
-            Ok(*id.as_u64())
-        } else {
-            Err(Error::ServerState("ultron's id is not loaded".to_owned()))
         }
     }
 
@@ -236,7 +232,7 @@ impl Handler {
                 self.process_receipt(context, receipt, server_id).await
             }
             Command::Gamble(gamble) => {
-                let ultron_id = self.ultron_id().await?;
+                let ultron_id = *self.user_id.as_u64();
                 let user_id = gamble.player_id;
 
                 let player_balance = self
@@ -455,10 +451,12 @@ impl Handler {
             .removed(true)
             .await
             .for_each(|reaction| async move {
-		if let Err(err) = handle_shop_reaction(&self.db, &socket.context, reaction.as_ref(), items).await {
-		    error!("unable to handle shop reaction: {:?}", err);
-		}
-	    })
+                if let Err(err) =
+                    handle_shop_reaction(&self.db, &socket.context, reaction.as_ref(), items).await
+                {
+                    error!("unable to handle shop reaction: {:?}", err);
+                }
+            })
             .await;
         Ok(())
     }
@@ -482,16 +480,9 @@ impl EventHandler for Handler {
 
         trace!("chat message: {:?}", message);
 
-        match self.ultron_id().await {
-            Ok(user_id) => {
-                if &message.user.id == &user_id {
-                    trace!("ignoring message sent by ultron");
-                    return;
-                }
-            }
-            Err(err) => {
-                error!("could not get ultron's id: {:?}", err);
-            }
+        if &message.user.id == self.user_id.as_u64() {
+            trace!("ignoring message sent by ultron");
+            return;
         }
 
         let command = match Command::parse_message(&message).await {
@@ -729,9 +720,6 @@ impl EventHandler for Handler {
     }
 
     async fn ready(&self, _: Context, ready: Ready) {
-        // set user id for ultron
-        // TODO get ultron id in main
-        self.user_id.lock().await.replace(ready.user.id);
         info!("{} is connected!", ready.user.name);
     }
 }
@@ -804,40 +792,33 @@ async fn handle_shop_reaction(
                 };
 
                 match add_inventory_item(&db, server_id, user_id, &item.id).await {
-                    Ok(()) => {
-                        messages::item_purchased(reaction.channel_id, http, user_nick, item).await
-                            .map(|_| ())
-                    }
+                    Ok(()) => messages::item_purchased(reaction.channel_id, http, user_nick, item)
+                        .await
+                        .map(|_| ()),
                     Err(Error::Data(data_err)) => match data_err {
-                        DataError::InsufficientFunds => {
-                            messages::say(
-                                reaction.channel_id,
-                                http,
-                                format!("You cannot afford that, {}", user_nick),
-                            )
-                            .await
-                            .map(|_| ())
-                        }
-                        DataError::NoChange => {
-                            messages::say(
-                                reaction.channel_id,
-                                http,
-                                format!(
-                                    "You already have a {}{}, {}",
-                                    item.emoji, item.name, user_name
-                                ),
-                            )
-                            .await
-                            .map(|_| ())
-                        }
+                        DataError::InsufficientFunds => messages::say(
+                            reaction.channel_id,
+                            http,
+                            format!("You cannot afford that, {}", user_nick),
+                        )
+                        .await
+                        .map(|_| ()),
+                        DataError::NoChange => messages::say(
+                            reaction.channel_id,
+                            http,
+                            format!(
+                                "You already have a {}{}, {}",
+                                item.emoji, item.name, user_name
+                            ),
+                        )
+                        .await
+                        .map(|_| ()),
                     },
-                    Err(err) => {
-			Err(err)
-                    }
+                    Err(err) => Err(err),
                 }
             } else {
-		Ok(())
-	    }
+                Ok(())
+            }
         }
         ReactionAction::Removed(reaction) => {
             debug!("reaction removed");
@@ -846,11 +827,12 @@ async fn handle_shop_reaction(
                 .iter()
                 .find(|item| item.emoji == reaction.emoji.as_data())
             {
-		messages::say(reaction.channel_id, http, "No refunds.").await
-		    .map(|_| ())
+                messages::say(reaction.channel_id, http, "No refunds.")
+                    .await
+                    .map(|_| ())
             } else {
-		Ok(())
-	    }
+                Ok(())
+            }
         }
     }
 }
