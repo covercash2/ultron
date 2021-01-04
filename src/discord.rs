@@ -488,12 +488,32 @@ impl Handler {
                         {
                             let server_id = reaction.guild_id.map(|id| *id.as_u64());
                             let user_id = reaction.user_id.map(|id| *id.as_u64());
+
 			    let user_name =
-				reaction.user(http).await.map(|user| user.name).unwrap_or(
+				reaction.user(http)
+				.await
+				.map(|user| user.name)
+				.unwrap_or(
 				    user_id
 					.map(|id| id.to_string())
 					.unwrap_or("User".to_string()),
 				);
+
+			    let user_nick: String = if let Some(server_id) = server_id {
+				match reaction.user(http).await {
+				    Ok(user) => {
+					user.nick_in(http, server_id).await
+					    .unwrap_or(user_name.clone())
+				    }
+				    Err(err) => {
+					error!("unable to get user: {:?}", err);
+					"User".to_owned()
+				    }
+				}
+			    } else {
+				error!("unable to get server id");
+				"User".to_owned()
+			    };
 
                             match add_inventory_item(&self.db, server_id, user_id, &item.id).await {
                                 Ok(()) => {
@@ -501,7 +521,7 @@ impl Handler {
                                     if let Err(err) = messages::item_purchased(
                                         reaction.channel_id,
                                         http,
-                                        user_name,
+                                        user_nick,
                                         item,
                                     )
                                     .await
@@ -844,6 +864,7 @@ async fn add_inventory_item(
             num_records
         ))),
         Err(DbError::InsufficientFunds) => Err(Error::Data(DataError::InsufficientFunds)),
+        Err(DbError::RecordExists) => Err(Error::Data(DataError::NoChange)),
         Err(err) => Err(err.into()),
     }
 }
