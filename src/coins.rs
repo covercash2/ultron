@@ -26,6 +26,8 @@ mod transaction;
 
 pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
 
+/// the id of the member card in the database
+const ITEM_ID_MEMBER_CARD: u64 = 1;
 /// The log file for the daily logins
 const DAILY_LOG_FILE: &str = "daily_log.json";
 /// The amount of coins to give to each user that asks once per day
@@ -34,7 +36,7 @@ const DAILY_AMOUNT: i64 = 10;
 type Account = (UserId, i64);
 
 /// Get the next epoch for the daily allowances.
-fn daily_epoch() -> DateTime<Utc> {
+pub fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
     if epoch < Utc::now() {
         epoch + Duration::days(1)
@@ -102,6 +104,36 @@ pub async fn bank_loop(
         }
     }
     debug!("bank loop finished");
+}
+
+pub async fn add_daily(
+    db: &Arc<Mutex<Db>>,
+    daily_log: &Arc<Mutex<DailyLog>>,
+    server_id: u64,
+    user_id: u64,
+) -> Result<bool> {
+    let gets_daily = {
+        let mut daily_log = daily_log.lock().await;
+        daily_log.log_user(&server_id, user_id)
+    };
+
+    if gets_daily {
+        let db = db.lock().await;
+        let is_member = db.user_has_item(server_id, user_id, ITEM_ID_MEMBER_CARD)?;
+        let amount = if is_member {
+            DAILY_AMOUNT * 2
+        } else {
+            DAILY_AMOUNT
+        };
+        let num_records = db.increment_balance(&server_id, &user_id, &amount)?;
+        if num_records == 0 {
+            Err(Error::Unknown("no records changed".to_owned()))
+        } else {
+            Ok(true)
+        }
+    } else {
+        Ok(false)
+    }
 }
 
 /// The main structure for storing account information.
@@ -261,13 +293,13 @@ impl Bank {
                 }
             }
             Operation::GetAllItems => {
-		let items = self.get_all_items().await?;
+                let items = self.get_all_items().await?;
 
-		Receipt {
-		    transaction,
-		    results: Results::Items(items),
-		    status: TransactionStatus::Complete,
-		}
+                Receipt {
+                    transaction,
+                    results: Results::Items(items),
+                    status: TransactionStatus::Complete,
+                }
             }
         };
 
@@ -292,9 +324,8 @@ impl Bank {
 
     /// dump all items in the database
     async fn get_all_items(&mut self) -> Result<Vec<Item>> {
-	let db = self.db.lock().await;
-	db.all_items()
-	    .map_err(Into::into)
+        let db = self.db.lock().await;
+        db.all_items().map_err(Into::into)
     }
 
     /// this function only gets balances that have the same server and channel,

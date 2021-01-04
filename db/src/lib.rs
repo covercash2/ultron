@@ -1,14 +1,17 @@
 #[macro_use]
 extern crate diesel;
-use diesel::{prelude::*, sqlite::{SqliteConnection, Sqlite}};
+use diesel::{
+    prelude::*,
+    sqlite::{Sqlite, SqliteConnection},
+};
 
 use std::{convert::TryInto, fmt};
 
 mod schema;
 
 mod ids;
-mod items;
 mod inventory;
+mod items;
 
 pub mod error;
 pub mod model;
@@ -91,18 +94,19 @@ impl Db {
             .map_err(Into::into)
     }
 
+    /// returns number of records changed
     pub fn increment_balance(&self, server: &u64, user: &u64, amount: &i64) -> Result<usize> {
         let amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
 
-	let account = BankAccount::new(server, user, &amount);
+        let account = BankAccount::new(server, user, &amount);
 
-	diesel::insert_into(bank_accounts)
-	    .values(&account)
-	    .on_conflict((server_id, user_id))
-	    .do_update()
-	    .set(balance.eq(balance + amount))
-	    .execute(&self.connection)
-	    .map_err(Into::into)
+        diesel::insert_into(bank_accounts)
+            .values(&account)
+            .on_conflict((server_id, user_id))
+            .do_update()
+            .set(balance.eq(balance + amount))
+            .execute(&self.connection)
+            .map_err(Into::into)
     }
 
     pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
@@ -238,30 +242,67 @@ impl Db {
     }
 
     pub fn all_items(&self) -> Result<Vec<Item>> {
-	items::show_all(&self.connection)
+        items::show_all(&self.connection)
     }
 
     pub fn create_item(&self, item: Item) -> Result<()> {
-	items::create(&self.connection, item)
+        items::create(&self.connection, item)
     }
 
     pub fn update_item(&self, item: UpdateItem) -> Result<()> {
-	items::update(&self.connection, item)
+        items::update(&self.connection, item)
     }
 
     pub fn dump_inventory(&self) -> Result<Vec<InventoryItem>> {
-	inventory::show_all(&self.connection)
+        inventory::show_all(&self.connection)
     }
 
     /// returns Ok(0) if the item already exists
     pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<usize> {
-	inventory::add_item(&self.connection, inventory_item)
+        let server = inventory_item.server_id()?.to_string();
+        let user = inventory_item.user_id()?.to_string();
+
+        self.connection
+            .transaction(|| {
+                let price = schema::items::dsl::items
+                    .find(&inventory_item.item_id)
+                    .select(schema::items::dsl::price)
+                    .first::<i32>(&self.connection)?;
+                let account = schema::bank_accounts::dsl::bank_accounts.find((&server, &user));
+                let account_balance = account
+                    .select(schema::bank_accounts::dsl::balance)
+                    .first::<i32>(&self.connection)?;
+
+		if account_balance < price {
+		    diesel::update(account)
+			.set(
+			    schema::bank_accounts::dsl::balance
+				.eq(schema::bank_accounts::dsl::balance - price),
+			)
+			.execute(&self.connection)?;
+		    inventory::add_item(&self.connection, inventory_item)
+		} else {
+		    Err(Error::InsufficientFunds)
+		}
+            })
+            .map_err(Into::into)
+    }
+
+    pub fn item(&self, item_id: &i32) -> Result<Item> {
+        items::get(&self.connection, item_id)
     }
 
     pub fn user_inventory(&self, server: u64, user: u64) -> Result<Vec<Item>> {
-	let server = server.to_string();
-	let user = user.to_string();
-	inventory::user_inventory(&self.connection, server, user)
+        let server = server.to_string();
+        let user = user.to_string();
+        inventory::user_inventory(&self.connection, server, user)
+    }
+
+    pub fn user_has_item(&self, server: u64, user: u64, item: u64) -> Result<bool> {
+        let server = server.to_string();
+        let user = user.to_string();
+        let item: i32 = item.try_into()?;
+        inventory::user_has_item(&self.connection, server, user, item)
     }
 }
 

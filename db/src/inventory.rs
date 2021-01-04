@@ -1,4 +1,4 @@
-use diesel::{Connection, prelude::*};
+use diesel::{Connection, result::Error as ResultError, prelude::*};
 
 use crate::{error::Result, model::Item};
 
@@ -36,4 +36,21 @@ pub fn user_inventory<C: Connection<Backend = Backend>>(
         .filter(schema::items::dsl::id.eq_any(item_ids))
         .load::<Item>(connection)
         .map_err(Into::into)
+}
+
+pub fn user_has_item<C: Connection<Backend = Backend>>(
+    connection: &C,
+    server: String,
+    user: String,
+    item: i32,
+) -> Result<bool> {
+    match inventory.find((server, user, item)).first::<InventoryItem>(connection) {
+	Ok(_) => Ok(true),
+	Err(e) => {
+	    match e {
+		ResultError::NotFound => Ok(false),
+		_ => Err(e.into())
+	    }
+	}
+    }
 }

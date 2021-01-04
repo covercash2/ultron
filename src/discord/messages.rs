@@ -73,9 +73,9 @@ pub async fn daily_response(channel: ChannelId, pipe: &Http, balance: i64) -> Re
             msg.embed(|embed| {
                 embed.color(Colour::GOLD);
 
-		embed.title("Granted");
-		embed.description(format!("You now have {}🪙", balance));
-    
+                embed.title("Granted");
+                embed.description(format!("You now have {}🪙", balance));
+
                 embed
             });
 
@@ -361,26 +361,22 @@ async fn dice_roll_draw(
         .map_err(Into::into)
 }
 
-pub async fn shop(
-    channel: ChannelId,
-    pipe: &Http,
-    items: &Vec<Item>
-) -> Result<Message> {
+pub async fn shop(channel: ChannelId, pipe: &Http, items: &Vec<Item>) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
                 embed.color(Colour::DARK_GOLD);
                 embed.title("Available Wares");
 
-		embed.description("purchase items by responding with the corresponding emoji");
+                embed.description("purchase items by responding with the corresponding emoji");
 
-		for item in items {
-		    embed.field(
-			format!("{}: {}", item.emoji, item.name),
-			format!("🪙{} -- {}", item.price, item.description),
-			false,
-		    );
-		}
+                for item in items {
+                    embed.field(
+                        format!("{}: {}", item.emoji, item.name),
+                        format!("🪙{} -- {}", item.price, item.description),
+                        false,
+                    );
+                }
 
                 embed
             });
@@ -399,13 +395,42 @@ pub async fn inventory(channel: ChannelId, pipe: &Http, items: &Vec<Item>) -> Re
                 embed.title("Your items");
                 embed.color(Colour::ROSEWATER);
 
-		for item in items {
-		    embed.field(
-			format!("{} {}", item.emoji, item.name),
-			&item.description,
-			true
-		    );
-		}
+                for item in items {
+                    embed.field(
+                        format!("{} {}", item.emoji, item.name),
+                        &item.description,
+                        true,
+                    );
+                }
+
+                embed
+            });
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub async fn item_purchased(
+    channel: ChannelId,
+    pipe: &Http,
+    user_name: impl std::fmt::Display,
+    item: &Item,
+) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.title("Purchase complete");
+                embed.color(Colour::DARK_BLUE);
+
+                embed.field(
+                    format!(
+                        "{}, a {}{} has been added to your inventory",
+                        user_name, item.emoji, item.name
+                    ),
+                    &item.description,
+                    true,
+                );
 
                 embed
             });
