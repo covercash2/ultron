@@ -336,19 +336,26 @@ impl Handler {
                 }
             }
             Command::Transfer { from_user, to_user, amount } => {
-		let transfer_result = coins::transfer(&self.db, server_id, from_user, to_user, amount).await?;
 
-		let to_account = transfer_result.to_account;
-		let to_user = to_account.user_id()?;
-		let to_balance = to_account.balance.into();
+		match coins::transfer(&self.db, server_id, from_user, to_user, amount).await {
+		    Ok(transfer_result) => {
+			let to_account = transfer_result.to_account;
+			let to_user = to_account.user_id()?;
+			let to_balance = to_account.balance.into();
 
-		let from_account = transfer_result.from_account;
-		let from_user = from_account.user_id()?;
-		let from_balance = from_account.balance.into();
+			let from_account = transfer_result.from_account;
+			let from_user = from_account.user_id()?;
+			let from_balance = from_account.balance.into();
 
-		Ok(Some(Output::TransferSuccess {
-		    to_user, to_balance, from_user, from_balance, amount
-		}))
+			Ok(Some(Output::TransferSuccess {
+			    to_user, to_balance, from_user, from_balance, amount
+			}))
+		    },
+		    Err(Error::Db(DbError::InsufficientFunds)) => {
+			Ok(Some(Output::Say(format!("You do not have {} coins.", amount))))
+		    }
+		    Err(e) => Err(e), // bubble up error
+		}
 	    }
         }
     }
