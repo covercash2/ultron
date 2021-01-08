@@ -19,10 +19,9 @@ use tokio::sync::Mutex;
 use db::{
     error::Error as DbError,
     model::{InventoryItem, Item},
-    Db,
 };
 
-use crate::coins::Operation;
+use crate::{coins::Operation, data::Database};
 use crate::coins::{self, Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
@@ -33,7 +32,6 @@ use crate::{
         Channel as ChatChannel, Message as ChatMessage, Server as ChatServer, User as ChatUser,
     },
     coins::DailyLog,
-    error::DataError,
 };
 
 mod messages;
@@ -133,18 +131,17 @@ pub struct Handler {
     /// ultron's user id
     user_id: UserId,
     transaction_sender: TransactionSender,
-    db: Arc<Mutex<Db>>,
+    db: Database,
     daily_log: Arc<Mutex<DailyLog>>,
 }
 
 impl Handler {
     pub fn new(
-        db: Db,
+        db: Database,
         daily_log: DailyLog,
         user_id: UserId,
         transaction_sender: TransactionSender,
     ) -> Handler {
-        let db = Arc::new(Mutex::new(db));
         let daily_log = Arc::new(Mutex::new(daily_log));
         Handler {
             user_id,
@@ -477,8 +474,9 @@ impl Handler {
     }
 
     async fn user_inventory(&self, server_id: u64, user_id: u64) -> Result<Vec<Item>> {
-        let db = self.db.lock().await;
-        db.user_inventory(server_id, user_id).map_err(Into::into)
+	self.db.transaction(|db| {
+	    db.user_inventory(server_id, user_id).map_err(Into::into)
+	}).await
     }
 }
 
@@ -743,7 +741,7 @@ impl EventHandler for Handler {
 /// seems like code smell to me, but this function is private, so
 /// TODO cleanup
 async fn add_inventory_item(
-    db: &Arc<Mutex<Db>>,
+    db: &Database,
     server_id: Option<u64>,
     user_id: Option<u64>,
     item_id: &i32,
@@ -751,23 +749,15 @@ async fn add_inventory_item(
     let server_id = server_id.ok_or(Error::Unknown("unable to get server id".to_owned()))?;
     let user_id = user_id.ok_or(Error::Unknown("unable to get user id".to_owned()))?;
     let inventory_item = InventoryItem::new(&server_id, &user_id, item_id)?;
-    let db = db.lock().await;
 
-    match db.add_inventory_item(inventory_item) {
-        Ok(1) => Ok(()),
-        Ok(0) => Err(Error::Data(DataError::NoChange)),
-        Ok(num_records) => Err(Error::Unknown(format!(
-            "unexpected number of records changed: {}",
-            num_records
-        ))),
-        Err(DbError::InsufficientFunds) => Err(Error::Data(DataError::InsufficientFunds)),
-        Err(DbError::RecordExists) => Err(Error::Data(DataError::NoChange)),
-        Err(err) => Err(err.into()),
-    }
+    db.transaction(|db| {
+	db.add_inventory_item(inventory_item)
+	    .map_err(Into::into)
+    }).await
 }
 
 async fn handle_shop_reaction(
-    db: &Arc<Mutex<Db>>,
+    db: &Database,
     context: &Context,
     reaction: &ReactionAction,
     items: &Vec<Item>,
@@ -810,15 +800,15 @@ async fn handle_shop_reaction(
                     Ok(()) => messages::item_purchased(reaction.channel_id, http, user_nick, item)
                         .await
                         .map(|_| ()),
-                    Err(Error::Data(data_err)) => match data_err {
-                        DataError::InsufficientFunds => messages::say(
+                    Err(Error::Db(data_err)) => match data_err {
+                        DbError::InsufficientFunds => messages::say(
                             reaction.channel_id,
                             http,
                             format!("You cannot afford that, {}", user_nick),
                         )
                         .await
                         .map(|_| ()),
-                        DataError::NoChange => messages::say(
+                        DbError::RecordExists => messages::say(
                             reaction.channel_id,
                             http,
                             format!(
@@ -828,6 +818,9 @@ async fn handle_shop_reaction(
                         )
                         .await
                         .map(|_| ()),
+			err => {
+			    Err(Error::Db(err))
+			}
                     },
                     Err(err) => Err(err),
                 }

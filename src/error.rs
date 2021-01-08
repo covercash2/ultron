@@ -17,7 +17,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub enum Error {
     Db(DbError),
-    Data(DataError),
     DiscordError(DiscordError),
     GithubError(GithubError),
     BadApiKey(VarError),
@@ -32,12 +31,6 @@ pub enum Error {
     GambleError(GambleError),
     MessageBuild(String),
     Unknown(String),
-}
-
-#[derive(Debug)]
-pub enum DataError {
-    InsufficientFunds,
-    NoChange,
 }
 
 impl From<DbError> for Error {

@@ -238,36 +238,49 @@ impl Db {
         inventory::show_all(&self.connection)
     }
 
-    /// returns Ok(0) if the item already exists
-    pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<usize> {
+    /// returns Error::RecordExists if the item already exists
+    pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
         let server = inventory_item.server_id()?.to_string();
         let user = inventory_item.user_id()?.to_string();
 
-        self.connection
-            .transaction(|| {
-                let price = schema::items::dsl::items
-                    .find(&inventory_item.item_id)
-                    .select(schema::items::dsl::price)
-                    .first::<i32>(&self.connection)?;
-                let account = schema::bank_accounts::dsl::bank_accounts.find((&server, &user));
-                let account_balance = account
-                    .select(schema::bank_accounts::dsl::balance)
-                    .first::<i32>(&self.connection)?;
+        let num_records = self.connection.transaction(|| {
+            let price = schema::items::dsl::items
+                .find(&inventory_item.item_id)
+                .select(schema::items::dsl::price)
+                .first::<i32>(&self.connection)?;
+            let account = schema::bank_accounts::dsl::bank_accounts.find((&server, &user));
+            let account_balance = account
+                .select(schema::bank_accounts::dsl::balance)
+                .first::<i32>(&self.connection)?;
 
-                if account_balance > price {
-                    inventory::add_item(&self.connection, inventory_item)?;
-                    diesel::update(account)
-                        .set(
-                            schema::bank_accounts::dsl::balance
-                                .eq(schema::bank_accounts::dsl::balance - price),
-                        )
-                        .execute(&self.connection)
-                        .map_err(Into::into)
-                } else {
-                    Err(Error::InsufficientFunds)
-                }
-            })
-            .map_err(Into::into)
+            if account_balance > price {
+                inventory::add_item(&self.connection, inventory_item)?;
+                diesel::update(account)
+                    .set(
+                        schema::bank_accounts::dsl::balance
+                            .eq(schema::bank_accounts::dsl::balance - price),
+                    )
+                    .execute(&self.connection)
+                    .map_err(Into::into)
+            } else {
+                Err(Error::InsufficientFunds)
+            }
+        })?;
+
+        match num_records {
+            0 => Err(Error::RecordExists),
+            1 => {
+                // added item successfully
+                Ok(())
+            }
+            _ => {
+                // unknown error
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records changed: {}",
+                    num_records
+                )))
+            }
+        }
     }
 
     pub fn item(&self, item_id: &i32) -> Result<Item> {

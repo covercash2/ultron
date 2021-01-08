@@ -12,8 +12,15 @@ pub type ServerId = u64;
 pub struct Database(Arc<Mutex<Db>>);
 
 impl Database {
-    async fn run<T>(&self, f: fn(&Db) -> Result<T>) -> Result<T> {
+    pub async fn transaction<T>(&self, f: impl FnOnce(&Db) -> Result<T>) -> Result<T> {
 	let db = self.0.lock().await;
 	f(&db)
+    }
+}
+
+impl From<Db> for Database {
+    fn from(db: Db) -> Self {
+	let db = Arc::new(Mutex::new(db));
+	Database(db)
     }
 }

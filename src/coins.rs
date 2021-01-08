@@ -19,7 +19,7 @@ use chrono::{DateTime, Utc};
 
 use db::{model::Item, Db, TransferResult};
 
-use crate::data::{ChannelId, ServerId, UserId};
+use crate::data::{ChannelId, Database, ServerId, UserId};
 use crate::error::{Error, Result};
 
 mod transaction;
@@ -109,7 +109,7 @@ pub async fn bank_loop(
 /// returns Ok(true) if the daily was successful.
 /// returns Ok(false) if the user has already received a daily
 pub async fn add_daily(
-    db: &Arc<Mutex<Db>>,
+    db: &Database,
     daily_log: &Arc<Mutex<DailyLog>>,
     server_id: u64,
     user_id: u64,
@@ -122,19 +122,20 @@ pub async fn add_daily(
     };
 
     if gets_daily {
-        let db = db.lock().await;
-        let is_member = db.user_has_item(server_id, user_id, ITEM_ID_MEMBER_CARD)?;
-        let amount = if is_member {
-            DAILY_AMOUNT * 2
-        } else {
-            DAILY_AMOUNT
-        };
-        let num_records = db.increment_balance(&server_id, &user_id, &amount)?;
-        if num_records == 0 {
-            Err(Error::Unknown("no records changed".to_owned()))
-        } else {
-            Ok(true)
-        }
+        db.transaction(|db: &Db| {
+            let is_member = db.user_has_item(server_id, user_id, ITEM_ID_MEMBER_CARD)?;
+            let amount = if is_member {
+                DAILY_AMOUNT * 2
+            } else {
+                DAILY_AMOUNT
+            };
+            let num_records = db.increment_balance(&server_id, &user_id, &amount)?;
+            if num_records == 0 {
+                Err(Error::Unknown("no records changed".to_owned()))
+            } else {
+                Ok(true)
+            }
+        }).await
     } else {
         Ok(false)
     }
@@ -142,15 +143,16 @@ pub async fn add_daily(
 
 /// transfer coins from one user to another
 pub async fn transfer(
-    db: &Arc<Mutex<Db>>,
+    db: &Database,
     server_id: u64,
     from_user_id: u64,
     to_user_id: u64,
     amount: i64,
 ) -> Result<TransferResult> {
-    let db = db.lock().await;
-    db.transfer_coins(&server_id, &from_user_id, &to_user_id, &amount)
-        .map_err(Into::into)
+    db.transaction(|db| {
+	db.transfer_coins(&server_id, &from_user_id, &to_user_id, &amount)
+	    .map_err(Into::into)
+    }).await
 }
 
 /// The main structure for storing account information.

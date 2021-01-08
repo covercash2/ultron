@@ -60,7 +60,7 @@ async fn main() {
         channel(100);
     let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
 
-    let db = Db::open(&database_url).expect("unable to open database connection");
+    let db = Db::open(&database_url).expect("unable to open database connection").into();
     let daily_log = DailyLog::load().await.expect("unable to load daily log");
 
     let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
