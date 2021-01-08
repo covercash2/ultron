@@ -21,7 +21,6 @@ use db::{
     model::{InventoryItem, Item},
 };
 
-use crate::{coins::Operation, data::Database};
 use crate::coins::{self, Receipt, Transaction, TransactionSender, TransactionStatus};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
@@ -33,6 +32,7 @@ use crate::{
     },
     coins::DailyLog,
 };
+use crate::{coins::Operation, data::Database};
 
 mod messages;
 
@@ -335,28 +335,36 @@ impl Handler {
                     }))
                 }
             }
-            Command::Transfer { from_user, to_user, amount } => {
+            Command::Transfer {
+                from_user,
+                to_user,
+                amount,
+            } => {
+                match coins::transfer(&self.db, server_id, from_user, to_user, amount).await {
+                    Ok(transfer_result) => {
+                        let to_account = transfer_result.to_account;
+                        let to_user = to_account.user_id()?;
+                        let to_balance = to_account.balance.into();
 
-		match coins::transfer(&self.db, server_id, from_user, to_user, amount).await {
-		    Ok(transfer_result) => {
-			let to_account = transfer_result.to_account;
-			let to_user = to_account.user_id()?;
-			let to_balance = to_account.balance.into();
+                        let from_account = transfer_result.from_account;
+                        let from_user = from_account.user_id()?;
+                        let from_balance = from_account.balance.into();
 
-			let from_account = transfer_result.from_account;
-			let from_user = from_account.user_id()?;
-			let from_balance = from_account.balance.into();
-
-			Ok(Some(Output::TransferSuccess {
-			    to_user, to_balance, from_user, from_balance, amount
-			}))
-		    },
-		    Err(Error::Db(DbError::InsufficientFunds)) => {
-			Ok(Some(Output::Say(format!("You do not have {} coins.", amount))))
-		    }
-		    Err(e) => Err(e), // bubble up error
-		}
-	    }
+                        Ok(Some(Output::TransferSuccess {
+                            to_user,
+                            to_balance,
+                            from_user,
+                            from_balance,
+                            amount,
+                        }))
+                    }
+                    Err(Error::Db(DbError::InsufficientFunds)) => Ok(Some(Output::Say(format!(
+                        "You do not have {} coins.",
+                        amount
+                    )))),
+                    Err(e) => Err(e), // bubble up error
+                }
+            }
         }
     }
 
@@ -481,9 +489,9 @@ impl Handler {
     }
 
     async fn user_inventory(&self, server_id: u64, user_id: u64) -> Result<Vec<Item>> {
-	self.db.transaction(|db| {
-	    db.user_inventory(server_id, user_id).map_err(Into::into)
-	}).await
+        self.db
+            .transaction(|db| db.user_inventory(server_id, user_id).map_err(Into::into))
+            .await
     }
 }
 
@@ -757,10 +765,8 @@ async fn add_inventory_item(
     let user_id = user_id.ok_or(Error::Unknown("unable to get user id".to_owned()))?;
     let inventory_item = InventoryItem::new(&server_id, &user_id, item_id)?;
 
-    db.transaction(|db| {
-	db.add_inventory_item(inventory_item)
-	    .map_err(Into::into)
-    }).await
+    db.transaction(|db| db.add_inventory_item(inventory_item).map_err(Into::into))
+        .await
 }
 
 async fn handle_shop_reaction(
@@ -825,9 +831,7 @@ async fn handle_shop_reaction(
                         )
                         .await
                         .map(|_| ()),
-			err => {
-			    Err(Error::Db(err))
-			}
+                        err => Err(Error::Db(err)),
                     },
                     Err(err) => Err(err),
                 }
