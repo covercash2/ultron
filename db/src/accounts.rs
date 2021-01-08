@@ -27,6 +27,7 @@ pub fn transfer_coins<C: Connection<Backend = Backend>>(
     let from_account = BankAccount::new(server, from_user, &from_amount);
     let to_account = BankAccount::new(server, to_user, &to_amount);
 
+    // TODO check if user has enough coins
     connection.transaction::<_, Error, _>(|| {
 	let mut record_num = diesel::insert_into(bank_accounts)
 	    .values(&from_account)

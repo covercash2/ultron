@@ -106,6 +106,8 @@ pub async fn bank_loop(
     debug!("bank loop finished");
 }
 
+/// returns Ok(true) if the daily was successful.
+/// returns Ok(false) if the user has already received a daily
 pub async fn add_daily(
     db: &Arc<Mutex<Db>>,
     daily_log: &Arc<Mutex<DailyLog>>,
@@ -136,6 +138,19 @@ pub async fn add_daily(
     } else {
         Ok(false)
     }
+}
+
+/// transfer coins from one user to another
+pub async fn transfer(
+    db: &Arc<Mutex<Db>>,
+    server_id: u64,
+    from_user_id: u64,
+    to_user_id: u64,
+    amount: i64,
+) -> Result<TransferResult> {
+    let db = db.lock().await;
+    db.transfer_coins(&server_id, &from_user_id, &to_user_id, &amount)
+        .map_err(Into::into)
 }
 
 /// The main structure for storing account information.
