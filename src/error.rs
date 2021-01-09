@@ -26,7 +26,6 @@ pub enum Error {
     Io(IoError),
     UnknownCommand(String),
     CommandParse(String),
-    ReceiptProcess(String),
     GambleError(GambleError),
     MessageBuild(String),
     Unknown(String),

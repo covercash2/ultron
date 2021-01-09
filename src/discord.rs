@@ -233,29 +233,19 @@ impl Handler {
                             GambleState::Win => {
                                 let from_user = ultron_id.into();
                                 let to_user = *player_id;
-                                let operation = Operation::Transfer { to_user, amount };
-                                let transaction = Transaction {
-                                    server_id,
-                                    channel_id,
-                                    from_user,
-                                    operation,
-                                };
 
-                                let _receipt = self.send_transaction(transaction).await?;
+                                coins::transfer(&self.db, server_id, from_user, to_user, amount)
+                                    .await?;
+
                                 Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Lose => {
                                 let from_user = (*player_id).into();
                                 let to_user = ultron_id;
-                                let operation = Operation::Transfer { to_user, amount };
-                                let transaction = Transaction {
-                                    server_id,
-                                    channel_id,
-                                    from_user,
-                                    operation,
-                                };
 
-                                let _receipt = self.send_transaction(transaction).await?;
+                                coins::transfer(&self.db, server_id, from_user, to_user, amount)
+                                    .await?;
+
                                 Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Draw => Ok(Some(Output::Gamble(gamble_output))),

@@ -49,10 +49,6 @@ pub struct Transaction {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
-    Transfer {
-        to_user: UserId,
-        amount: i64,
-    },
     /// Dump items table
     GetAllItems,
 }

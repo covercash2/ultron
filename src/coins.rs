@@ -36,8 +36,6 @@ const DAILY_LOG_FILE: &str = "daily_log.json";
 /// The amount of coins to give to each user that asks once per day
 const DAILY_AMOUNT: i64 = 10;
 
-type Account = (UserId, i64);
-
 /// Get the next epoch for the daily allowances.
 pub fn daily_epoch() -> DateTime<Utc> {
     let epoch = Utc::today().and_hms(0, 0, 0);
@@ -63,14 +61,12 @@ impl Receipt {
     pub fn items(&self) -> Result<impl Iterator<Item = &Item>> {
         match &self.results {
             Results::Items(items) => Ok(items.iter()),
-            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub enum Results {
-    Accounts(Vec<Account>),
     Items(Vec<Item>),
 }
 
@@ -203,31 +199,11 @@ impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
         let server_id = transaction.server_id;
-        let from_user_id = transaction.from_user;
 
         self.log_user(&server_id, &transaction.channel_id, &transaction.from_user)
             .await?;
 
         let receipt = match transaction.operation {
-            Operation::Transfer { to_user, amount } => {
-                self.transfer_coins(&server_id, &from_user_id, &to_user, amount)
-                    .await?;
-
-                let account_results = self
-                    .get_balances(&server_id, vec![from_user_id, to_user])
-                    .await?;
-                let results = Results::Accounts(account_results);
-
-                if let Err(err) = self.save().await {
-                    error!("unable to save ledger: {:?}", err);
-                }
-
-                Receipt {
-                    transaction,
-                    results,
-                    status: TransactionStatus::Complete,
-                }
-            }
             Operation::GetAllItems => {
                 let items = self.get_all_items().await?;
 
@@ -253,43 +229,10 @@ impl Bank {
         Ok(Bank { daily_log, db })
     }
 
-    /// Save account data
-    pub async fn save(&self) -> Result<()> {
-        self.daily_log.save().await
-    }
-
     /// dump all items in the database
     async fn get_all_items(&mut self) -> Result<Vec<Item>> {
         let db = self.db.lock().await;
         db.all_items().map_err(Into::into)
-    }
-
-    async fn get_balances(
-        &mut self,
-        server_id: &u64,
-        user_ids: Vec<u64>,
-    ) -> Result<Vec<(u64, i64)>> {
-        let db = self.db.lock().await;
-        let balances: Vec<(u64, i64)> = db
-            .user_accounts(server_id, &user_ids)?
-            .iter()
-            .map(|account| Ok((account.user_id()?, account.balance.into())))
-            .collect::<Result<Vec<(u64, i64)>>>()?;
-
-        Ok(balances)
-    }
-
-    async fn transfer_coins(
-        &mut self,
-        server_id: &u64,
-        from_user: &u64,
-        to_user: &u64,
-        amount: i64,
-    ) -> Result<TransferResult> {
-        let db = self.db.lock().await;
-        let transfer_results = db.transfer_coins(server_id, from_user, to_user, &amount)?;
-
-        Ok(transfer_results)
     }
 
     async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
