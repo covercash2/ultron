@@ -79,10 +79,10 @@ pub async fn coin_balances(channel: ChannelId, pipe: &Http, balances: Vec<(Strin
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
                 embed.title("The Accounts");
-                embed.color(Colour::DARK_GOLD);
+                embed.color(Colour::LIGHTER_GREY);
 
 		for (name, balance) in balances {
-		    embed.field(name, format!("{}", balance), false);
+		    embed.field(name, format!("{}🪙", balance), false);
 		}
 
                 embed
