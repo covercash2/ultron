@@ -6,7 +6,6 @@ use dotenv::dotenv;
 use log::*;
 
 use serenity::http::Http;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 mod logger;
 
@@ -21,7 +20,7 @@ mod discord;
 mod gambling;
 mod tokens;
 
-use coins::{bank_loop, Bank, DailyLog, Receipt, Transaction, TransactionSender};
+use coins::DailyLog;
 use discord::Handler;
 use tokens::load_token;
 
@@ -56,22 +55,10 @@ async fn main() {
         .map(|info| info.id)
         .expect("unable to get discord application info");
 
-    let (transaction_sender, transaction_receiver): (Sender<Transaction>, Receiver<Transaction>) =
-        channel(100);
-    let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
-
     let db = Db::open(&database_url).expect("unable to open database connection").into();
     let daily_log = DailyLog::load().await.expect("unable to load daily log");
 
-    let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
-
-    let event_handler = Handler::new(db, daily_log, ultron_id, bank_channel);
-
-    let bank = Bank::load(database_url)
-        .await
-        .expect("unable to load bank file");
-
-    let _bank_thread = tokio::task::spawn(bank_loop(bank, transaction_receiver, receipt_sender));
+    let event_handler = Handler::new(db, daily_log, ultron_id);
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
         error!("error running discord client: {:?}", err);

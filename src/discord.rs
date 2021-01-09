@@ -21,8 +21,9 @@ use db::{
     model::{InventoryItem, Item},
 };
 
-use crate::coins::{self, Receipt, Transaction, TransactionSender};
+use crate::coins;
 use crate::commands::{self, Command};
+use crate::data::Database;
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Error as GambleError, GambleOutput, State as GambleState};
@@ -32,7 +33,6 @@ use crate::{
     },
     coins::DailyLog,
 };
-use crate::{coins::Operation, data::Database};
 
 mod messages;
 
@@ -131,46 +131,25 @@ impl<'a> Socket<'a> {
 pub struct Handler {
     /// ultron's user id
     user_id: UserId,
-    transaction_sender: TransactionSender,
     db: Database,
     daily_log: Arc<Mutex<DailyLog>>,
 }
 
 impl Handler {
-    pub fn new(
-        db: Database,
-        daily_log: DailyLog,
-        user_id: UserId,
-        transaction_sender: TransactionSender,
-    ) -> Handler {
+    pub fn new(db: Database, daily_log: DailyLog, user_id: UserId) -> Handler {
         let daily_log = Arc::new(Mutex::new(daily_log));
         Handler {
             user_id,
-            transaction_sender,
             db,
             daily_log,
         }
     }
 
     /// get shop items from the database
-    async fn shop_items(
-        &self,
-        server_id: u64,
-        channel_id: u64,
-        from_user: u64,
-    ) -> Result<Vec<Item>> {
-        let operation = Operation::GetAllItems;
-        let transaction = Transaction {
-            server_id,
-            channel_id,
-            from_user,
-            operation,
-        };
-
-        let receipt = self.send_transaction(transaction).await?;
-
-        let items = receipt.items()?.cloned().collect();
-        Ok(items)
+    async fn shop_items(&self) -> Result<Vec<Item>> {
+        self.db
+            .transaction(|db| db.all_items().map_err(Into::into))
+            .await
     }
 
     /// get the user balance from the database
@@ -179,18 +158,10 @@ impl Handler {
         Ok(account.balance.into())
     }
 
-    /// Send a transaction to the bank thread.
-    /// Returns output to say in chat.
-    pub async fn send_transaction(&self, transaction: Transaction) -> Result<Receipt> {
-        self.transaction_sender.send_transaction(transaction).await
-    }
-
     /// Process the command, performing any necessary IO operations
     pub async fn process_command(
         &self,
         server_id: u64,
-        channel_id: u64,
-        user_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -259,7 +230,7 @@ impl Handler {
             }
             Command::None => Ok(None),
             Command::Shop => {
-                let items = self.shop_items(server_id, channel_id, user_id).await?;
+                let items = self.shop_items().await?;
                 Ok(Some(Output::Shop(items)))
             }
             Command::Inventory { server_id, user_id } => {
@@ -408,16 +379,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self
-            .process_command(
-                message.server.id,
-                message.channel.id,
-                message.user.id,
-                &ctx,
-                command,
-            )
-            .await
-        {
+        let output = match self.process_command(message.server.id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -554,8 +516,6 @@ impl EventHandler for Handler {
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-        let channel_id = *reaction.channel_id.as_u64();
-        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(Command::None) => {
@@ -569,10 +529,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self
-            .process_command(server_id, channel_id, user_id, &ctx, command)
-            .await
-        {
+        let output = match self.process_command(server_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 trace!("command finished with no output");
@@ -589,8 +546,6 @@ impl EventHandler for Handler {
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
-        let channel_id = *reaction.channel_id.as_u64();
-        let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction_removed(&context, &reaction).await {
             Ok(command) => command,
@@ -600,10 +555,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let _output = match self
-            .process_command(server_id, channel_id, user_id, &context, command)
-            .await
-        {
+        let _output = match self.process_command(server_id, &context, command).await {
             Ok(receipt) => receipt,
             Err(err) => {
                 error!("unable to process command: {:?}", err);

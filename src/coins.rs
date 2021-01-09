@@ -3,31 +3,17 @@ use std::{collections::HashMap, sync::Arc};
 
 use chrono::Duration;
 use log::*;
-use tokio::{
-    fs::OpenOptions,
-    prelude::*,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Mutex,
-    },
-};
+use tokio::{fs::OpenOptions, prelude::*, sync::Mutex};
 
 use serde::{Deserialize, Serialize};
 use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use db::{
-    model::{BankAccount, Item},
-    Db, TransferResult,
-};
+use db::{model::BankAccount, Db, TransferResult};
 
-use crate::data::{ChannelId, Database, ServerId, UserId};
+use crate::data::{Database, ServerId, UserId};
 use crate::error::{Error, Result};
-
-mod transaction;
-
-pub use transaction::{Operation, Transaction, TransactionSender, TransactionStatus};
 
 /// the id of the member card in the database
 const ITEM_ID_MEMBER_CARD: u64 = 1;
@@ -44,56 +30,6 @@ pub fn daily_epoch() -> DateTime<Utc> {
     } else {
         epoch
     }
-}
-
-/// This type is returned from [`Bank::process_transaction`].
-/// It uses a `Vec` of tuples to represent user ids and the associated account balance after a transaction
-/// completes.
-#[derive(Debug, Clone)]
-pub struct Receipt {
-    pub transaction: Transaction,
-    pub status: TransactionStatus,
-    pub results: Results,
-}
-
-impl Receipt {
-    /// Return item results of the transaction or an error if the Results contain the wrong variant.
-    pub fn items(&self) -> Result<impl Iterator<Item = &Item>> {
-        match &self.results {
-            Results::Items(items) => Ok(items.iter()),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum Results {
-    Items(Vec<Item>),
-}
-
-/// This function runs a loop that waits for transactions to come in on the
-/// `transaction_receiver` (see: [`tokio::sync::mpsc`]).
-/// If some `Receipt` value is returned from the transaction, it is sent across the
-/// `output_sender`.
-/// This loop runs until the `transaction_receiver`'s [`Sender`] sides are closed.
-pub async fn bank_loop(
-    mut bank: Bank,
-    mut transaction_receiver: Receiver<Transaction>,
-    mut output_sender: Sender<Receipt>,
-) {
-    debug!("bank loop started");
-    while let Some(transaction) = transaction_receiver.recv().await {
-        debug!("transaction received: {:?}", transaction);
-
-        match bank.process_transaction(transaction).await {
-            Ok(receipt) => {
-                if let Err(err) = output_sender.send(receipt).await {
-                    error!("error sending receipt: {:?}", err);
-                }
-            }
-            Err(err) => error!("error processing transaction: {:?}", err),
-        }
-    }
-    debug!("bank loop finished");
 }
 
 pub async fn all_balances(
@@ -185,69 +121,6 @@ pub async fn untip(
             .map_err(Into::into)
     })
     .await
-}
-
-/// The main structure for storing account information.
-#[derive(Debug)]
-pub struct Bank {
-    db: Arc<Mutex<Db>>,
-    /// A map to keep track of which users have logged in today
-    daily_log: DailyLog,
-}
-
-impl Bank {
-    /// Process a transaction and return a [`Receipt`]
-    pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
-        let server_id = transaction.server_id;
-
-        self.log_user(&server_id, &transaction.channel_id, &transaction.from_user)
-            .await?;
-
-        let receipt = match transaction.operation {
-            Operation::GetAllItems => {
-                let items = self.get_all_items().await?;
-
-                Receipt {
-                    transaction,
-                    results: Results::Items(items),
-                    status: TransactionStatus::Complete,
-                }
-            }
-        };
-
-        Ok(receipt)
-    }
-
-    /// Load saved account data
-    pub async fn load<S: AsRef<str>>(database_url: S) -> Result<Self> {
-        debug!("using database: {}", database_url.as_ref());
-
-        let db = Arc::new(Mutex::new(Db::open(database_url.as_ref())?));
-
-        let daily_log = DailyLog::load().await?;
-
-        Ok(Bank { daily_log, db })
-    }
-
-    /// dump all items in the database
-    async fn get_all_items(&mut self) -> Result<Vec<Item>> {
-        let db = self.db.lock().await;
-        db.all_items().map_err(Into::into)
-    }
-
-    async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
-        let db = self.db.lock().await;
-        let record_num = db.log_user(server_id, channel_id, user_id)?;
-
-        if record_num == 1 {
-            debug!(
-                "user logged: #s{} #c{} #u{}",
-                server_id, channel_id, user_id
-            );
-        }
-
-        Ok(())
-    }
 }
 
 /// A log to keep track of who's logged in today and the next epoch when the daily

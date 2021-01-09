@@ -5,11 +5,9 @@ use serde_json::Error as JsonError;
 use hubcaps::Error as GithubError;
 
 use serenity::Error as DiscordError;
-use tokio::sync::mpsc::error::SendError;
 
 use db::error::Error as DbError;
 
-use crate::coins::Transaction;
 use crate::gambling::Error as GambleError;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -21,8 +19,6 @@ pub enum Error {
     GithubError(GithubError),
     BadApiKey(VarError),
     Json(JsonError),
-    TransactionSend(SendError<Transaction>),
-    TransactionReceipt,
     Io(IoError),
     UnknownCommand(String),
     CommandParse(String),
@@ -34,12 +30,6 @@ pub enum Error {
 impl From<DbError> for Error {
     fn from(err: DbError) -> Self {
         Error::Db(err)
-    }
-}
-
-impl From<SendError<Transaction>> for Error {
-    fn from(err: SendError<Transaction>) -> Self {
-        Error::TransactionSend(err)
     }
 }
 
