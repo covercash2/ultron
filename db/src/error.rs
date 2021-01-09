@@ -17,6 +17,7 @@ pub enum Error {
     Connection(ConnectionError),
     RecordExists,
     InsufficientFunds,
+    SelfTip,
 }
 
 impl From<TryFromIntError> for Error {

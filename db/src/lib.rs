@@ -9,6 +9,7 @@ use std::{convert::TryInto, fmt};
 
 mod schema;
 
+mod accounts;
 mod ids;
 mod inventory;
 mod items;
@@ -19,6 +20,8 @@ pub mod model;
 use error::*;
 use model::{BankAccount, ChannelUser, InventoryItem, Item, UpdateItem};
 use schema::bank_accounts::dsl::*;
+
+pub use accounts::TransferResult;
 
 type Backend = Sqlite;
 
@@ -109,7 +112,11 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+    pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+        if from_user == to_user {
+            return Err(Error::SelfTip);
+        }
+
         let from_amount: i32 = 1;
         let from_account = BankAccount::new(server, from_user, &from_amount);
 
@@ -131,11 +138,22 @@ impl Db {
                 .set(balance.eq(balance + to_amount))
                 .execute(&self.connection)?;
 
-            Ok(num_records)
+            if num_records == 2 {
+                Ok(())
+            } else {
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records affected: {}",
+                    num_records
+                )))
+            }
         })
     }
 
-    pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+    pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+        if from_user == to_user {
+            return Err(Error::SelfTip);
+        }
+
         let from_amount: i32 = -1;
         let from_account = BankAccount::new(server, from_user, &from_amount);
 
@@ -143,6 +161,8 @@ impl Db {
         let to_account = BankAccount::new(server, to_user, &2);
 
         self.connection.transaction::<_, Error, _>(|| {
+            // TODO it doesn't really make sense to do `on_conflict` here
+            // it should just error out if the accounts don't exist
             let mut num_records = diesel::insert_into(bank_accounts)
                 .values(&from_account)
                 .on_conflict((server_id, user_id))
@@ -157,7 +177,14 @@ impl Db {
                 .set(balance.eq(balance + to_amount))
                 .execute(&self.connection)?;
 
-            Ok(num_records)
+            if num_records == 2 {
+                Ok(())
+            } else {
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records affected: {}",
+                    num_records
+                )))
+            }
         })
     }
 
@@ -167,30 +194,8 @@ impl Db {
         from_user: &u64,
         to_user: &u64,
         amount: &i64,
-    ) -> Result<usize> {
-        let to_amount: i32 = (*amount).try_into().map_err(|_e| Error::CoinOverflow)?;
-        let from_amount: i32 = -to_amount;
-
-        let from_account = BankAccount::new(server, from_user, &from_amount);
-        let to_account = BankAccount::new(server, to_user, &to_amount);
-
-        self.connection.transaction::<_, Error, _>(|| {
-            let mut record_num = diesel::insert_into(bank_accounts)
-                .values(&from_account)
-                .on_conflict((server_id, user_id))
-                .do_update()
-                .set(balance.eq(balance + from_amount))
-                .execute(&self.connection)?;
-
-            record_num += diesel::insert_into(bank_accounts)
-                .values(&to_account)
-                .on_conflict((server_id, user_id))
-                .do_update()
-                .set(balance.eq(balance + to_amount))
-                .execute(&self.connection)?;
-
-            Ok(record_num)
-        })
+    ) -> Result<TransferResult> {
+        accounts::transfer_coins(&self.connection, server, from_user, to_user, amount)
     }
 
     pub fn show_channel_users(&self) -> Result<Vec<ChannelUser>> {
@@ -257,36 +262,49 @@ impl Db {
         inventory::show_all(&self.connection)
     }
 
-    /// returns Ok(0) if the item already exists
-    pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<usize> {
+    /// returns Error::RecordExists if the item already exists
+    pub fn add_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
         let server = inventory_item.server_id()?.to_string();
         let user = inventory_item.user_id()?.to_string();
 
-        self.connection
-            .transaction(|| {
-                let price = schema::items::dsl::items
-                    .find(&inventory_item.item_id)
-                    .select(schema::items::dsl::price)
-                    .first::<i32>(&self.connection)?;
-                let account = schema::bank_accounts::dsl::bank_accounts.find((&server, &user));
-                let account_balance = account
-                    .select(schema::bank_accounts::dsl::balance)
-                    .first::<i32>(&self.connection)?;
+        let num_records = self.connection.transaction(|| {
+            let price = schema::items::dsl::items
+                .find(&inventory_item.item_id)
+                .select(schema::items::dsl::price)
+                .first::<i32>(&self.connection)?;
+            let account = schema::bank_accounts::dsl::bank_accounts.find((&server, &user));
+            let account_balance = account
+                .select(schema::bank_accounts::dsl::balance)
+                .first::<i32>(&self.connection)?;
 
-		if account_balance > price {
-		    inventory::add_item(&self.connection, inventory_item)?;
-		    diesel::update(account)
-			.set(
-			    schema::bank_accounts::dsl::balance
-				.eq(schema::bank_accounts::dsl::balance - price),
-			)
-			.execute(&self.connection)
-			.map_err(Into::into)
-		} else {
-		    Err(Error::InsufficientFunds)
-		}
-            })
-            .map_err(Into::into)
+            if account_balance > price {
+                inventory::add_item(&self.connection, inventory_item)?;
+                diesel::update(account)
+                    .set(
+                        schema::bank_accounts::dsl::balance
+                            .eq(schema::bank_accounts::dsl::balance - price),
+                    )
+                    .execute(&self.connection)
+                    .map_err(Into::into)
+            } else {
+                Err(Error::InsufficientFunds)
+            }
+        })?;
+
+        match num_records {
+            0 => Err(Error::RecordExists),
+            1 => {
+                // added item successfully
+                Ok(())
+            }
+            _ => {
+                // unknown error
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records changed: {}",
+                    num_records
+                )))
+            }
+        }
     }
 
     pub fn item(&self, item_id: &i32) -> Result<Item> {
@@ -307,16 +325,16 @@ impl Db {
     }
 
     pub fn delete_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
-	inventory::delete_item(&self.connection, inventory_item)
-	    .and_then(|num_records| match num_records {
-		0 => {
-		    Err(Error::NotFound("no record found to delete".to_owned()))
-		}
-		1 => {
-		    Ok(())
-		}
-		n => Err(Error::Unexpected(format!("unexpected number of records returned:{}", n)))
-	    })
+        inventory::delete_item(&self.connection, inventory_item).and_then(|num_records| {
+            match num_records {
+                0 => Err(Error::NotFound("no record found to delete".to_owned())),
+                1 => Ok(()),
+                n => Err(Error::Unexpected(format!(
+                    "unexpected number of records returned:{}",
+                    n
+                ))),
+            }
+        })
     }
 }
 

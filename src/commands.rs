@@ -7,14 +7,20 @@ use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
 use crate::chat::Message;
-use crate::coins::Operation;
-use crate::coins::Transaction;
 use crate::data::UserId;
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Gamble, Game};
 
-const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
+const TIP_EMOJIS: &[&str] = &[
+    "🪙",
+    "👍",
+    "🔥", // fire
+    "UP",
+    "CRYN",
+    "BADASS",
+    "LAUGH"
+];
 
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
@@ -28,11 +34,28 @@ pub enum Command {
     Ping,
     /// Print info about this bot
     About,
-    /// Make a coin transaction
-    Coin(Transaction),
+    GetAllBalances {
+	server_id: u64,
+	channel_id: u64,
+    },
+    Transfer {
+	from_user: u64,
+	to_user: u64,
+	amount: i64,
+    },
     Daily {
         server_id: u64,
         user_id: u64,
+    },
+    Tip {
+	server_id: u64,
+	from_user: u64,
+	to_user: u64,
+    },
+    Untip {
+	server_id: u64,
+	from_user: u64,
+	to_user: u64,
     },
     Gamble(Gamble),
     /// Show available items
@@ -71,17 +94,8 @@ impl Command {
                 "ping" => Ok(Command::Ping),
                 "about" => Ok(Command::About),
                 "coins" => {
-                    // TODO User
-                    let from_user = message.user.id;
-                    let channel_id = message.channel.id;
-                    let operation = Operation::GetAllBalances;
-                    let transaction = Transaction {
-                        from_user,
-                        server_id,
-                        channel_id,
-                        operation,
-                    };
-                    Ok(Command::Coin(transaction))
+		    let channel_id = message.channel.id;
+		    Ok(Command::GetAllBalances { server_id, channel_id })
                 }
                 "daily" => {
                     trace!("request daily");
@@ -123,58 +137,9 @@ impl Command {
                         "unknown 3 arg command: {:?}",
                         content
                     )));
-                }
-
-                let to_user = if message.mentions.len() == 1 {
-                    message.mentions[0].id
-                } else if message.mentions.len() == 0 {
-                    return Err(Error::CommandParse(
-                        "no users mentioned in give command".to_owned(),
-                    ));
                 } else {
-                    return Err(Error::CommandParse(
-                        "for now you can only give one user coins".to_owned(),
-                    ));
-                };
-                let from_user = message.user.id;
-                let amount = args
-                    .get(1)
-                    .ok_or(Error::CommandParse(
-                        "unable to get amount argument".to_owned(),
-                    ))
-                    .and_then(|arg| {
-                        arg.parse::<i64>()
-                            .map_err(|err| {
-                                Error::CommandParse(format!(
-                                    "command should end with amount: {}\n{:?}",
-                                    content, err
-                                ))
-                            })
-                            .and_then(|amount| {
-                                if amount < 0 {
-                                    Err(Error::CommandParse(format!(
-                                        "cannot transfer a negative amount"
-                                    )))
-                                } else {
-                                    Ok(amount)
-                                }
-                            })
-                    })?;
-
-                let channel_id = message.channel.id;
-                let amount: i64 = amount.try_into().map_err(|err| {
-                    Error::CommandParse(format!("amount integer overflowed: {:?}", err))
-                })?;
-                let operation = Operation::Transfer { to_user, amount };
-
-                let transaction = Transaction {
-                    server_id,
-                    channel_id,
-                    from_user,
-                    operation,
-                };
-
-                Ok(Command::Coin(transaction))
+		    parse_give(&message, args)
+		}
             }
             _ => Err(Error::UnknownCommand(format!(
                 "command has too many args: {}",
@@ -186,7 +151,6 @@ impl Command {
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
-        let channel_id = *reaction.channel_id.as_u64();
         let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user: UserId = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -198,14 +162,33 @@ impl Command {
         )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-            let operation = Operation::Tip { to_user };
-            let transaction = Transaction {
-                server_id,
-                channel_id,
-                from_user,
-                operation,
-            };
-            Ok(Command::Coin(transaction))
+	    debug!("tip parsed");
+	    Ok(Command::Tip {
+		server_id, from_user, to_user
+	    })
+        } else {
+            Ok(Command::None)
+        }
+    }
+
+    /// Parses an emoji reaction from the [`serenity`] Discord API
+    pub async fn parse_reaction_removed(context: &Context, reaction: &Reaction) -> Result<Self> {
+        let server_id = *reaction.guild_id.expect("no guild id").as_u64();
+        let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
+        let from_user: UserId = match reaction.user_id {
+            Some(id) => *id.as_u64(),
+            None => return Err(Error::CommandParse("no user in reaction".to_owned())),
+        };
+
+        let emoji_string: String = reaction_string(reaction.emoji.clone()).ok_or(
+            Error::CommandParse("no name found for custom emoji".to_owned()),
+        )?;
+
+        if TIP_EMOJIS.contains(&emoji_string.as_str()) {
+	    debug!("untip parsed");
+	    Ok(Command::Untip {
+		server_id, from_user, to_user
+	    })
         } else {
             Ok(Command::None)
         }
@@ -238,6 +221,47 @@ async fn parse_gamble<S: AsRef<str>>(user_id: u64, args: S) -> Result<Command> {
             args
         )))
     }
+}
+
+fn parse_give(message: &Message, args: &[&str]) -> Result<Command> {
+    let to_user = if message.mentions.len() == 1 {
+        message.mentions[0].id
+    } else if message.mentions.len() == 0 {
+        return Err(Error::CommandParse(
+            "no users mentioned in give command".to_owned(),
+        ));
+    } else {
+        return Err(Error::CommandParse(
+            "for now you can only give one user coins".to_owned(),
+        ));
+    };
+    let from_user = message.user.id;
+    let amount = args
+        .get(1)
+        .ok_or(Error::CommandParse(
+            "unable to get amount argument".to_owned(),
+        ))
+        .and_then(|arg| {
+            arg.parse::<i64>()
+                .map_err(|err| {
+                    Error::CommandParse(format!("command should end with amount: {:?}", err))
+                })
+                .and_then(|amount| {
+                    if amount < 0 {
+                        Err(Error::CommandParse(format!(
+                            "cannot transfer a negative amount"
+                        )))
+                    } else {
+                        Ok(amount)
+                    }
+                })
+        })?;
+
+    let amount: i64 = amount
+        .try_into()
+        .map_err(|err| Error::CommandParse(format!("amount integer overflowed: {:?}", err)))?;
+
+    Ok(Command::Transfer { from_user, to_user, amount })
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
