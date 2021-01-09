@@ -17,7 +17,10 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use db::{Db, TransferResult, model::{BankAccount, Item}};
+use db::{
+    model::{BankAccount, Item},
+    Db, TransferResult,
+};
 
 use crate::data::{ChannelId, Database, ServerId, UserId};
 use crate::error::{Error, Result};
@@ -56,14 +59,6 @@ pub struct Receipt {
 }
 
 impl Receipt {
-    /// Return account results of the transaction or an error if the Results contain the wrong variant.
-    pub fn accounts(&self) -> Result<impl Iterator<Item = &Account>> {
-        match &self.results {
-            Results::Accounts(accounts) => Ok(accounts.iter()),
-            _ => Err(Error::ReceiptProcess("expected account results".to_owned())),
-        }
-    }
-
     /// Return item results of the transaction or an error if the Results contain the wrong variant.
     pub fn items(&self) -> Result<impl Iterator<Item = &Item>> {
         match &self.results {
@@ -105,8 +100,20 @@ pub async fn bank_loop(
     debug!("bank loop finished");
 }
 
-pub async fn all_balances(db: &Database, server_id: u64, channel_id: u64) -> Result<Vec<BankAccount>> {
-    db.transaction(|db| db.channel_user_balances(&server_id, &channel_id).map_err(Into::into))
+pub async fn all_balances(
+    db: &Database,
+    server_id: u64,
+    channel_id: u64,
+) -> Result<Vec<BankAccount>> {
+    db.transaction(|db| {
+        db.channel_user_balances(&server_id, &channel_id)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+pub async fn user_account(db: &Database, server_id: u64, user_id: u64) -> Result<BankAccount> {
+    db.transaction(|db| db.user_account(&server_id, &user_id).map_err(Into::into))
         .await
 }
 
@@ -219,18 +226,6 @@ impl Bank {
                     transaction,
                     results,
                     status: TransactionStatus::Complete,
-                }
-            }
-            Operation::GetUserBalance => {
-                let user_id = from_user_id;
-                let account_results = self.get_balances(&server_id, vec![user_id]).await?;
-                let results = Results::Accounts(account_results);
-                let status = TransactionStatus::Complete;
-
-                Receipt {
-                    transaction,
-                    results,
-                    status,
                 }
             }
             Operation::GetAllItems => {
