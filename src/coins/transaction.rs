@@ -55,26 +55,11 @@ pub enum Operation {
     },
     GetAllBalances,
     GetUserBalance,
-    /// Give some coins to both users
-    Tip {
-        to_user: UserId,
-    },
-    /// Undo tip operation
-    Untip {
-        to_user: UserId,
-    },
     /// Dump items table
     GetAllItems,
 }
 
-// impl Transaction {
-//     pub fn process(self, data: &Bank) -> Result<Receipt> {
-
-//     }
-// }
-
 #[derive(Debug, Clone)]
 pub enum TransactionStatus {
     Complete,
-    SelfTip,
 }

@@ -112,7 +112,11 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+    pub fn tip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+        if from_user == to_user {
+            return Err(Error::SelfTip);
+        }
+
         let from_amount: i32 = 1;
         let from_account = BankAccount::new(server, from_user, &from_amount);
 
@@ -134,11 +138,22 @@ impl Db {
                 .set(balance.eq(balance + to_amount))
                 .execute(&self.connection)?;
 
-            Ok(num_records)
+            if num_records == 2 {
+                Ok(())
+            } else {
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records affected: {}",
+                    num_records
+                )))
+            }
         })
     }
 
-    pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
+    pub fn untip(&self, server: &u64, from_user: &u64, to_user: &u64) -> Result<()> {
+        if from_user == to_user {
+            return Err(Error::SelfTip);
+        }
+
         let from_amount: i32 = -1;
         let from_account = BankAccount::new(server, from_user, &from_amount);
 
@@ -146,6 +161,8 @@ impl Db {
         let to_account = BankAccount::new(server, to_user, &2);
 
         self.connection.transaction::<_, Error, _>(|| {
+            // TODO it doesn't really make sense to do `on_conflict` here
+            // it should just error out if the accounts don't exist
             let mut num_records = diesel::insert_into(bank_accounts)
                 .values(&from_account)
                 .on_conflict((server_id, user_id))
@@ -160,7 +177,14 @@ impl Db {
                 .set(balance.eq(balance + to_amount))
                 .execute(&self.connection)?;
 
-            Ok(num_records)
+            if num_records == 2 {
+                Ok(())
+            } else {
+                Err(Error::Unexpected(format!(
+                    "unexpected number of records affected: {}",
+                    num_records
+                )))
+            }
         })
     }
 

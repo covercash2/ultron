@@ -21,7 +21,7 @@ use db::{
     model::{InventoryItem, Item},
 };
 
-use crate::coins::{self, Receipt, Transaction, TransactionSender, TransactionStatus};
+use crate::coins::{self, Receipt, Transaction, TransactionSender};
 use crate::commands::{self, Command};
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
@@ -168,13 +168,8 @@ impl Handler {
 
         let receipt = self.send_transaction(transaction).await?;
 
-        if let TransactionStatus::Complete = receipt.status {
-            Ok(receipt.items()?.cloned().collect())
-        } else {
-            Err(Error::TransactionFailed(
-                "error getting items from bank".to_owned(),
-            ))
-        }
+	let items = receipt.items()?.cloned().collect();
+	Ok(items)
     }
 
     /// get the user balance from the database
@@ -189,20 +184,15 @@ impl Handler {
         };
 
         let receipt = self.send_transaction(transaction).await?;
+	let accounts =receipt
+	    .accounts()?
+	    .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
+	    .ok_or(Error::ReceiptProcess(format!(
+		"no balance found for user: {:?}",
+		receipt
+	    )))?;
 
-        if let TransactionStatus::Complete = receipt.status {
-            receipt
-                .accounts()?
-                .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
-                .ok_or(Error::ReceiptProcess(format!(
-                    "no balance found for user: {:?}",
-                    receipt
-                )))
-        } else {
-            Err(Error::TransactionFailed(
-                "error getting user balance from bank".to_owned(),
-            ))
-        }
+	Ok(accounts)
     }
 
     /// Send a transaction to the bank thread.
@@ -273,16 +263,8 @@ impl Handler {
                                     operation,
                                 };
 
-                                let receipt = self.send_transaction(transaction).await?;
-                                match receipt.status {
-                                    TransactionStatus::Complete => {
-                                        Ok(Some(Output::Gamble(gamble_output)))
-                                    }
-                                    _ => Err(Error::ReceiptProcess(format!(
-                                        "invalid transaction status: {:?}",
-                                        receipt
-                                    ))),
-                                }
+                                let _receipt = self.send_transaction(transaction).await?;
+				Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Lose => {
                                 let from_user = (*player_id).into();
@@ -295,16 +277,8 @@ impl Handler {
                                     operation,
                                 };
 
-                                let receipt = self.send_transaction(transaction).await?;
-                                match receipt.status {
-                                    TransactionStatus::Complete => {
-                                        Ok(Some(Output::Gamble(gamble_output)))
-                                    }
-                                    _ => Err(Error::ReceiptProcess(format!(
-                                        "invalid transaction status: {:?}",
-                                        receipt
-                                    ))),
-                                }
+                                let _receipt = self.send_transaction(transaction).await?;
+				Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Draw => Ok(Some(Output::Gamble(gamble_output))),
                             GambleState::Waiting => {
@@ -365,6 +339,20 @@ impl Handler {
                     Err(e) => Err(e), // bubble up error
                 }
             }
+            Command::Tip {
+                server_id,
+                from_user,
+                to_user,
+            } => {
+                coins::tip(&self.db, server_id, from_user, to_user)
+                    .await
+                    .map(|_| None) // no output for a successful tip
+            }
+            Command::Untip { server_id, from_user, to_user } => {
+		coins::untip(&self.db, server_id, from_user, to_user)
+		    .await
+		    .map(|_| None)
+	    }
         }
     }
 
@@ -431,31 +419,6 @@ impl Handler {
                     amount,
                 }))
             }
-            Operation::Tip { .. } => {
-                match receipt.status {
-                    TransactionStatus::Complete => {
-                        debug!("tip complete");
-                        Ok(None)
-                    }
-                    TransactionStatus::SelfTip => {
-                        // TODO chastize
-                        Err(Error::TransactionFailed(format!(
-                            "user tried to tip themselves: {:?}",
-                            receipt.status
-                        )))
-                    }
-                }
-            }
-            Operation::Untip { .. } => match receipt.status {
-                TransactionStatus::Complete => {
-                    debug!("untip complete");
-                    Ok(None)
-                }
-                _ => Err(Error::TransactionFailed(format!(
-                    "unexpected transaction status: {:?}",
-                    receipt.status
-                ))),
-            },
             Operation::GetUserBalance { .. } => {
                 // TODO raw balance query response
                 Err(Error::ReceiptProcess(
@@ -541,7 +504,7 @@ impl EventHandler for Handler {
                 return;
             }
             Err(err) => {
-                error!("unable to process command: {:?}", err);
+                error!("error processing command: {:?}", err);
                 return;
             }
         };
@@ -702,33 +665,8 @@ impl EventHandler for Handler {
         let channel_id = *reaction.channel_id.as_u64();
         let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
-        let command = match Command::parse_reaction(&context, &reaction).await {
-            Ok(Command::Coin(transaction)) => match transaction.operation {
-                Operation::Tip { to_user } => {
-                    let from_user = transaction.from_user;
-                    let server_id = transaction.server_id;
-                    let operation = Operation::Untip { to_user };
-                    let transaction = Transaction {
-                        from_user,
-                        server_id,
-                        channel_id,
-                        operation,
-                    };
-                    Command::Coin(transaction)
-                }
-                _ => {
-                    error!("unexpected operation: {:?}", transaction.operation);
-                    return;
-                }
-            },
-            Ok(Command::None) => {
-                trace!("no command parsed");
-                return;
-            }
-            Ok(command) => {
-                error!("unexpectedly parsed reaction remove command: {:?}", command);
-                return;
-            }
+        let command = match Command::parse_reaction_removed(&context, &reaction).await {
+            Ok(command) => command,
             Err(err) => {
                 error!("unable to parse reaction: {:?}", err);
                 return;

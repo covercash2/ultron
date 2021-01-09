@@ -39,6 +39,16 @@ pub enum Command {
         server_id: u64,
         user_id: u64,
     },
+    Tip {
+	server_id: u64,
+	from_user: u64,
+	to_user: u64,
+    },
+    Untip {
+	server_id: u64,
+	from_user: u64,
+	to_user: u64,
+    },
     Gamble(Gamble),
     /// Show available items
     Shop,
@@ -142,7 +152,6 @@ impl Command {
     /// Parses an emoji reaction from the [`serenity`] Discord API
     pub async fn parse_reaction(context: &Context, reaction: &Reaction) -> Result<Self> {
         let server_id = *reaction.guild_id.expect("no guild id").as_u64();
-        let channel_id = *reaction.channel_id.as_u64();
         let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
         let from_user: UserId = match reaction.user_id {
             Some(id) => *id.as_u64(),
@@ -154,14 +163,33 @@ impl Command {
         )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-            let operation = Operation::Tip { to_user };
-            let transaction = Transaction {
-                server_id,
-                channel_id,
-                from_user,
-                operation,
-            };
-            Ok(Command::Coin(transaction))
+	    debug!("tip parsed");
+	    Ok(Command::Tip {
+		server_id, from_user, to_user
+	    })
+        } else {
+            Ok(Command::None)
+        }
+    }
+
+    /// Parses an emoji reaction from the [`serenity`] Discord API
+    pub async fn parse_reaction_removed(context: &Context, reaction: &Reaction) -> Result<Self> {
+        let server_id = *reaction.guild_id.expect("no guild id").as_u64();
+        let to_user: UserId = *reaction.message(&context.http).await?.author.id.as_u64();
+        let from_user: UserId = match reaction.user_id {
+            Some(id) => *id.as_u64(),
+            None => return Err(Error::CommandParse("no user in reaction".to_owned())),
+        };
+
+        let emoji_string: String = reaction_string(reaction.emoji.clone()).ok_or(
+            Error::CommandParse("no name found for custom emoji".to_owned()),
+        )?;
+
+        if TIP_EMOJIS.contains(&emoji_string.as_str()) {
+	    debug!("untip parsed");
+	    Ok(Command::Untip {
+		server_id, from_user, to_user
+	    })
         } else {
             Ok(Command::None)
         }

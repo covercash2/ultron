@@ -77,7 +77,6 @@ impl Receipt {
 pub enum Results {
     Accounts(Vec<Account>),
     Items(Vec<Item>),
-    None,
 }
 
 /// This function runs a loop that waits for transactions to come in on the
@@ -155,6 +154,32 @@ pub async fn transfer(
     }).await
 }
 
+/// give coins and receive a coin for participating
+pub async fn tip(
+    db: &Database,
+    server_id: u64,
+    from_user_id: u64,
+    to_user_id: u64,
+) -> Result<()> {
+    db.transaction(|db| {
+	db.tip(&server_id, &from_user_id, &to_user_id)
+	    .map_err(Into::into)
+    }).await
+}
+
+/// undo tip action
+pub async fn untip(
+    db: &Database,
+    server_id: u64,
+    from_user_id: u64,
+    to_user_id: u64,
+) -> Result<()> {
+    db.transaction(|db| {
+	db.untip(&server_id, &from_user_id, &to_user_id)
+	    .map_err(Into::into)
+    }).await
+}
+
 /// The main structure for storing account information.
 #[derive(Debug)]
 pub struct Bank {
@@ -201,50 +226,6 @@ impl Bank {
                     transaction,
                     results,
                     status: TransactionStatus::Complete,
-                }
-            }
-            Operation::Tip { to_user } => {
-                if from_user_id == to_user {
-                    let results = Results::None;
-                    Receipt {
-                        transaction,
-                        results,
-                        status: TransactionStatus::SelfTip,
-                    }
-                } else {
-                    self.tip(&server_id, &from_user_id, &to_user).await?;
-
-                    let account_results = self
-                        .get_balances(&server_id, vec![from_user_id, to_user])
-                        .await?;
-                    let results = Results::Accounts(account_results);
-
-                    Receipt {
-                        transaction,
-                        results,
-                        status: TransactionStatus::Complete,
-                    }
-                }
-            }
-            Operation::Untip { to_user } => {
-                if from_user_id == to_user {
-                    Receipt {
-                        transaction,
-                        results: Results::None,
-                        status: TransactionStatus::SelfTip, // TODO new error type?
-                    }
-                } else {
-                    self.untip(&server_id, &from_user_id, &to_user).await?;
-                    let account_results = self
-                        .get_balances(&server_id, vec![from_user_id, to_user])
-                        .await?;
-                    let results = Results::Accounts(account_results);
-
-                    Receipt {
-                        transaction,
-                        results,
-                        status: TransactionStatus::Complete,
-                    }
                 }
             }
             Operation::GetUserBalance => {
@@ -335,16 +316,6 @@ impl Bank {
         let transfer_results = db.transfer_coins(server_id, from_user, to_user, &amount)?;
 
         Ok(transfer_results)
-    }
-
-    async fn tip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
-        let db = self.db.lock().await;
-        db.tip(server_id, from_user, to_user).map_err(Into::into)
-    }
-
-    async fn untip(&mut self, server_id: &u64, from_user: &u64, to_user: &u64) -> Result<usize> {
-        let db = self.db.lock().await;
-        db.untip(server_id, from_user, to_user).map_err(Into::into)
     }
 
     async fn log_user(&mut self, server_id: &u64, channel_id: &u64, user_id: &u64) -> Result<()> {
