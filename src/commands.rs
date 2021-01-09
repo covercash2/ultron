@@ -14,7 +14,15 @@ use crate::error::{Error, Result};
 use crate::gambling::Prize;
 use crate::gambling::{Gamble, Game};
 
-const TIP_EMOJIS: &[&str] = &["🪙", "👍", "UP", "CRYN", "BADASS", "LAUGH"];
+const TIP_EMOJIS: &[&str] = &[
+    "🪙",
+    "👍",
+    "🔥", // fire
+    "UP",
+    "CRYN",
+    "BADASS",
+    "LAUGH"
+];
 
 pub const PING: &'static str = "hello";
 pub const ABOUT: &'static str = "https://github.com/covercash2/ultron";
