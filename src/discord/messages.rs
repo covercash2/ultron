@@ -74,7 +74,8 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
 }
 
 /// print user balances
-pub async fn coin_balances(channel: ChannelId, pipe: &Http, balances: Vec<(String, i64)>) -> Result<Message> {
+pub async fn coin_balances(channel: ChannelId, pipe: &Http, mut balances: Vec<(String, i64)>) -> Result<Message> {
+    balances.sort_by(|a, b| a.1.cmp(&b.1));
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
