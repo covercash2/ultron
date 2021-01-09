@@ -17,7 +17,7 @@ use serde_json;
 
 use chrono::{DateTime, Utc};
 
-use db::{model::Item, Db, TransferResult};
+use db::{Db, TransferResult, model::{BankAccount, Item}};
 
 use crate::data::{ChannelId, Database, ServerId, UserId};
 use crate::error::{Error, Result};
@@ -105,6 +105,11 @@ pub async fn bank_loop(
     debug!("bank loop finished");
 }
 
+pub async fn all_balances(db: &Database, server_id: u64, channel_id: u64) -> Result<Vec<BankAccount>> {
+    db.transaction(|db| db.channel_user_balances(&server_id, &channel_id).map_err(Into::into))
+        .await
+}
+
 /// returns Ok(true) if the daily was successful.
 /// returns Ok(false) if the user has already received a daily
 pub async fn add_daily(
@@ -134,7 +139,8 @@ pub async fn add_daily(
             } else {
                 Ok(true)
             }
-        }).await
+        })
+        .await
     } else {
         Ok(false)
     }
@@ -149,22 +155,19 @@ pub async fn transfer(
     amount: i64,
 ) -> Result<TransferResult> {
     db.transaction(|db| {
-	db.transfer_coins(&server_id, &from_user_id, &to_user_id, &amount)
-	    .map_err(Into::into)
-    }).await
+        db.transfer_coins(&server_id, &from_user_id, &to_user_id, &amount)
+            .map_err(Into::into)
+    })
+    .await
 }
 
 /// give coins and receive a coin for participating
-pub async fn tip(
-    db: &Database,
-    server_id: u64,
-    from_user_id: u64,
-    to_user_id: u64,
-) -> Result<()> {
+pub async fn tip(db: &Database, server_id: u64, from_user_id: u64, to_user_id: u64) -> Result<()> {
     db.transaction(|db| {
-	db.tip(&server_id, &from_user_id, &to_user_id)
-	    .map_err(Into::into)
-    }).await
+        db.tip(&server_id, &from_user_id, &to_user_id)
+            .map_err(Into::into)
+    })
+    .await
 }
 
 /// undo tip action
@@ -175,9 +178,10 @@ pub async fn untip(
     to_user_id: u64,
 ) -> Result<()> {
     db.transaction(|db| {
-	db.untip(&server_id, &from_user_id, &to_user_id)
-	    .map_err(Into::into)
-    }).await
+        db.untip(&server_id, &from_user_id, &to_user_id)
+            .map_err(Into::into)
+    })
+    .await
 }
 
 /// The main structure for storing account information.
@@ -192,7 +196,6 @@ impl Bank {
     /// Process a transaction and return a [`Receipt`]
     pub async fn process_transaction(&mut self, transaction: Transaction) -> Result<Receipt> {
         let server_id = transaction.server_id;
-        let channel_id = transaction.channel_id;
         let from_user_id = transaction.from_user;
 
         self.log_user(&server_id, &transaction.channel_id, &transaction.from_user)
@@ -211,16 +214,6 @@ impl Bank {
                 if let Err(err) = self.save().await {
                     error!("unable to save ledger: {:?}", err);
                 }
-
-                Receipt {
-                    transaction,
-                    results,
-                    status: TransactionStatus::Complete,
-                }
-            }
-            Operation::GetAllBalances => {
-                let account_results = self.get_all_balances(&server_id, &channel_id).await?;
-                let results = Results::Accounts(account_results);
 
                 Receipt {
                     transaction,
@@ -274,20 +267,6 @@ impl Bank {
     async fn get_all_items(&mut self) -> Result<Vec<Item>> {
         let db = self.db.lock().await;
         db.all_items().map_err(Into::into)
-    }
-
-    /// this function only gets balances that have the same server and channel,
-    /// despite the name.
-    async fn get_all_balances(
-        &mut self,
-        server_id: &u64,
-        channel_id: &u64,
-    ) -> Result<Vec<(u64, i64)>> {
-        let db = self.db.lock().await;
-        db.channel_user_balances(server_id, channel_id)?
-            .into_iter()
-            .map(|account| Ok((account.user_id()?, account.balance.into())))
-            .collect::<Result<Vec<(u64, i64)>>>()
     }
 
     async fn get_balances(

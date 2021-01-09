@@ -7,8 +7,6 @@ use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
 use crate::chat::Message;
-use crate::coins::Operation;
-use crate::coins::Transaction;
 use crate::data::UserId;
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
@@ -36,8 +34,10 @@ pub enum Command {
     Ping,
     /// Print info about this bot
     About,
-    /// Make a coin transaction
-    Coin(Transaction),
+    GetAllBalances {
+	server_id: u64,
+	channel_id: u64,
+    },
     Transfer {
 	from_user: u64,
 	to_user: u64,
@@ -94,17 +94,8 @@ impl Command {
                 "ping" => Ok(Command::Ping),
                 "about" => Ok(Command::About),
                 "coins" => {
-                    // TODO User
-                    let from_user = message.user.id;
-                    let channel_id = message.channel.id;
-                    let operation = Operation::GetAllBalances;
-                    let transaction = Transaction {
-                        from_user,
-                        server_id,
-                        channel_id,
-                        operation,
-                    };
-                    Ok(Command::Coin(transaction))
+		    let channel_id = message.channel.id;
+		    Ok(Command::GetAllBalances { server_id, channel_id })
                 }
                 "daily" => {
                     trace!("request daily");

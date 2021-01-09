@@ -53,7 +53,6 @@ pub enum Operation {
         to_user: UserId,
         amount: i64,
     },
-    GetAllBalances,
     GetUserBalance,
     /// Dump items table
     GetAllItems,

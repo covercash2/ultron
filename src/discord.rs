@@ -52,6 +52,7 @@ pub async fn run<S: AsRef<str>>(handler: Handler, token: S) -> Result<()> {
 pub enum Output {
     Say(String),
     DailyResponse,
+    CoinBalances(Vec<(String, i64)>),
     BadDailyResponse {
         next_epoch: DateTime<Utc>,
     },
@@ -168,8 +169,8 @@ impl Handler {
 
         let receipt = self.send_transaction(transaction).await?;
 
-	let items = receipt.items()?.cloned().collect();
-	Ok(items)
+        let items = receipt.items()?.cloned().collect();
+        Ok(items)
     }
 
     /// get the user balance from the database
@@ -184,15 +185,15 @@ impl Handler {
         };
 
         let receipt = self.send_transaction(transaction).await?;
-	let accounts =receipt
-	    .accounts()?
-	    .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
-	    .ok_or(Error::ReceiptProcess(format!(
-		"no balance found for user: {:?}",
-		receipt
-	    )))?;
+        let accounts = receipt
+            .accounts()?
+            .find_map(|(id, balance)| if id == &user_id { Some(*balance) } else { None })
+            .ok_or(Error::ReceiptProcess(format!(
+                "no balance found for user: {:?}",
+                receipt
+            )))?;
 
-	Ok(accounts)
+        Ok(accounts)
     }
 
     /// Send a transaction to the bank thread.
@@ -214,10 +215,6 @@ impl Handler {
             Command::Help => Ok(Some(Output::Help)),
             Command::Ping => Ok(Some(Output::Say(commands::PING.to_owned()))),
             Command::About => Ok(Some(Output::Say(commands::ABOUT.to_owned()))),
-            Command::Coin(transaction) => {
-                let receipt = self.send_transaction(transaction).await?;
-                self.process_receipt(context, receipt, server_id).await
-            }
             Command::Gamble(gamble) => {
                 let ultron_id = *self.user_id.as_u64();
                 let user_id = gamble.player_id;
@@ -264,7 +261,7 @@ impl Handler {
                                 };
 
                                 let _receipt = self.send_transaction(transaction).await?;
-				Ok(Some(Output::Gamble(gamble_output)))
+                                Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Lose => {
                                 let from_user = (*player_id).into();
@@ -278,7 +275,7 @@ impl Handler {
                                 };
 
                                 let _receipt = self.send_transaction(transaction).await?;
-				Ok(Some(Output::Gamble(gamble_output)))
+                                Ok(Some(Output::Gamble(gamble_output)))
                             }
                             GambleState::Draw => Ok(Some(Output::Gamble(gamble_output))),
                             GambleState::Waiting => {
@@ -348,86 +345,36 @@ impl Handler {
                     .await
                     .map(|_| None) // no output for a successful tip
             }
-            Command::Untip { server_id, from_user, to_user } => {
-		coins::untip(&self.db, server_id, from_user, to_user)
-		    .await
-		    .map(|_| None)
-	    }
-        }
-    }
-
-    pub async fn process_receipt(
-        &self,
-        context: &Context,
-        receipt: Receipt,
-        server_id: u64,
-    ) -> Result<Option<Output>> {
-        let user_id = receipt.transaction.from_user;
-        let operation = &receipt.transaction.operation;
-        match operation {
-            Operation::GetAllBalances => {
-                let mut account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
-                if account_results.is_empty() {
-                    return Ok(Some(Output::Say(
-                        "Coin transactions have yet to occur on this channel".to_owned(),
-                    )));
-                }
-
-                account_results.sort_by(|(_, amount0), (_, amount1)| amount1.cmp(amount0));
-                let mut output = String::new();
-                for (id, amount) in account_results.iter().take(10) {
-                    let user_id: UserId = (*id).into();
-                    let user = user_id.to_user(&context.http).await?;
-                    let name = user
-                        .nick_in(&context.http, server_id)
-                        .await
-                        .unwrap_or(user.name);
-                    output.push_str(&format!("`{:04}`🪙\t{}\n", amount, name));
-                }
-                Ok(Some(output.into()))
-            }
-            Operation::Transfer {
-                to_user, amount, ..
+            Command::Untip {
+                server_id,
+                from_user,
+                to_user,
+            } => coins::untip(&self.db, server_id, from_user, to_user)
+                .await
+                .map(|_| None),
+            Command::GetAllBalances {
+                server_id,
+                channel_id,
             } => {
-                debug!("transfer complete");
-                let account_results: Vec<&(u64, i64)> = receipt.accounts()?.collect();
+		let accounts = coins::all_balances(&self.db, server_id, channel_id).await?;
 
-                let from_user = user_id;
-                let to_user = *to_user;
-                let amount = *amount;
+		// TODO stream?
+		let mut balances: Vec<(String, i64)> = Vec::new();
+		for account in accounts {
+		    // TODO rethink this
+		    // this only fails when the user_id String <-> u64 translation fails,
+		    // so hopefully never
+		    let user_id = account.user_id()?; 
+		    let nick = user_nick(context, server_id, user_id.into()).await.unwrap_or_else(|_| {
+			warn!("unable to get user nick or user name, falling back to 'User'");
+			"User".to_owned()
+		    });
+		    let balance: i64 = account.balance.into();
+		    balances.push((nick, balance))
+		}
 
-                let to_balance = *account_results
-                    .iter()
-                    .find(|(user_id, _balance)| user_id == &to_user)
-                    .map(|(_user_id, balance)| balance)
-                    .ok_or(Error::ReceiptProcess(
-                        "unable to find sender account in transaction receipt".to_owned(),
-                    ))?;
-                let from_balance = *account_results
-                    .iter()
-                    .find(|(user_id, _balance)| user_id == &from_user)
-                    .map(|(_user_id, balance)| balance)
-                    .ok_or(Error::ReceiptProcess(
-                        "unable to find receiver account in transaction receipt".to_owned(),
-                    ))?;
-
-                Ok(Some(Output::TransferSuccess {
-                    to_user,
-                    to_balance,
-                    from_user,
-                    from_balance,
-                    amount,
-                }))
-            }
-            Operation::GetUserBalance { .. } => {
-                // TODO raw balance query response
-                Err(Error::ReceiptProcess(
-                    "no message implementation ready for user balance".to_owned(),
-                ))
-            }
-            Operation::GetAllItems => {
-                todo!()
-            }
+		Ok(Some(Output::CoinBalances(balances)))
+	    }
         }
     }
 
@@ -622,6 +569,11 @@ impl EventHandler for Handler {
                     error!("error sending inventory response: {:?}", err);
                 }
             }
+            Output::CoinBalances(balances) => {
+		if let Err(err) = messages::coin_balances(discord_channel, &ctx.http, balances).await {
+		    error!("error sending user balances to discord: {:?}", err)
+		}
+	    }
         }
     }
 
@@ -705,6 +657,19 @@ async fn add_inventory_item(
 
     db.transaction(|db| db.add_inventory_item(inventory_item).map_err(Into::into))
         .await
+}
+
+async fn user_nick(
+    context: &Context,
+    server_id: u64,
+    user_id: UserId,
+) -> Result<String> {
+    let user = user_id.to_user(&context.http).await?;
+    let ret = user.nick_in(&context.http, server_id).await.unwrap_or_else(|| {
+	info!("could not get nick for user: {}\nfalling back to account name", user.name);
+	user.name
+    });
+    Ok(ret)
 }
 
 async fn handle_shop_reaction(

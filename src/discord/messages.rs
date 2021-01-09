@@ -73,6 +73,26 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
         .map_err(Into::into)
 }
 
+/// print user balances
+pub async fn coin_balances(channel: ChannelId, pipe: &Http, balances: Vec<(String, i64)>) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.title("The Accounts");
+                embed.color(Colour::DARK_GOLD);
+
+		for (name, balance) in balances {
+		    embed.field(name, format!("{}", balance), false);
+		}
+
+                embed
+            });
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
 pub async fn daily_response(channel: ChannelId, pipe: &Http, balance: i64) -> Result<Message> {
     channel
         .send_message(&pipe, |msg| {
