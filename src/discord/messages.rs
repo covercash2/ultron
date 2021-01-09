@@ -59,12 +59,32 @@ pub async fn help_message(channel: ChannelId, pipe: &Http) -> Result<Message> {
 
                 embed.field(COINS_TITLE, COINS_DESCRIPTION, false);
 
-		embed.field(SHOP_TITLE, SHOP_DESCRIPTION, false);
+                embed.field(SHOP_TITLE, SHOP_DESCRIPTION, false);
 
                 embed.footer(|f| {
                     f.text("I am always watching");
                     f
                 });
+                embed
+            });
+            msg
+        })
+        .await
+        .map_err(Into::into)
+}
+
+/// print user balances
+pub async fn coin_balances(channel: ChannelId, pipe: &Http, balances: Vec<(String, i64)>) -> Result<Message> {
+    channel
+        .send_message(&pipe, |msg| {
+            msg.embed(|embed| {
+                embed.title("The Accounts");
+                embed.color(Colour::LIGHTER_GREY);
+
+		for (name, balance) in balances {
+		    embed.field(name, format!("{}🪙", balance), false);
+		}
+
                 embed
             });
             msg
@@ -398,20 +418,20 @@ pub async fn inventory(channel: ChannelId, pipe: &Http, items: &Vec<Item>) -> Re
     channel
         .send_message(&pipe, |msg| {
             msg.embed(|embed| {
-		if items.is_empty() {
-		    embed.title("You have nothing");
-		} else {
-		    embed.title("Your items");
-		    embed.color(Colour::ROSEWATER);
+                if items.is_empty() {
+                    embed.title("You have nothing");
+                } else {
+                    embed.title("Your items");
+                    embed.color(Colour::ROSEWATER);
 
-		    for item in items {
-			embed.field(
-			    format!("{} {}", item.emoji, item.name),
-			    &item.description,
-			    true,
-			);
-		    }
-		}
+                    for item in items {
+                        embed.field(
+                            format!("{} {}", item.emoji, item.name),
+                            &item.description,
+                            true,
+                        );
+                    }
+                }
 
                 embed
             });

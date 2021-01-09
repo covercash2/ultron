@@ -5,7 +5,7 @@ use db::Db;
 use dotenv::dotenv;
 use log::*;
 
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use serenity::http::Http;
 
 mod logger;
 
@@ -20,7 +20,7 @@ mod discord;
 mod gambling;
 mod tokens;
 
-use coins::{bank_loop, Bank, DailyLog, Receipt, Transaction, TransactionSender};
+use coins::DailyLog;
 use discord::Handler;
 use tokens::load_token;
 
@@ -47,22 +47,18 @@ async fn main() {
 
     let discord_token = load_token(tokens::DISCORD_TOKEN).expect("unable to load discord token");
 
-    let (transaction_sender, transaction_receiver): (Sender<Transaction>, Receiver<Transaction>) =
-        channel(100);
-    let (receipt_sender, receipt_receiver): (Sender<Receipt>, Receiver<Receipt>) = channel(100);
+    let http = Http::new_with_token(&discord_token);
 
-    let db = Db::open(&database_url).expect("unable to open database connection");
+    let ultron_id = http
+        .get_current_application_info()
+        .await
+        .map(|info| info.id)
+        .expect("unable to get discord application info");
+
+    let db = Db::open(&database_url).expect("unable to open database connection").into();
     let daily_log = DailyLog::load().await.expect("unable to load daily log");
 
-    let bank_channel = TransactionSender::new(transaction_sender, receipt_receiver);
-
-    let event_handler = Handler::new(db, daily_log, bank_channel);
-
-    let bank = Bank::load(database_url)
-        .await
-        .expect("unable to load bank file");
-
-    let _bank_thread = tokio::task::spawn(bank_loop(bank, transaction_receiver, receipt_sender));
+    let event_handler = Handler::new(db, daily_log, ultron_id);
 
     if let Err(err) = discord::run(event_handler, discord_token).await {
         error!("error running discord client: {:?}", err);
