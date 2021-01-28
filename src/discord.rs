@@ -319,6 +319,9 @@ impl Handler {
 
                 Ok(Some(Output::CoinBalances(balances)))
             }
+            Command::CopyPasta { text } => {
+		Ok(Some(Output::Say(text)))
+	    }
         }
     }
 
