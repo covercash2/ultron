@@ -13,13 +13,8 @@ use crate::gambling::Prize;
 use crate::gambling::{Gamble, Game};
 
 const TIP_EMOJIS: &[&str] = &[
-    "🪙",
-    "👍",
-    "🔥", // fire
-    "UP",
-    "CRYN",
-    "BADASS",
-    "LAUGH"
+    "🪙", "👍", "🔥", // fire
+    "UP", "CRYN", "BADASS", "LAUGH",
 ];
 
 pub const PING: &'static str = "hello";
@@ -32,6 +27,9 @@ Many computer users run a modified version of the GNU system every day, without 
 There really is a Linux, and these people are using it, but it is just a part of the system they use. Linux is the kernel: the program in the system that allocates the machine's resources to the other programs that you run. The kernel is an essential part of an operating system, but useless by itself; it can only function in the context of a complete operating system. Linux is normally used in combination with the GNU operating system: the whole system is basically GNU with Linux added, or GNU/Linux. All the so-called \"Linux\" distributions are really distributions of GNU/Linux.
 ";
 
+const GOOGLERS: &'static str = "The key point here is our programmers are Googlers, they’re not researchers. They’re typically, fairly young, fresh out of school, probably learned Java, maybe learned C or C++, probably learned Python. They’re not capable of understanding a brilliant language but we want to use them to build good software. So, the language that we give them has to be easy for them to understand and easy to adopt.";
+const RUST: &'static str = "Rust has zero-cost abstractions, move semantics, guaranteed memory safety, threads without data races, trait-based generics, pattern matching, type inference, minimal runtime and efficient C bindings.";
+
 /// All the possible server commands
 #[derive(Debug)]
 pub enum Command {
@@ -42,27 +40,27 @@ pub enum Command {
     /// Print info about this bot
     About,
     GetAllBalances {
-	server_id: u64,
-	channel_id: u64,
+        server_id: u64,
+        channel_id: u64,
     },
     Transfer {
-	from_user: u64,
-	to_user: u64,
-	amount: i64,
+        from_user: u64,
+        to_user: u64,
+        amount: i64,
     },
     Daily {
         server_id: u64,
         user_id: u64,
     },
     Tip {
-	server_id: u64,
-	from_user: u64,
-	to_user: u64,
+        server_id: u64,
+        from_user: u64,
+        to_user: u64,
     },
     Untip {
-	server_id: u64,
-	from_user: u64,
-	to_user: u64,
+        server_id: u64,
+        from_user: u64,
+        to_user: u64,
     },
     Gamble(Gamble),
     /// Show available items
@@ -73,7 +71,7 @@ pub enum Command {
         user_id: u64,
     },
     CopyPasta {
-	text: String,
+        text: String,
     },
     None,
 }
@@ -104,8 +102,11 @@ impl Command {
                 "ping" => Ok(Command::Ping),
                 "about" => Ok(Command::About),
                 "coins" => {
-		    let channel_id = message.channel.id;
-		    Ok(Command::GetAllBalances { server_id, channel_id })
+                    let channel_id = message.channel.id;
+                    Ok(Command::GetAllBalances {
+                        server_id,
+                        channel_id,
+                    })
                 }
                 "daily" => {
                     trace!("request daily");
@@ -133,12 +134,18 @@ impl Command {
                     .ok_or(Error::CommandParse(format!("expected 2 args: {:?}", args)))?;
                 match command_str {
                     "gamble" => parse_gamble(user_id, arg).await,
-		    "copypasta" => {
-			match *arg {
-			    "linux" => Ok(Command::CopyPasta { text: GNU_PLUS_LINUX.to_owned() }),
-			    _ => Err(Error::CommandParse("unknown copypasta".to_owned()))
-			}
-		    }
+                    "copypasta" => match *arg {
+                        "linux" => Ok(Command::CopyPasta {
+                            text: GNU_PLUS_LINUX.to_owned(),
+                        }),
+                        "googlers" => Ok(Command::CopyPasta {
+                            text: GOOGLERS.to_owned(),
+                        }),
+                        "rust" => Ok(Command::CopyPasta {
+                            text: RUST.to_owned(),
+                        }),
+                        _ => Err(Error::CommandParse("unknown copypasta".to_owned())),
+                    },
                     _ => Err(Error::UnknownCommand(format!(
                         "unknown 2 arg command: {}",
                         content
@@ -154,8 +161,8 @@ impl Command {
                         content
                     )));
                 } else {
-		    parse_give(&message, args)
-		}
+                    parse_give(&message, args)
+                }
             }
             _ => Err(Error::UnknownCommand(format!(
                 "command has too many args: {}",
@@ -178,10 +185,12 @@ impl Command {
         )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-	    debug!("tip parsed");
-	    Ok(Command::Tip {
-		server_id, from_user, to_user
-	    })
+            debug!("tip parsed");
+            Ok(Command::Tip {
+                server_id,
+                from_user,
+                to_user,
+            })
         } else {
             Ok(Command::None)
         }
@@ -201,10 +210,12 @@ impl Command {
         )?;
 
         if TIP_EMOJIS.contains(&emoji_string.as_str()) {
-	    debug!("untip parsed");
-	    Ok(Command::Untip {
-		server_id, from_user, to_user
-	    })
+            debug!("untip parsed");
+            Ok(Command::Untip {
+                server_id,
+                from_user,
+                to_user,
+            })
         } else {
             Ok(Command::None)
         }
@@ -277,7 +288,11 @@ fn parse_give(message: &Message, args: &[&str]) -> Result<Command> {
         .try_into()
         .map_err(|err| Error::CommandParse(format!("amount integer overflowed: {:?}", err)))?;
 
-    Ok(Command::Transfer { from_user, to_user, amount })
+    Ok(Command::Transfer {
+        from_user,
+        to_user,
+        amount,
+    })
 }
 
 fn reaction_string(reaction: ReactionType) -> Option<String> {
