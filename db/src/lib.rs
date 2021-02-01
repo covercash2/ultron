@@ -7,6 +7,8 @@ use diesel::{
 
 use std::{convert::TryInto, fmt};
 
+use log::*;
+
 mod schema;
 
 mod accounts;
@@ -258,6 +260,11 @@ impl Db {
         items::update(&self.connection, item)
     }
 
+    pub fn delete_item(&self, id: u64) -> Result<()> {
+	let id = id.try_into()?;
+	items::delete(&self.connection, &id)
+    }
+
     pub fn dump_inventory(&self) -> Result<Vec<InventoryItem>> {
         inventory::show_all(&self.connection)
     }
@@ -277,7 +284,7 @@ impl Db {
                 .select(schema::bank_accounts::dsl::balance)
                 .first::<i32>(&self.connection)?;
 
-            if account_balance > price {
+            if account_balance >= price {
                 inventory::add_item(&self.connection, inventory_item)?;
                 diesel::update(account)
                     .set(
@@ -321,7 +328,7 @@ impl Db {
         let server = server.to_string();
         let user = user.to_string();
         let item: i32 = item.try_into()?;
-        inventory::user_has_item(&self.connection, server, user, item)
+        inventory::user_has_item(&self.connection, &server, &user, item)
     }
 
     pub fn delete_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
@@ -335,6 +342,46 @@ impl Db {
                 ))),
             }
         })
+    }
+
+    pub fn work(&self, server: u64, user: u64) -> Result<()> {
+	let server_s = server.to_string();
+	let user_s = user.to_string();
+
+	self.connection.transaction(|| {
+	    let is_beggar = inventory::user_has_item(&self.connection, &server_s, &user_s, items::ID_BEGGAR_CUP)?;
+
+	    if is_beggar {
+		self.beg(server, user)?;
+	    }
+
+	    Ok(())
+	})
+    }
+
+    fn beg(&self, server: u64, user: u64) -> Result<()> {
+	self.connection.transaction(|| {
+	    let highest_account = accounts::highest(&self.connection, server)?;
+	    let user_account = accounts::user_account(&self.connection, server, user)?;
+
+	    // TODO error if the user is the richest person
+
+	    let from_id = highest_account.user_id()?;
+	    let to_id = user_account.user_id()?;
+
+	    let amount = 5;
+
+	    debug!("transfering {} to {:?} from {:?}", amount, user_account, highest_account);
+
+	    accounts::transfer_coins(&self.connection, &server, &from_id, &to_id, &amount)?;
+
+	    if user_account.balance + 5 > 100 {
+		let item = InventoryItem::new(&server, &user, &items::ID_BEGGAR_CUP)?;
+		inventory::delete_item(&self.connection, item)?;
+	    }
+
+	    Ok(())
+	})
     }
 }
 

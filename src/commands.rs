@@ -73,6 +73,7 @@ pub enum Command {
     CopyPasta {
         text: String,
     },
+    Work,
     None,
 }
 
@@ -123,6 +124,10 @@ impl Command {
                     trace!("inventory request");
                     Ok(Command::Inventory { server_id, user_id })
                 }
+		"work" => {
+		    trace!("work request");
+		    Ok(Command::Work)
+		}
                 _ => Err(Error::UnknownCommand(format!(
                     "unknown command: {}",
                     command_str

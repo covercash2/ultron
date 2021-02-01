@@ -162,6 +162,7 @@ impl Handler {
     pub async fn process_command(
         &self,
         server_id: u64,
+        user_id: u64,
         context: &Context,
         command: Command,
     ) -> Result<Option<Output>> {
@@ -319,9 +320,14 @@ impl Handler {
 
                 Ok(Some(Output::CoinBalances(balances)))
             }
-            Command::CopyPasta { text } => {
-		Ok(Some(Output::Say(text)))
-	    }
+            Command::CopyPasta { text } => Ok(Some(Output::Say(text))),
+            Command::Work => {
+                self.db
+                    .transaction(|db| db.work(server_id, user_id).map_err(Into::into))
+                    .await?;
+
+                Ok(Some(Output::Say("it worked".to_owned())))
+            }
         }
     }
 
@@ -382,7 +388,10 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(message.server.id, &ctx, command).await {
+        let output = match self
+            .process_command(message.server.id, message.user.id, &ctx, command)
+            .await
+        {
             Ok(Some(output)) => output,
             Ok(None) => {
                 debug!("command finished with no output");
@@ -519,6 +528,7 @@ impl EventHandler for Handler {
 
     async fn reaction_add(&self, ctx: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
+	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction(&ctx, &reaction).await {
             Ok(Command::None) => {
@@ -532,7 +542,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let output = match self.process_command(server_id, &ctx, command).await {
+        let output = match self.process_command(server_id, user_id, &ctx, command).await {
             Ok(Some(output)) => output,
             Ok(None) => {
                 trace!("command finished with no output");
@@ -549,6 +559,7 @@ impl EventHandler for Handler {
 
     async fn reaction_remove(&self, context: Context, reaction: Reaction) {
         let server_id = *reaction.guild_id.expect("unable to get guild id").as_u64();
+	let user_id = *reaction.user_id.expect("unable to get user id").as_u64();
 
         let command = match Command::parse_reaction_removed(&context, &reaction).await {
             Ok(command) => command,
@@ -558,7 +569,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let _output = match self.process_command(server_id, &context, command).await {
+        let _output = match self.process_command(server_id, user_id, &context, command).await {
             Ok(receipt) => receipt,
             Err(err) => {
                 error!("unable to process command: {:?}", err);
@@ -644,6 +655,7 @@ async fn handle_shop_reaction(
                     "User".to_owned()
                 };
 
+		debug!("adding item to inventory: {} {}", user_nick, item.id);
                 match add_inventory_item(&db, server_id, user_id, &item.id).await {
                     Ok(()) => messages::item_purchased(reaction.channel_id, http, user_nick, item)
                         .await

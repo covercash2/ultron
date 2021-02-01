@@ -372,8 +372,9 @@ fn main() {
                     Record::Balance(_) => {
                         todo!()
                     }
-                    Record::Item(_) => {
-                        todo!()
+                    Record::Item(item) => {
+			let id = item.id.try_into().expect("unable to convert id");
+			db.delete_item(id).expect("unable to delete item in db");
                     }
                 },
             }

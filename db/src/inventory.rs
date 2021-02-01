@@ -46,8 +46,8 @@ pub fn user_inventory<C: Connection<Backend = Backend>>(
 
 pub fn user_has_item<C: Connection<Backend = Backend>>(
     connection: &C,
-    server: String,
-    user: String,
+    server: &String,
+    user: &String,
     item: i32,
 ) -> Result<bool> {
     match inventory.find((server, user, item)).first::<InventoryItem>(connection) {

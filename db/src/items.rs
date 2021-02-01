@@ -7,6 +7,9 @@ use crate::schema::{self, items::dsl::*};
 use crate::model::{Item, UpdateItem};
 use crate::Backend;
 
+pub const ID_MEMBER_CARD: i32 = 1;
+pub const ID_BEGGAR_CUP: i32 = 2;
+
 pub fn show_all<C: Connection<Backend = Backend>>(connection: &C) -> Result<Vec<Item>> {
     items.load::<Item>(connection).map_err(Into::into)
 }
@@ -38,6 +41,18 @@ where
         Err(Error::NotFound("item not found".to_owned()))
     } else {
         Ok(())
+    }
+}
+
+pub fn delete<C: Connection<Backend = Backend>>(connection: &C, item_id: &i32) -> Result<()> {
+    let item = items.find(item_id);
+    match diesel::delete(item).execute(connection) {
+	Ok(n) => if n == 0 {
+	    Ok(())
+	} else {
+	    Err(Error::NotFound("no item found".to_owned()))
+	}
+	Err(err) => Err(err.into())
     }
 }
 

@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use diesel::{prelude::*, Connection};
+use diesel::{dsl::max, prelude::*, Connection};
 
 use crate::{
     error::{Error, Result},
@@ -40,7 +40,7 @@ pub fn transfer_coins<C: Connection<Backend = Backend>>(
             .find((&server_s, &from_user_s))
             .first(connection)?;
 
-	eprintln!("from_balance: {:?}", from_balance);
+        eprintln!("from_balance: {:?}", from_balance);
 
         if from_balance < to_amount {
             Err(Error::InsufficientFunds)
@@ -79,4 +79,29 @@ pub fn transfer_coins<C: Connection<Backend = Backend>>(
             }
         }
     })
+}
+
+pub fn highest<C: Connection<Backend = Backend>>(
+    connection: &C,
+    server: u64,
+) -> Result<BankAccount> {
+    let server = server.to_string();
+    bank_accounts
+        .filter(server_id.eq(server))
+        .order(balance.desc())
+        .first(connection)
+        .map_err(Into::into)
+}
+
+pub fn user_account<C: Connection<Backend = Backend>>(
+    connection: &C,
+    server: u64,
+    user: u64,
+) -> Result<BankAccount> {
+    let server = server.to_string();
+    let user = user.to_string();
+    bank_accounts
+        .find((server, user))
+        .first(connection)
+        .map_err(Into::into)
 }
