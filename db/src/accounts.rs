@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use diesel::{dsl::max, prelude::*, Connection};
+use diesel::{prelude::*, Connection};
 
 use crate::{
     error::{Error, Result},

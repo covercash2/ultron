@@ -1,6 +1,9 @@
-use diesel::{Connection, result::Error as ResultError, prelude::*};
+use diesel::{prelude::*, result::Error as ResultError, Connection};
 
-use crate::{error::{Error, Result}, model::Item};
+use crate::{
+    error::{Error, Result},
+    model::Item,
+};
 
 use crate::schema::{self, inventory::dsl::*};
 
@@ -23,9 +26,9 @@ pub fn add_item<C: Connection<Backend = Backend>>(
         .execute(connection)
         .map_err(|err| match err {
             ResultError::DatabaseError(diesel::result::DatabaseErrorKind::UniqueViolation, _) => {
-		Error::RecordExists
-	    }
-	    _ => err.into()
+                Error::RecordExists
+            }
+            _ => err.into(),
         })
         .map_err(Into::into)
 }
@@ -35,7 +38,8 @@ pub fn user_inventory<C: Connection<Backend = Backend>>(
     server: String,
     user: String,
 ) -> Result<Vec<Item>> {
-    let item_ids = inventory.select(item_id)
+    let item_ids = inventory
+        .select(item_id)
         .filter(server_id.eq(&server))
         .filter(user_id.eq(&user));
     schema::items::table
@@ -50,26 +54,36 @@ pub fn user_has_item<C: Connection<Backend = Backend>>(
     user: &String,
     item: i32,
 ) -> Result<bool> {
-    match inventory.find((server, user, item)).first::<InventoryItem>(connection) {
-	Ok(_) => Ok(true),
-	Err(e) => {
-	    match e {
-		ResultError::NotFound => Ok(false),
-		_ => Err(e.into())
-	    }
-	}
+    match inventory
+        .find((server, user, item))
+        .first::<InventoryItem>(connection)
+    {
+        Ok(_) => Ok(true),
+        Err(e) => match e {
+            ResultError::NotFound => Ok(false),
+            _ => Err(e.into()),
+        },
     }
 }
 
 pub fn delete_item<C: Connection<Backend = Backend>>(
     connection: &C,
-    inventory_item: InventoryItem
-) -> Result<usize> {
+    inventory_item: InventoryItem,
+) -> Result<()> {
     let server = inventory_item.server_id()?.to_string();
     let user = inventory_item.user_id()?.to_string();
     let item = inventory_item.item_id;
     let item = inventory.find((&server, &user, &item));
-    diesel::delete(item)
-        .execute(connection)
-        .map_err(Into::into)
+    let num_records = diesel::delete(item).execute(connection)?;
+
+    match num_records {
+        0 => Err(Error::NotFound(
+            "no inventory item found to delete".to_owned(),
+        )),
+        1 => Ok(()),
+        n => Err(Error::Unexpected(format!(
+            "unexpected number of records returned:{}",
+            n
+        ))),
+    }
 }

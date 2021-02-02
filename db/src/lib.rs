@@ -261,8 +261,8 @@ impl Db {
     }
 
     pub fn delete_item(&self, id: u64) -> Result<()> {
-	let id = id.try_into()?;
-	items::delete(&self.connection, &id)
+        let id = id.try_into()?;
+        items::delete(&self.connection, &id)
     }
 
     pub fn dump_inventory(&self) -> Result<Vec<InventoryItem>> {
@@ -332,56 +332,64 @@ impl Db {
     }
 
     pub fn delete_inventory_item(&self, inventory_item: InventoryItem) -> Result<()> {
-        inventory::delete_item(&self.connection, inventory_item).and_then(|num_records| {
-            match num_records {
-                0 => Err(Error::NotFound("no record found to delete".to_owned())),
-                1 => Ok(()),
-                n => Err(Error::Unexpected(format!(
-                    "unexpected number of records returned:{}",
-                    n
-                ))),
-            }
-        })
+        inventory::delete_item(&self.connection, inventory_item)
     }
 
     pub fn work(&self, server: u64, user: u64) -> Result<()> {
-	let server_s = server.to_string();
-	let user_s = user.to_string();
+        let server_s = server.to_string();
+        let user_s = user.to_string();
 
-	self.connection.transaction(|| {
-	    let is_beggar = inventory::user_has_item(&self.connection, &server_s, &user_s, items::ID_BEGGAR_CUP)?;
+        self.connection.transaction(|| {
+            let is_beggar = inventory::user_has_item(
+                &self.connection,
+                &server_s,
+                &user_s,
+                items::ID_BEGGAR_CUP,
+            )?;
 
-	    if is_beggar {
-		self.beg(server, user)?;
-	    }
+            if is_beggar {
+                self.beg(server, user)?;
+            }
 
-	    Ok(())
-	})
+            Ok(())
+        })
     }
 
     fn beg(&self, server: u64, user: u64) -> Result<()> {
-	self.connection.transaction(|| {
-	    let highest_account = accounts::highest(&self.connection, server)?;
-	    let user_account = accounts::user_account(&self.connection, server, user)?;
+        self.connection.transaction(|| {
+            let from_account = accounts::highest(&self.connection, server)?;
+            let to_account =
+                accounts::user_account(&self.connection, server, user).and_then(|account| {
+                    if account == from_account {
+                        Err(Error::Work(
+                            "Cannot beg. User has the most coins in the server".to_owned(),
+                        ))
+                    } else {
+                        Ok(account)
+                    }
+                })?;
 
-	    // TODO error if the user is the richest person
+            let from_id = from_account.user_id()?;
+            let to_id = to_account.user_id()?;
 
-	    let from_id = highest_account.user_id()?;
-	    let to_id = user_account.user_id()?;
+	    // TODO magic numbers
+            let amount: i32 = 5;
+	    let max_beggar_balance = 100;
 
-	    let amount = 5;
+            debug!(
+                "transfering {} to {:?} from {:?}",
+                amount, to_account, from_account
+            );
 
-	    debug!("transfering {} to {:?} from {:?}", amount, user_account, highest_account);
+            accounts::transfer_coins(&self.connection, &server, &from_id, &to_id, &amount.into())?;
 
-	    accounts::transfer_coins(&self.connection, &server, &from_id, &to_id, &amount)?;
+            if to_account.balance + amount > max_beggar_balance {
+                let item = InventoryItem::new(&server, &user, &items::ID_BEGGAR_CUP)?;
+                inventory::delete_item(&self.connection, item)?;
+            }
 
-	    if user_account.balance + 5 > 100 {
-		let item = InventoryItem::new(&server, &user, &items::ID_BEGGAR_CUP)?;
-		inventory::delete_item(&self.connection, item)?;
-	    }
-
-	    Ok(())
-	})
+            Ok(())
+        })
     }
 }
 

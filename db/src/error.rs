@@ -18,6 +18,7 @@ pub enum Error {
     RecordExists,
     InsufficientFunds,
     SelfTip,
+    Work(String),
 }
 
 impl From<TryFromIntError> for Error {
