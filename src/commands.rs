@@ -30,6 +30,8 @@ There really is a Linux, and these people are using it, but it is just a part of
 const GOOGLERS: &'static str = "The key point here is our programmers are Googlers, they’re not researchers. They’re typically, fairly young, fresh out of school, probably learned Java, maybe learned C or C++, probably learned Python. They’re not capable of understanding a brilliant language but we want to use them to build good software. So, the language that we give them has to be easy for them to understand and easy to adopt.";
 const RUST: &'static str = "Rust has zero-cost abstractions, move semantics, guaranteed memory safety, threads without data races, trait-based generics, pattern matching, type inference, minimal runtime and efficient C bindings.";
 
+const RICK_AND_MORTY: &'static str = "To be fair, you have to have a very high IQ to understand Rick and Morty. The humour is extremely subtle, and without a solid grasp of theoretical physics most of the jokes will go over a typical viewer's head. There's also Rick's nihilistic outlook, which is deftly woven into his characterisation- his personal philosophy draws heavily from Narodnaya Volya literature, for instance. The fans understand this stuff; they have the intellectual capacity to truly appreciate the depths of these jokes, to realise that they're not just funny- they say something deep about LIFE. As a consequence people who dislike Rick & Morty truly ARE idiots- of course they wouldn't appreciate, for instance, the humour in Rick's existential catchphrase \"Wubba Lubba Dub Dub,\" which itself is a cryptic reference to Turgenev's Russian epic Fathers and Sons. I'm smirking right now just imagining one of those addlepated simpletons scratching their heads in confusion as Dan Harmon's genius wit unfolds itself on their television screens. What fools.. how I pity them. 😂";
+
 /// All the possible server commands
 #[derive(Debug)]
 pub enum Command {
@@ -81,94 +83,87 @@ impl Command {
     pub async fn parse_message(message: &Message) -> Result<Self> {
         let content = message.content.as_str();
         let server_id = message.server.id;
-
-        let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
-            args.split(' ').collect()
-        } else {
-            // command doesn't start with the control char
-            return Ok(Command::None);
-        };
-
-        let command_str: &str = match args.get(0) {
-            Some(command_str) => command_str,
-            None => return Ok(Command::None), // content == '!'
-        };
-
         let user_id = message.user.id;
 
-        match args.len() {
-            1 => match command_str {
-                "help" => Ok(Command::Help),
-                "ping" => Ok(Command::Ping),
-                "about" => Ok(Command::About),
-                "coins" => {
-                    let channel_id = message.channel.id;
-                    Ok(Command::GetAllBalances {
-                        server_id,
-                        channel_id,
-                    })
-                }
-                "daily" => {
-                    trace!("request daily");
-                    let server_id = message.server.id;
-                    let user_id = message.user.id;
+        // let args: Vec<&str> = if let Some(args) = content.strip_prefix('!') {
+        //     args.split(' ').collect()
+        // } else {
+        //     // command doesn't start with the control char
+        //     return Ok(Command::None);
+        // };
 
-                    Ok(Command::Daily { server_id, user_id })
-                }
-                "shop" => {
-                    info!("shop items requested");
-                    Ok(Command::Shop)
-                }
-                "inventory" => {
-                    trace!("inventory request");
-                    Ok(Command::Inventory { server_id, user_id })
-                }
-                _ => Err(Error::UnknownCommand(format!(
-                    "unknown command: {}",
-                    command_str
-                ))),
-            },
-            2 => {
-                let arg = args
-                    .get(1)
-                    .ok_or(Error::CommandParse(format!("expected 2 args: {:?}", args)))?;
-                match command_str {
-                    "gamble" => parse_gamble(user_id, arg).await,
-                    "copypasta" => match *arg {
-                        "linux" => Ok(Command::CopyPasta {
-                            text: GNU_PLUS_LINUX.to_owned(),
-                        }),
-                        "googlers" => Ok(Command::CopyPasta {
-                            text: GOOGLERS.to_owned(),
-                        }),
-                        "rust" => Ok(Command::CopyPasta {
-                            text: RUST.to_owned(),
-                        }),
-                        _ => Err(Error::CommandParse("unknown copypasta".to_owned())),
-                    },
-                    _ => Err(Error::UnknownCommand(format!(
-                        "unknown 2 arg command: {}",
-                        content
-                    ))),
-                }
-            }
-            3 => {
-                let (_, args) = args.split_at(1);
+        // let command_str: &str = match args.get(0) {
+        //     Some(command_str) => command_str,
+        //     None => return Ok(Command::None), // content == '!'
+        // };
 
-                if command_str != "give" {
-                    return Err(Error::UnknownCommand(format!(
-                        "unknown 3 arg command: {:?}",
-                        content
-                    )));
-                } else {
-                    parse_give(&message, args)
-                }
-            }
-            _ => Err(Error::UnknownCommand(format!(
-                "command has too many args: {}",
-                content
-            ))),
-        }
+	debug!("begin parse: {}", content);
+
+        let command_content: &str = if let Some(string) = content.strip_prefix('!') {
+            string
+        } else {
+	    trace!("not a command");
+            return Ok(Command::None); // not a command
+        };
+
+        let (command_str, args_str): (&str, &str) =
+            if let Some(str_tuple) = command_content.split_once(' ') {
+                str_tuple
+            } else {
+		// command with no arguments
+		(command_content, "")
+            };
+
+	debug!("command_str: {}, args_str: {}", command_str, args_str);
+
+	match command_str {
+	    "help" => Ok(Command::Help),
+	    "ping" => Ok(Command::Ping),
+	    "about" => Ok(Command::About),
+	    "coins" => {
+		let channel_id = message.channel.id;
+		Ok(Command::GetAllBalances {
+		    server_id,
+		    channel_id,
+		})
+	    }
+	    "daily" => {
+		trace!("request daily");
+		let server_id = message.server.id;
+		let user_id = message.user.id;
+
+		Ok(Command::Daily { server_id, user_id })
+	    }
+	    "shop" => {
+		info!("shop items requested");
+		Ok(Command::Shop)
+	    }
+	    "inventory" => {
+		trace!("inventory request");
+		Ok(Command::Inventory { server_id, user_id })
+	    }
+	    "gamble" => parse_gamble(user_id, args_str).await,
+	    "copypasta" => match args_str {
+		"linux" => Ok(Command::CopyPasta {
+		    text: GNU_PLUS_LINUX.to_owned(),
+		}),
+		"googlers" => Ok(Command::CopyPasta {
+		    text: GOOGLERS.to_owned(),
+		}),
+		"rust" => Ok(Command::CopyPasta {
+		    text: RUST.to_owned(),
+		}),
+		_ => Err(Error::CommandParse("unknown copypasta".to_owned())),
+	    },
+	    "give" => {
+		let args: Vec<&str> = args_str.split(' ').collect();
+		parse_give(&message, &args)
+	    }
+	    _ => Err(Error::UnknownCommand(format!(
+		"unknown command: {}",
+		command_str
+	    ))),
+	}
     }
 
     /// Parses an emoji reaction from the [`serenity`] Discord API

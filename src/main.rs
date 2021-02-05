@@ -1,4 +1,5 @@
 #![feature(async_closure)]
+#![feature(str_split_once)]
 use std::{env, path::PathBuf};
 
 use db::Db;
