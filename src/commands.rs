@@ -153,6 +153,9 @@ impl Command {
 		"rust" => Ok(Command::CopyPasta {
 		    text: RUST.to_owned(),
 		}),
+		"rick and morty" => Ok(Command::CopyPasta {
+		    text: RICK_AND_MORTY.to_owned(),
+		}),
 		_ => Err(Error::CommandParse("unknown copypasta".to_owned())),
 	    },
 	    "give" => {
