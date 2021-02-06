@@ -17,6 +17,7 @@ mod data;
 mod error;
 mod items;
 
+mod copypasta;
 mod discord;
 mod gambling;
 mod tokens;
