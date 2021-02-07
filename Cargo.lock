@@ -1676,6 +1676,7 @@ dependencies = [
  "dotenv",
  "fern",
  "hubcaps",
+ "lazy_static",
  "log",
  "rand",
  "serde",
