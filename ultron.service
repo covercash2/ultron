@@ -1,0 +1,15 @@
+[Unit]
+Description=ultron service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=ultron
+ExecStart=/usr/local/bin/ultron
+EnvironmentFile=/etc/ultron/env
+
+[Install]
+WantedBy=multi-user.target
