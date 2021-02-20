@@ -7,8 +7,8 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-ExecStart=/usr/local/bin/ultron
-EnvironmentFile=/etc/ultron/env
+ExecStart=/home/chrash/bin/ultron
+EnvironmentFile=/home/chrash/etc/ultron/env
 
 [Install]
 WantedBy=multi-user.target
