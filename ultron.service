@@ -1,0 +1,14 @@
+[Unit]
+Description=ultron service
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+ExecStart=/home/chrash/bin/ultron
+EnvironmentFile=/home/chrash/etc/ultron/env
+
+[Install]
+WantedBy=multi-user.target
