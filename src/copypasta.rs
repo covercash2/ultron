@@ -15,6 +15,8 @@ const RUST: &'static str = "Rust has zero-cost abstractions, move semantics, gua
 
 const RICK_AND_MORTY: &'static str = "To be fair, you have to have a very high IQ to understand Rick and Morty. The humour is extremely subtle, and without a solid grasp of theoretical physics most of the jokes will go over a typical viewer's head. There's also Rick's nihilistic outlook, which is deftly woven into his characterisation- his personal philosophy draws heavily from Narodnaya Volya literature, for instance. The fans understand this stuff; they have the intellectual capacity to truly appreciate the depths of these jokes, to realise that they're not just funny- they say something deep about LIFE. As a consequence people who dislike Rick & Morty truly ARE idiots- of course they wouldn't appreciate, for instance, the humour in Rick's existential catchphrase \"Wubba Lubba Dub Dub,\" which itself is a cryptic reference to Turgenev's Russian epic Fathers and Sons. I'm smirking right now just imagining one of those addlepated simpletons scratching their heads in confusion as Dan Harmon's genius wit unfolds itself on their television screens. What fools.. how I pity them. 😂";
 
+pub const OPEN_SOURCE_MAINTAINERS: &'static str = "Most maintainers start working on open source software because it’s fun and solves a problem they have. Many continue out of a sense of obligation instead of fun and over time this unpaid, increasingly non-fun work grinds them down. When they make a controversial decision and receive abuse for it, their friends and family start to ask them if open source is worth the grief.";
+
 lazy_static! {
     pub static ref COPYPASTAS: HashMap<String, String> = {
 	let mut map = HashMap::new();
@@ -22,6 +24,7 @@ lazy_static! {
 	map.insert(String::from("googlers"), GOOGLERS.to_owned());
 	map.insert(String::from("rust"), RUST.to_owned());
 	map.insert(String::from("rick and morty"), RICK_AND_MORTY.to_owned());
+	map.insert(String::from("open source maintainers"), OPEN_SOURCE_MAINTAINERS.to_owned());
 	map
     };
 }
