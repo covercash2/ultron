@@ -7,7 +7,7 @@ use serenity::model::channel::Reaction;
 use serenity::model::channel::ReactionType;
 
 use crate::chat::Message;
-use crate::copypasta::*;
+use crate::copypasta;
 use crate::data::UserId;
 use crate::error::{Error, Result};
 use crate::gambling::Prize;
@@ -116,21 +116,10 @@ impl Command {
 		Ok(Command::Inventory { server_id, user_id })
 	    }
 	    "gamble" => parse_gamble(user_id, args_str).await,
-	    "copypasta" => match args_str {
-		"linux" => Ok(Command::CopyPasta {
-		    text: GNU_PLUS_LINUX.to_owned(),
-		}),
-		"googlers" => Ok(Command::CopyPasta {
-		    text: GOOGLERS.to_owned(),
-		}),
-		"rust" => Ok(Command::CopyPasta {
-		    text: RUST.to_owned(),
-		}),
-		"rick and morty" => Ok(Command::CopyPasta {
-		    text: RICK_AND_MORTY.to_owned(),
-		}),
-		_ => Err(Error::CommandParse("unknown copypasta".to_owned())),
-	    },
+	    "copypasta" => match copypasta::get(args_str) {
+		Some(text) => Ok(Command::CopyPasta { text: text.clone() }),
+		None => Ok(Command::None),
+	    }
 	    "give" => {
 		let args: Vec<&str> = args_str.split(' ').collect();
 		parse_give(&message, &args)
