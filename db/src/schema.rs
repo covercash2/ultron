@@ -33,6 +33,13 @@ table! {
     }
 }
 
+table! {
+    optout (server_id, user_id) {
+        server_id -> Text,
+        user_id -> Text,
+    }
+}
+
 joinable!(inventory -> items (item_id));
 
 allow_tables_to_appear_in_same_query!(
@@ -40,4 +47,5 @@ allow_tables_to_appear_in_same_query!(
     channel_users,
     inventory,
     items,
+    optout,
 );
