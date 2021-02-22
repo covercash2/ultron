@@ -34,7 +34,7 @@ table! {
 }
 
 table! {
-    optout (server_id, user_id) {
+    optouts (server_id, user_id) {
         server_id -> Text,
         user_id -> Text,
     }
@@ -47,5 +47,5 @@ allow_tables_to_appear_in_same_query!(
     channel_users,
     inventory,
     items,
-    optout,
+    optouts,
 );
