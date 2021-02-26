@@ -411,8 +411,8 @@ fn main() {
                     Record::Item(_) => {
                         todo!()
                     }
-                    Record::Optout(_server_user) => {
-			todo!()
+                    Record::Optout(server_user) => {
+			db.optin(server_user.server_id, server_user.user_id).expect("unable to opt in user");
 		    }
                 },
             }
