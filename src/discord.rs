@@ -319,9 +319,25 @@ impl Handler {
 
                 Ok(Some(Output::CoinBalances(balances)))
             }
-            Command::CopyPasta { text } => {
-		Ok(Some(Output::Say(text)))
-	    }
+            Command::CopyPasta { text } => Ok(Some(Output::Say(text))),
+            Command::Optout { server_id, user_id } => self
+                .db
+                .transaction(|db| db.optout(server_id, user_id).map_err(Into::into))
+                .await
+                .map(|()| {
+                    Some(Output::Say(
+                        "You have opted not to be mentioned by ultron.".to_owned(),
+                    ))
+                }),
+            Command::Optin { server_id, user_id } => self
+                .db
+                .transaction(|db| db.optin(server_id, user_id).map_err(Into::into))
+                .await
+                .map(|()| {
+                    Some(Output::Say(
+                        "You have made a wise decision to join us".to_owned(),
+                    ))
+                }),
         }
     }
 

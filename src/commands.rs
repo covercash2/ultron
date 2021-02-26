@@ -64,6 +64,15 @@ pub enum Command {
     CopyPasta {
         text: String,
     },
+    Optout {
+	server_id: u64,
+	user_id: u64,
+    },
+    Optin {
+	server_id: u64,
+	user_id: u64,
+    },
+    // TODO Optin,
     None,
 }
 
@@ -123,6 +132,16 @@ impl Command {
 	    "give" => {
 		let args: Vec<&str> = args_str.split(' ').collect();
 		parse_give(&message, &args)
+	    }
+	    "optout" => {
+		let server_id = message.server.id;
+		let user_id = message.user.id;
+		Ok(Command::Optout { server_id, user_id })
+	    }
+	    "optin" => {
+		let server_id = message.server.id;
+		let user_id = message.user.id;
+		Ok(Command::Optin { server_id, user_id })
 	    }
 	    _ => Err(Error::UnknownCommand(format!(
 		"unknown command: {}",
