@@ -1,4 +1,4 @@
-use std::{convert::TryInto, env, num::TryFromIntError};
+use std::{convert::TryInto, env};
 
 use clap::Clap;
 use dotenv::dotenv;
@@ -111,6 +111,14 @@ enum Record {
     Item(Item),
     /// server_id, user_id, item_id
     InventoryItem(InventoryItem),
+    /// server_id, user_id
+    Optout(ServerUser),
+}
+
+#[derive(Clap)]
+struct ServerUser {
+    server_id: u64,
+    user_id: u64,
 }
 
 /// a user in the channel user log
@@ -187,6 +195,9 @@ impl Create {
                 db.add_inventory_item(inventory_item)
                     .expect("unable to add new inventory item");
             }
+            Record::Optout(server_user) => {
+		db.optout(server_user.server_id, server_user.user_id).expect("unable to optout user");
+	    }
         }
     }
 }
@@ -378,6 +389,9 @@ fn main() {
                         Record::InventoryItem(_) => {
                             println!("all inventory item attributes are primary keys and can't be updated");
                         }
+                        Record::Optout(_) => {
+			    println!("optouts contain only primary keys and can't be updated");
+			}
                     }
                 }
                 DbCommand::Delete(delete) => match delete.record {
@@ -397,6 +411,9 @@ fn main() {
                     Record::Item(_) => {
                         todo!()
                     }
+                    Record::Optout(_server_user) => {
+			todo!()
+		    }
                 },
             }
         }
