@@ -1,6 +1,6 @@
 use diesel::{Insertable, Queryable};
 
-use super::schema::{bank_accounts, channel_users, inventory, items};
+use super::schema::{bank_accounts, channel_users, inventory, items, optouts};
 
 use crate::error::Result;
 
@@ -30,6 +30,29 @@ pub struct ChannelUser {
     server_id: String,
     channel_id: String,
     user_id: String,
+}
+
+#[derive(Insertable, Queryable)]
+pub struct Optout {
+    server_id: String,
+    user_id: String,
+}
+
+impl Optout {
+    pub fn new(server: &u64, user: &u64) -> Self {
+        let server_id = server.to_string();
+        let user_id = user.to_string();
+
+        Optout { server_id, user_id }
+    }
+
+    pub fn server_id(&self) -> Result<u64> {
+        self.server_id.parse().map_err(Into::into)
+    }
+
+    pub fn user_id(&self) -> Result<u64> {
+        self.user_id.parse().map_err(Into::into)
+    }
 }
 
 impl ChannelUser {
@@ -96,15 +119,15 @@ pub struct InventoryItem {
 
 impl InventoryItem {
     pub fn new(server: &u64, user: &u64, item_id: &i32) -> Result<InventoryItem> {
-	let server_id = server.to_string();
-	let user_id = user.to_string();
-	let item_id = *item_id;
+        let server_id = server.to_string();
+        let user_id = user.to_string();
+        let item_id = *item_id;
 
-	Ok(InventoryItem {
-	    server_id,
-	    user_id,
-	    item_id,
-	})
+        Ok(InventoryItem {
+            server_id,
+            user_id,
+            item_id,
+        })
     }
 
     pub fn user_id(&self) -> Result<u64> {

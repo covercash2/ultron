@@ -6,7 +6,7 @@ use dotenv::dotenv;
 use db::{
     self,
     model::{
-        BankAccount, ChannelUser, InventoryItem as DbInventoryItem, Item as DbItem, UpdateItem,
+        Optout, BankAccount, ChannelUser, InventoryItem as DbInventoryItem, Item as DbItem, UpdateItem,
     },
     Db as Database,
 };
@@ -83,6 +83,8 @@ enum ReadOp {
     AllItems,
     /// dumb inventory table
     AllInventoryItems,
+    /// show all optout users
+    AllOptouts,
 }
 
 /// update a database
@@ -234,7 +236,27 @@ impl ReadOp {
                 let inventory_items = db.dump_inventory().expect("unable to get inventory items");
                 print_inventory_items(inventory_items);
             }
+            ReadOp::AllOptouts => {
+		let optouts = db.all_optouts().expect("unable to get optout users");
+		print_optouts(optouts);
+	    }
         }
+    }
+}
+
+fn print_optouts(optouts: Vec<Optout>) {
+    if optouts.len() == 0 {
+	println!("no optouts retrieved");
+    }
+    for optout in optouts {
+        let server_id = optout
+            .server_id()
+            .expect("unable to parse server id from db output");
+        let user_id = optout
+            .user_id()
+            .expect("unable to parse user id from db output");
+
+	println!("s#{} u#{}", server_id, user_id);
     }
 }
 
