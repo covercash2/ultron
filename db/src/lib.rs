@@ -5,8 +5,8 @@ use diesel::{
     sqlite::{Sqlite, SqliteConnection},
 };
 
-use std::{convert::TryInto, fmt};
 use log::*;
+use std::{convert::TryInto, fmt};
 
 mod schema;
 
@@ -19,7 +19,7 @@ pub mod error;
 pub mod model;
 
 use error::*;
-use model::{BankAccount, ChannelUser, InventoryItem, Item, UpdateItem, Optout};
+use model::{BankAccount, ChannelUser, InventoryItem, Item, Optout, UpdateItem};
 use schema::bank_accounts::dsl::*;
 
 pub use accounts::TransferResult;
@@ -339,61 +339,64 @@ impl Db {
     }
 
     pub fn optout(&self, server: u64, user: u64) -> Result<()> {
-	use schema::optouts;
+        use schema::optouts;
 
-	diesel::insert_into(optouts::table)
-	    .values(Optout::new(&server, &user))
-	    .execute(&self.connection)
-	    .map_err(Into::into)
-	    .and_then(|num_records| match num_records {
-		0 => {
-		    info!("user has already opt out");
-		    Ok(())
-		},
-		1 => {
-		    info!("user has opt out");
-		    Ok(())
-		},
-		n => {
-		    warn!("unexpected number of records altered: {}", n);
-		    Err(Error::Unexpected(format!("unexpected number of records altered: {}", n)))
-		}
-	    })
+        diesel::insert_into(optouts::table)
+            .values(Optout::new(&server, &user))
+            .execute(&self.connection)
+            .map_err(Into::into)
+            .and_then(|num_records| match num_records {
+                0 => {
+                    info!("user has already opt out");
+                    Ok(())
+                }
+                1 => {
+                    info!("user has opt out");
+                    Ok(())
+                }
+                n => {
+                    warn!("unexpected number of records altered: {}", n);
+                    Err(Error::Unexpected(format!(
+                        "unexpected number of records altered: {}",
+                        n
+                    )))
+                }
+            })
     }
 
     pub fn optin(&self, server: u64, user: u64) -> Result<()> {
-	use schema::optouts::dsl::*;
+        use schema::optouts::dsl::*;
 
-	let server = server.to_string();
-	let user = user.to_string();
+        let server = server.to_string();
+        let user = user.to_string();
 
-	let optin = optouts.find((&server, &user));
-	
-	
-	diesel::delete(optin)
-	    .execute(&self.connection)
-	    .map_err(Into::into)
-	    .and_then(|num_records| match num_records {
-		0 => {
-		    info!("user has not opt out");
-		    Ok(())
-		},
-		1 => {
-		    info!("user has opt in");
-		    Ok(())
-		},
-		n => {
-		    warn!("unexpected number of records altered: {}", n);
-		    Err(Error::Unexpected(format!("unexpected number of records altered: {}", n)))
-		}
-	    })
+        let optin = optouts.find((&server, &user));
+
+        diesel::delete(optin)
+            .execute(&self.connection)
+            .map_err(Into::into)
+            .and_then(|num_records| match num_records {
+                0 => {
+                    info!("user has not opt out");
+                    Ok(())
+                }
+                1 => {
+                    info!("user has opt in");
+                    Ok(())
+                }
+                n => {
+                    warn!("unexpected number of records altered: {}", n);
+                    Err(Error::Unexpected(format!(
+                        "unexpected number of records altered: {}",
+                        n
+                    )))
+                }
+            })
     }
 
     pub fn all_optouts(&self) -> Result<Vec<Optout>> {
-	use schema::optouts::dsl::*;
-	optouts
-	    .load::<Optout>(&self.connection)
-	    .map_err(Into::into)
+        use schema::optouts::dsl::*;
+        optouts.load::<Optout>(&self.connection).map_err(Into::into)
     }
 }
 
