@@ -2,7 +2,40 @@ use std::convert::TryInto;
 
 use rbatis::{crud::CRUD, rbatis::Rbatis};
 
-use crate::{Account, Error, Result};
+use crate::{Error, Result};
+
+#[crud_table(table_name:bank_accounts)]
+#[derive(PartialEq, Clone, Debug)]
+pub struct Account {
+    server_id: Option<String>,
+    user_id: Option<String>,
+    pub balance: Option<i32>,
+}
+
+impl Account {
+    pub fn new(server_id: &u64, user_id: &u64, balance: i32) -> Account {
+        Account {
+            server_id: Some(server_id.to_string()),
+            user_id: Some(user_id.to_string()),
+            balance: Some(balance),
+        }
+    }
+
+    pub fn server_id(&self) -> Result<u64> {
+        self.server_id
+            .as_ref()
+            .ok_or(Error::Schema("server_id field was blank"))
+            .and_then(|string| string.parse::<u64>().map_err(Into::into))
+    }
+
+    pub fn user_id(&self) -> Result<u64> {
+        self.user_id
+            .as_ref()
+            .ok_or(Error::Schema("user_id field was blank"))
+            .and_then(|string| string.parse::<u64>().map_err(Into::into))
+    }
+}
+
 
 pub async fn account(db: &Rbatis, server_id: &u64, user_id: &u64) -> Result<Option<Account>> {
     let query = db

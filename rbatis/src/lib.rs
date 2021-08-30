@@ -1,86 +1,34 @@
 #[macro_use]
 extern crate rbatis;
 
-use std::{convert::TryInto, fmt::Debug, future::Future, num::ParseIntError};
-
-use rbatis::{crud::CRUD, rbatis::Rbatis, wrapper::Wrapper, Error as RbError};
+use rbatis::{crud::CRUD, rbatis::Rbatis};
 
 mod accounts;
+mod error;
 
-#[crud_table(table_name:bank_accounts)]
-#[derive(PartialEq, Clone, Debug)]
-pub struct Account {
-    server_id: Option<String>,
-    user_id: Option<String>,
-    pub balance: Option<i32>,
-}
-
-impl Account {
-    pub fn new(server_id: &u64, user_id: &u64, balance: i32) -> Account {
-        Account {
-            server_id: Some(server_id.to_string()),
-            user_id: Some(user_id.to_string()),
-            balance: Some(balance),
-        }
-    }
-
-    pub fn server_id(&self) -> Result<u64> {
-        self.server_id
-            .as_ref()
-            .ok_or(Error::Schema("server_id field was blank"))
-            .and_then(|string| string.parse::<u64>().map_err(Into::into))
-    }
-
-    pub fn user_id(&self) -> Result<u64> {
-        self.user_id
-            .as_ref()
-            .ok_or(Error::Schema("user_id field was blank"))
-            .and_then(|string| string.parse::<u64>().map_err(Into::into))
-    }
-}
-
-pub type Result<T> = std::result::Result<T, Error>;
-
-#[derive(Debug)]
-pub enum Error {
-    Rbatis(RbError),
-    ParseColumn(ParseIntError),
-    Schema(&'static str),
-    CoinOverflow(i64),
-}
-
-impl Into<Error> for RbError {
-    fn into(self) -> Error {
-        Error::Rbatis(self)
-    }
-}
-
-impl Into<Error> for ParseIntError {
-    fn into(self) -> Error {
-        Error::ParseColumn(self)
-    }
-}
+use accounts::Account;
+use error::{Error, Result};
 
 pub struct Db {
     connection: Rbatis,
 }
 
 impl Db {
-    async fn open(url: &str) -> Result<Db> {
+    pub async fn open(url: &str) -> Result<Db> {
         let rb = Rbatis::new();
         rb.link(url).await.map_err(|err| Error::Rbatis(err))?;
 
         return Ok(Db { connection: rb });
     }
 
-    async fn all_accounts(&self) -> Result<Vec<Account>> {
+    pub async fn all_accounts(&self) -> Result<Vec<Account>> {
         self.connection
             .fetch_list()
             .await
             .map_err(|err| Error::Rbatis(err))
     }
 
-    async fn account(&self, server_id: &u64, user_id: &u64) -> Result<Option<Account>> {
+    pub async fn account(&self, server_id: &u64, user_id: &u64) -> Result<Option<Account>> {
         let query = self
             .connection
             .new_wrapper()
@@ -141,6 +89,8 @@ impl Db {
 
 #[cfg(test)]
 mod tests {
+    use std::convert::TryInto;
+
     use super::*;
     use tokio_test;
 
@@ -185,8 +135,8 @@ mod tests {
         accounts.iter().for_each(|account| {
             log::info!(
                 "entry: {:?} {:?} {:?}",
-                account.server_id,
-                account.user_id,
+                account.server_id(),
+                account.user_id(),
                 account.balance
             );
 
