@@ -85,6 +85,24 @@ impl Db {
 
         Ok((account0, account1))
     }
+
+    pub async fn transfer_coins(
+        &self,
+        server_id: &u64,
+        user_id_0: &u64,
+        user_id_1: &u64,
+        amount: i64,
+    ) -> Result<(Account, Account)> {
+        let mut exec = self.connection.acquire_begin().await.map_err(Into::into)?;
+        let db = exec.rb;
+
+        let account0: Account = accounts::adjust_balance(db, server_id, user_id_0, -amount).await?;
+        let account1: Account = accounts::adjust_balance(db, server_id, user_id_1, amount).await?;
+
+        exec.commit().await.map_err(Into::into)?;
+
+        Ok((account0, account1))
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +215,36 @@ mod tests {
 
         assert_eq!(account0.balance.unwrap(), account0_result.balance.unwrap());
         assert_eq!(account1.balance.unwrap(), account1_result.balance.unwrap());
+    }
+
+    #[test]
+    fn transfer_test() {
+        let db = open_test_db();
+        let accounts = async_run!(db.all_accounts()).expect("unable to load accounts");
+
+        let account0 = accounts.first().expect("bank_accounts table was empty");
+        let account1 = accounts
+            .iter()
+            .find(|it| it.server_id().unwrap() == account0.server_id().unwrap())
+            .expect("could not find another account in this server");
+
+        let transfer_amount = 10;
+
+        let (account0_result, account1_result) = async_run!(db.transfer_coins(
+            &account0.server_id().unwrap(),
+            &account0.user_id().unwrap(),
+            &account1.user_id().unwrap(),
+            transfer_amount,
+        ))
+        .expect("unable to transfer coins");
+
+        let account0_balance: i64 = account0.balance.expect("account0 balance was null").into();
+        let account1_balance: i64 = account1.balance.expect("account1 balance was null").into();
+
+        let expected_balance0 = account0_balance - transfer_amount;
+        let expected_balance1 = account1_balance + transfer_amount;
+
+        assert_eq!(expected_balance0, account0_result.balance.unwrap() as i64);
+        assert_eq!(expected_balance1, account1_result.balance.unwrap() as i64);
     }
 }
