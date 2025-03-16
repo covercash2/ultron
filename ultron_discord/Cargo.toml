@@ -1,0 +1,13 @@
+[package]
+name = "ultron_discord"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bon.workspace = true
+serenity.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+ultron_core.workspace = true

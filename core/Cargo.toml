@@ -1,0 +1,12 @@
+[package]
+name = "ultron_core"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bon.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
