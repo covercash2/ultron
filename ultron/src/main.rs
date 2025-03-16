@@ -22,7 +22,6 @@ async fn main() -> anyhow::Result<()> {
     let bot = discord_bot.run().await?;
 
     bot.debug("coming online").await?;
-    bot.psa("coming online").await?;
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
