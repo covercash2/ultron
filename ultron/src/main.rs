@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use tracing_subscriber::EnvFilter;
-use ultron_discord::DiscordBot;
+use ultron_discord::DiscordBotConfig;
 
 /// panics if a subscriber was already registered.
 /// configure log levels with the RUST_LOG environment variable.
@@ -17,9 +17,18 @@ fn setup_tracing() {
 async fn main() -> anyhow::Result<()> {
     setup_tracing();
     tracing::info!("starting ultron");
-    let discord_bot = DiscordBot::new(Arc::new(ultron_core::EventProcessor))?;
+    let discord_bot = DiscordBotConfig::new(Arc::new(ultron_core::EventProcessor))?;
 
-    discord_bot.run().await?;
+    let bot = discord_bot.run().await?;
+
+    bot.debug("coming online").await?;
+    bot.psa("coming online").await?;
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("received ctrl-c, shutting down");
+        }
+    }
 
     tracing::info!("bye");
     Ok(())

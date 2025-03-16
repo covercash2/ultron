@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatInput {
     content: String,
@@ -22,17 +21,24 @@ pub enum Event {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
-    Plain(String),
+    PlainChat(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct EventProcessor;
 
 impl EventProcessor {
-    pub async fn process(&self, event: Event) -> Response {
+    pub async fn process(&self, event: Event) -> Option<Response> {
+        tracing::debug!("processing event: {:?}", event);
         match event {
             Event::ChatInput(chat_input) => {
-                Response::Plain(format!("you said: {}", chat_input.content))
+                chat_input
+                    .content
+                    .starts_with("!ultron")
+                    .then_some(Response::PlainChat(format!(
+                        "you said: {}",
+                        chat_input.content
+                    )))
             }
         }
     }
@@ -44,10 +50,10 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() {
-        let event: ChatInput = "hello".into();
+        let event: ChatInput = "!ultron hello".into();
         let event: Event = Event::ChatInput(event);
         let processor = EventProcessor;
-        let response = processor.process(event).await;
-        assert_eq!(response, Response::Plain("you said: hello".to_string()));
+        let response = processor.process(event).await.expect("should get a response");
+        assert_eq!(response, Response::PlainChat("you said: hello".to_string()));
     }
 }

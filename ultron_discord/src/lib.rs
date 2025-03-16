@@ -1,15 +1,21 @@
 use bon::Builder;
 use serenity::{
     Client,
-    all::{Context, EventHandler, GatewayIntents, Message},
+    all::{ChannelId, ClientBuilder, Context, EventHandler, GatewayIntents, Message},
+    http::Http,
 };
 use std::sync::Arc;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 use ultron_core::{ChatInput, Event, EventProcessor, Response};
+
+/// ultron#ultron-test
+const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
+const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
 
 pub type DiscordBotResult<T> = Result<T, DiscordBotError>;
 
-#[derive(Debug, Clone, Error)]
+#[derive(Debug, Error)]
 pub enum DiscordBotError {
     #[error("missing application id. set APP_ID environment variable")]
     MissingAppId,
@@ -19,10 +25,14 @@ pub enum DiscordBotError {
     MissingPublicKey,
     #[error("could not get owner from Discord")]
     EmptyOwner,
+    #[error(transparent)]
+    Serenity(#[from] serenity::Error),
+    #[error("content is too long")]
+    ContentTooLong,
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct DiscordBot {
+pub struct DiscordBotConfig {
     #[builder(into)]
     application_id: String,
     #[builder(into)]
@@ -34,9 +44,9 @@ pub struct DiscordBot {
     event_processor: Arc<EventProcessor>,
 }
 
-impl DiscordBot {
+impl DiscordBotConfig {
     pub fn new(event_processor: Arc<EventProcessor>) -> DiscordBotResult<Self> {
-        let bot = DiscordBot::builder()
+        let bot = DiscordBotConfig::builder()
             .token(std::env::var("DISCORD_TOKEN").map_err(|_| DiscordBotError::MissingToken)?)
             .application_id(std::env::var("APP_ID").map_err(|_| DiscordBotError::MissingAppId)?)
             .public_key(std::env::var("PUBLIC_KEY").map_err(|_| DiscordBotError::MissingPublicKey)?)
@@ -48,25 +58,60 @@ impl DiscordBot {
         Ok(bot)
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
-        let http = serenity::http::Http::new(&self.token);
+    pub async fn run(self) -> anyhow::Result<DiscordBot> {
+        let http = Http::new(&self.token);
 
-        let app_info = http
-            .get_current_application_info()
-            .await?
-            .owner
-            .ok_or(DiscordBotError::EmptyOwner)?;
+        let app_info = http.get_current_application_info().await?;
 
         tracing::info!("got app info: {:?}", app_info);
 
-        let mut client = Client::builder(&self.token, self.intents.0)
-            .application_id(self.application_id.parse()?)
-            .event_handler(Handler {
-                event_processor: self.event_processor,
-            })
-            .await?;
+        let client_handle = tokio::spawn(async move {
+            let mut client = Client::builder(&self.token, self.intents.0)
+                .application_id(self.application_id.parse().unwrap())
+                .event_handler(Handler {
+                    event_processor: self.event_processor,
+                })
+                .await?;
 
-        client.start().await?;
+            tracing::info!("starting Discord client");
+
+            client.start().await?;
+
+            Ok(())
+        });
+
+        Ok(DiscordBot {
+            http: Arc::new(http),
+            client_handle: Arc::new(client_handle),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscordBot {
+    http: Arc<Http>,
+    client_handle: Arc<JoinHandle<DiscordBotResult<()>>>,
+}
+
+impl DiscordBot {
+    /// send a message to the debug channel
+    pub async fn debug(&self, message: &str) -> DiscordBotResult<()> {
+        if message.len() >= 2000 {
+            return Err(DiscordBotError::ContentTooLong);
+        }
+
+        DEFAULT_DEBUG_CHANNEL_ID.say(&self.http, message).await?;
+
+        Ok(())
+    }
+
+    /// send a message to the general channel
+    pub async fn psa(&self, message: &str) -> DiscordBotResult<()> {
+        if message.len() >= 2000 {
+            return Err(DiscordBotError::ContentTooLong);
+        }
+
+        DEFAULT_GENERAL_CHANNEL_ID.say(&self.http, message).await?;
 
         Ok(())
     }
@@ -89,9 +134,13 @@ struct Handler {
 #[serenity::async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
+        tracing::debug!("handling message event: {:?}", msg);
+
         let event: ChatInput = msg.content.into();
         let event: Event = Event::ChatInput(event);
-        let Response::Plain(response) = self.event_processor.process(event).await;
+        let Some(Response::PlainChat(response)) = self.event_processor.process(event).await else {
+            return;
+        };
 
         if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
             tracing::error!("Error sending message: {:?}", error);
