@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use tracing_subscriber::EnvFilter;
+use ultron_core::http_server::{self, AppState};
 use ultron_discord::DiscordBotConfig;
 
 /// panics if a subscriber was already registered.
@@ -17,15 +18,26 @@ fn setup_tracing() {
 async fn main() -> anyhow::Result<()> {
     setup_tracing();
     tracing::info!("starting ultron");
-    let discord_bot = DiscordBotConfig::new(Arc::new(ultron_core::EventProcessor))?;
+    let event_processor = Arc::new(ultron_core::EventProcessor);
 
-    let bot = discord_bot.run().await?;
+    let discord_config = DiscordBotConfig::new(event_processor.clone())?;
+
+    let bot = Arc::new(discord_config.run().await?);
 
     bot.debug("coming online").await?;
 
+    let discord_thread_bot = bot.clone();
+    let server_thread_bot = bot.clone();
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             tracing::info!("received ctrl-c, shutting down");
+            discord_thread_bot.shutdown().await?;
+        }
+        _ = http_server::serve(8080, AppState {
+            event_processor,
+            chat_bot: server_thread_bot.clone(),
+        }) => {
+            tracing::warn!("http server shut down spontaneously");
         }
     }
 

@@ -1,17 +1,18 @@
 use bon::Builder;
 use serenity::{
     Client,
-    all::{ChannelId, ClientBuilder, Context, EventHandler, GatewayIntents, Message},
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message},
     http::Http,
 };
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
-use ultron_core::{ChatInput, Event, EventProcessor, Response};
+use ultron_core::{Channel, ChatBot, ChatInput, Event, EventProcessor, Response};
 
 /// ultron#ultron-test
 const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
 const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
+const DEFAULT_DND_CHANNEL_ID: ChannelId = ChannelId::new(874085144284258325);
 
 pub type DiscordBotResult<T> = Result<T, DiscordBotError>;
 
@@ -29,6 +30,8 @@ pub enum DiscordBotError {
     Serenity(#[from] serenity::Error),
     #[error("content is too long")]
     ContentTooLong,
+    #[error(transparent)]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 #[derive(Builder, Debug, Clone)]
@@ -78,11 +81,12 @@ impl DiscordBotConfig {
             client.start().await?;
 
             Ok(())
-        });
+        })
+        .into();
 
         Ok(DiscordBot {
             http: Arc::new(http),
-            client_handle: Arc::new(client_handle),
+            client_handle,
         })
     }
 }
@@ -93,26 +97,61 @@ pub struct DiscordBot {
     client_handle: Arc<JoinHandle<DiscordBotResult<()>>>,
 }
 
-impl DiscordBot {
-    /// send a message to the debug channel
-    pub async fn debug(&self, message: &str) -> DiscordBotResult<()> {
+pub struct DiscordChannel(ChannelId);
+
+impl From<Channel> for DiscordChannel {
+    fn from(channel: Channel) -> Self {
+        match channel {
+            Channel::Debug => DiscordChannel(DEFAULT_DEBUG_CHANNEL_ID),
+            Channel::Psa => DiscordChannel(DEFAULT_GENERAL_CHANNEL_ID),
+            Channel::Dnd => DiscordChannel(DEFAULT_DND_CHANNEL_ID),
+        }
+    }
+}
+
+impl ChatBot for DiscordBot {
+    type Error = DiscordBotError;
+
+    async fn send_message(&self, channel: Channel, message: &str) -> DiscordBotResult<()> {
         if message.len() >= 2000 {
             return Err(DiscordBotError::ContentTooLong);
         }
+        let DiscordChannel(id) = channel.into();
 
-        DEFAULT_DEBUG_CHANNEL_ID.say(&self.http, message).await?;
+        id.say(&self.http, message).await?;
 
         Ok(())
+    }
+}
+
+impl DiscordBot {
+    /// send a message to the debug channel
+    pub async fn debug(&self, message: &str) -> DiscordBotResult<()> {
+        self.send_message(DEFAULT_DEBUG_CHANNEL_ID, message).await
     }
 
     /// send a message to the general channel
     pub async fn psa(&self, message: &str) -> DiscordBotResult<()> {
+        self.send_message(DEFAULT_GENERAL_CHANNEL_ID, message).await
+    }
+
+    /// send a message to the dnd channel
+    pub async fn dnd(&self, message: &str) -> DiscordBotResult<()> {
+        self.send_message(DEFAULT_DND_CHANNEL_ID, message).await
+    }
+
+    pub async fn send_message(&self, channel_id: ChannelId, message: &str) -> DiscordBotResult<()> {
         if message.len() >= 2000 {
             return Err(DiscordBotError::ContentTooLong);
         }
 
-        DEFAULT_GENERAL_CHANNEL_ID.say(&self.http, message).await?;
+        channel_id.say(&self.http, message).await?;
 
+        Ok(())
+    }
+
+    pub async fn shutdown(&self) -> DiscordBotResult<()> {
+        self.client_handle.abort();
         Ok(())
     }
 }
@@ -138,12 +177,17 @@ impl EventHandler for Handler {
 
         let event: ChatInput = msg.content.into();
         let event: Event = Event::ChatInput(event);
-        let Some(Response::PlainChat(response)) = self.event_processor.process(event).await else {
-            return;
-        };
 
-        if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
-            tracing::error!("Error sending message: {:?}", error);
+        match self.event_processor.process(event).await {
+            Ok(Some(Response::PlainChat(response))) => {
+                if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
+                    tracing::error!("Error sending message: {:?}", error);
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::error!("Error processing event: {:?}", error);
+            }
         }
     }
 }
