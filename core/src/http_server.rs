@@ -10,6 +10,7 @@ use axum::{
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tower_http::trace::TraceLayer;
 
 use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
 
@@ -63,8 +64,8 @@ where
 {
     Router::new()
         .route("/", get(index))
-        .route("/bot/say", post(bot))
-        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .route("/bot", post(bot))
+        .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
 

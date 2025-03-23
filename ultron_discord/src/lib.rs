@@ -8,8 +8,8 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use ultron_core::{
-    Channel, ChatBot, ChatInput, CommandParseError, Event, EventError, EventProcessor, Response,
-    dice::HELP_MESSAGE,
+    Channel, ChatBot, ChatInput, Event, EventError, EventProcessor, Response,
+    command::CommandParseError, dice::HELP_MESSAGE,
 };
 
 /// ultron#ultron-test
