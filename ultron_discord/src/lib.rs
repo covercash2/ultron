@@ -7,7 +7,10 @@ use serenity::{
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
-use ultron_core::{Channel, ChatBot, ChatInput, Event, EventProcessor, Response};
+use ultron_core::{
+    Channel, ChatBot, ChatInput, CommandParseError, Event, EventError, EventProcessor, Response,
+    dice::HELP_MESSAGE,
+};
 
 /// ultron#ultron-test
 const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
@@ -179,14 +182,33 @@ impl EventHandler for Handler {
         let event: Event = Event::ChatInput(event);
 
         match self.event_processor.process(event).await {
-            Ok(Some(Response::PlainChat(response))) => {
+            Ok(Response::PlainChat(response)) => {
                 if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
-                    tracing::error!("Error sending message: {:?}", error);
+                    tracing::error!("error sending message: {:?}", error);
                 }
             }
-            Ok(None) => {}
             Err(error) => {
-                tracing::error!("Error processing event: {:?}", error);
+                tracing::error!("error processing event: {:?}", error);
+
+                let error_message = match error {
+                    EventError::CommandParse(command_parse_error) => match command_parse_error {
+                        CommandParseError::MissingCommand(error_msg)
+                        | CommandParseError::UndefinedCommand(error_msg) => {
+                            Some(format!("ya blew it: {}\n\n{}", error_msg, HELP_MESSAGE))
+                        }
+                        _ => None,
+                    },
+                    EventError::DiceRollParse(dice_roll_error) => Some(format!(
+                        "ya blew it: {}\n\n{}",
+                        dice_roll_error, HELP_MESSAGE
+                    )),
+                };
+
+                if let Some(error_message) = error_message {
+                    if let Err(error) = msg.channel_id.say(&ctx.http, error_message).await {
+                        tracing::error!("error sending message: {:?}", error);
+                    }
+                }
             }
         }
     }

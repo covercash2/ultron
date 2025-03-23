@@ -11,7 +11,7 @@ use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ApiInput, Channel, ChatBot, ChatInput, EventError, EventProcessor};
+use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
 
 pub type ServerResult<T> = Result<T, ServerError>;
 
@@ -64,6 +64,7 @@ where
     Router::new()
         .route("/", get(index))
         .route("/bot/say", post(bot))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(state)
 }
 
@@ -90,14 +91,13 @@ where
     tracing::info!("response: {:?}", chat_input);
 
     match state.event_processor.process(chat_input).await? {
-        Some(crate::Response::PlainChat(response)) => {
+        crate::Response::PlainChat(response) => {
             state
                 .chat_bot
                 .send_message(bot_input.channel, &response)
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
-        None => {}
     }
 
     Ok(())

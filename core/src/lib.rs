@@ -1,7 +1,8 @@
 use std::{future::Future, marker::Send, ops::Deref, str::FromStr};
 
-use dice::DiceRoll;
+use dice::{DiceRoll, HELP_MESSAGE};
 use serde::{Deserialize, Serialize};
+use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator};
 
 pub mod dice;
 pub mod http_server;
@@ -29,13 +30,10 @@ pub struct ChatInput {
 
 impl ChatInput {
     pub fn strip_prefix(&self) -> Result<&str, CommandParseError> {
-        dbg!(&self);
-        dbg!(
-            self.content
-                .strip_prefix(DEFAULT_COMMAND_PREFIX)
-                .map(|content| content.trim())
-                .ok_or(CommandParseError::MissingPrefix(self.content.clone()))
-        )
+        self.content
+            .strip_prefix(DEFAULT_COMMAND_PREFIX)
+            .map(|content| content.trim())
+            .ok_or(CommandParseError::MissingPrefix(self.content.clone()))
     }
 }
 
@@ -115,9 +113,9 @@ pub enum Response {
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventError {
-    #[error("failed to parse command from input: {0:?}")]
+    #[error("failed to parse command from input: {0}")]
     CommandParse(#[from] CommandParseError),
-    #[error("failed to parse dice roll from input: {0:?}")]
+    #[error("failed to parse dice roll from input: {0}")]
     DiceRollParse(#[from] dice::DiceRollError),
 }
 
@@ -125,26 +123,16 @@ pub enum EventError {
 pub struct EventProcessor;
 
 impl EventProcessor {
-    pub async fn process(&self, event: impl Into<Event>) -> Result<Option<Response>, EventError> {
+    pub async fn process(&self, event: impl Into<Event>) -> Result<Response, EventError> {
         let event = event.into();
         tracing::debug!("processing event: {:?}", event);
 
-        let command = event.try_into()?;
+        let command: Command = event.try_into()?;
+        let output = command.execute()?;
 
-        dbg!(&command);
+        tracing::debug!("computed output: {}", output);
 
-        match command {
-            Command::Echo(message) => {
-                Ok(Some(Response::PlainChat(format!("you said: {}", message))))
-            }
-            Command::Roll(input) => {
-                let dice_roll: DiceRoll = input.parse()?;
-                Ok(Some(Response::PlainChat(format!(
-                    "you rolled: {}",
-                    dice_roll
-                ))))
-            }
-        }
+        Ok(Response::PlainChat(output))
     }
 }
 
@@ -189,21 +177,36 @@ pub enum CommandParseError {
     UndefinedCommand(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, strum::EnumDiscriminants)]
+#[strum_discriminants(derive(EnumIter, Display, EnumMessage))]
+#[strum_discriminants(strum(serialize_all = "snake_case"))]
 pub enum Command {
+    #[strum_discriminants(strum(message = "make Ultron say something"))]
     Echo(String),
+    #[strum_discriminants(strum(message = "roll some dice"))]
     Roll(String),
+    #[strum_discriminants(strum(message = "get help"))]
+    Help,
 }
 
 impl Command {
-    pub fn execute(self) -> String {
-        match self {
-            Command::Echo(message) => format!("you said: {}", message),
+    pub fn execute(self) -> Result<String, EventError> {
+        let result = match self {
+            Command::Echo(message) => message.to_string(),
             Command::Roll(input) => {
-                let dice_roll: DiceRoll = input.parse().expect("should parse dice roll");
-                format!("you rolled: {}", dice_roll)
+                let dice_roll: DiceRoll = input.parse()?;
+                dice_roll.to_string()
             }
-        }
+            Command::Help => CommandDiscriminants::iter().fold(String::new(), |acc, command| {
+                format!(
+                    "{}\n✨`{}` 👉 {}",
+                    acc,
+                    command,
+                    command.get_message().unwrap_or("oops no message")
+                )
+            }),
+        };
+        Ok(result)
     }
 }
 
@@ -230,12 +233,11 @@ impl FromStr for Command {
         // the rest of the input joined by spaces
         let rest = iterator.collect::<Vec<_>>().join(" ");
 
-        dbg!(&rest);
-
         match command {
             "echo" => Ok(Command::Echo(rest.to_string())),
             "roll" => Ok(Command::Roll(rest.to_string())),
-            _ => Err(CommandParseError::UndefinedCommand(input.to_string())),
+            "help" => Ok(Command::Help),
+            _ => Err(CommandParseError::UndefinedCommand(command.to_string())),
         }
     }
 }
@@ -252,8 +254,7 @@ mod tests {
         let response = processor
             .process(event)
             .await
-            .expect("echo should not error")
-            .expect("should get a response");
+            .expect("echo should not error");
         assert_eq!(response, Response::PlainChat("you said: hello".to_string()));
     }
 

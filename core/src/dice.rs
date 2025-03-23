@@ -4,6 +4,18 @@ use std::str::FromStr;
 
 use caith::{RollError, Roller};
 
+pub const HELP_MESSAGE: &str = r#"
+roll a d20: `d20`
+roll _2_ d20s: `2d20`
+roll a d6 and a d8: `d6 + d8`
+roll with advantage: `2d20K1` (k for "keep")
+roll with disadvantage: `2d20k1`
+keep the highest 3 of 4d6: `4d6K3`
+
+input is passed as is to the `caith` crate:
+https://docs.rs/caith/4.2.4/caith/#syntax
+"#;
+
 /// A dice roll that represents a collection of dice
 /// that can be rolled together.
 /// Example: 2d6 + 3d8
@@ -20,17 +32,6 @@ pub struct DiceRoll {
     result: String,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct RollReport {
-    total: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct DieRoll {
-    sides: u64,
-    value: u64,
-}
-
 type DiceRollResult<T> = Result<T, DiceRollError>;
 
 #[derive(thiserror::Error, Debug)]
@@ -42,9 +43,17 @@ pub enum DiceRollError {
 impl FromStr for DiceRoll {
     type Err = DiceRollError;
 
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
+    fn from_str(input: &str) -> DiceRollResult<Self> {
+        if input == "help" {
+            tracing::debug!("sending help message");
+            return Ok(DiceRoll {
+                result: HELP_MESSAGE.to_string(),
+            });
+        }
+
         let roll_result = Roller::new(input)?.roll()?;
 
+        tracing::debug!("computed roll: {}", roll_result);
         Ok(DiceRoll {
             result: format!("{}", roll_result),
         })
