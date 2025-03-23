@@ -2,7 +2,11 @@ use std::str::FromStr;
 
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
 
-use crate::{ApiInput, Event, EventError, dice::DiceRoll};
+use crate::{
+    ApiInput, Event, EventError,
+    copypasta::{copy_pasta, copy_pasta_names},
+    dice::DiceRoll,
+};
 
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
 pub enum CommandParseError {
@@ -22,13 +26,15 @@ pub enum Command {
     Echo(String),
     #[strum_discriminants(strum(message = "roll some dice"))]
     Roll(String),
+    #[strum_discriminants(strum(message = "things that bear repeating"))]
+    CopyPasta(String),
     #[strum_discriminants(strum(message = "get help"))]
     Help,
 }
 
 impl Command {
     pub fn execute(self) -> Result<String, EventError> {
-        let result = match self {
+        let result: String = match self {
             Command::Echo(message) => message.to_string(),
             Command::Roll(input) => {
                 let dice_roll: DiceRoll = input.parse()?;
@@ -42,6 +48,20 @@ impl Command {
                     command.get_message().unwrap_or("oops no message")
                 )
             }),
+            Command::CopyPasta(input) => {
+                if input == "list" {
+                    let names = copy_pasta_names()
+                        .into_iter()
+                        .map(|name| format!("✨`{}`", name))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    format!("types of pasta 🍝:\n{}", names)
+                } else {
+                    copy_pasta(&input)
+                        .map(ToString::to_string)
+                        .unwrap_or("try again loser".to_string())
+                }
+            }
         };
         Ok(result)
     }
@@ -73,6 +93,7 @@ impl FromStr for Command {
         match command {
             "echo" => Ok(Command::Echo(rest.to_string())),
             "roll" => Ok(Command::Roll(rest.to_string())),
+            "pasta" => Ok(Command::CopyPasta(rest.to_string())),
             "help" => Ok(Command::Help),
             _ => Err(CommandParseError::UndefinedCommand(command.to_string())),
         }

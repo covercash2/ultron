@@ -4,6 +4,7 @@ use command::{Command, CommandParseError};
 use serde::{Deserialize, Serialize};
 
 pub mod command;
+pub mod copypasta;
 pub mod dice;
 pub mod http_server;
 
