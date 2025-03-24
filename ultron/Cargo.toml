@@ -5,6 +5,9 @@ edition.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
+envy.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

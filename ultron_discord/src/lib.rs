@@ -51,19 +51,6 @@ pub struct DiscordBotConfig {
 }
 
 impl DiscordBotConfig {
-    pub fn new(event_processor: Arc<EventProcessor>) -> DiscordBotResult<Self> {
-        let bot = DiscordBotConfig::builder()
-            .token(std::env::var("DISCORD_TOKEN").map_err(|_| DiscordBotError::MissingToken)?)
-            .application_id(std::env::var("APP_ID").map_err(|_| DiscordBotError::MissingAppId)?)
-            .public_key(std::env::var("PUBLIC_KEY").map_err(|_| DiscordBotError::MissingPublicKey)?)
-            .event_processor(event_processor)
-            .build();
-
-        tracing::info!("using default intents: {:?}", bot.intents);
-
-        Ok(bot)
-    }
-
     pub async fn run(self) -> anyhow::Result<DiscordBot> {
         let http = Http::new(&self.token);
 

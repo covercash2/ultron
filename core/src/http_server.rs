@@ -39,6 +39,7 @@ pub struct AppState<ChatBot> {
 pub enum Route {
     #[strum(to_string = "/")]
     Index,
+    #[strum(to_string = "/bot")]
     Bot,
 }
 
@@ -63,8 +64,8 @@ where
     Bot: ChatBot + 'static,
 {
     Router::new()
-        .route("/", get(index))
-        .route("/bot", post(bot))
+        .route(&Route::Index.to_string(), get(index))
+        .route(&Route::Bot.to_string(), post(bot))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -106,6 +107,7 @@ where
 
 impl IntoResponse for ServerError {
     fn into_response(self) -> Response {
+        tracing::warn!("error: {}", self);
         let status = match self {
             ServerError::UnableToBindPort(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::Startup(_) => StatusCode::INTERNAL_SERVER_ERROR,

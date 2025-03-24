@@ -17,7 +17,9 @@ async-openai = "0.28.0"
 axum = { version = "0.8.1", features = ["macros"] }
 bon = "3.4.0"
 caith = "4.2.4"
+clap = { version = "4.5.28", features = ["derive"] }
 derive_more = { version = "2.0.1", features = ["display"] }
+envy = "0.4.2"
 insta = { version = "1.42.2", features = ["redactions", "json"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serenity = { version = "0.12", features = ["framework", "standard_framework"] }
