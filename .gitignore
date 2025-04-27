@@ -1,4 +1,6 @@
 target/
 
+secrets
+
 # pre-commit
 .pre-commit-config.yaml

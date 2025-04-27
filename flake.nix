@@ -32,6 +32,7 @@
           name = "ultron-dev";
 
           buildInputs = with pkgs; [
+            bitwarden-cli
             git
             nushell
             openssl
@@ -40,10 +41,8 @@
 
           # Environment variables
           shellHook = ''
-            export GREET="ultron"
-
-            echo "Hello from $GREET"
-            git --version
+            echo "you are now altering Ultron's programming"
+            echo "proceed with caution"
           '';
 
           # For tools that need OpenSSL
