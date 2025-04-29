@@ -3,16 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    # Using rust-overlay instead of fenix
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
     flake-utils.url = "github:numtide/flake-utils";
-
-    # Add crane for easier Rust packaging with Nix
     crane = {
       url = "github:ipetkov/crane";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -21,99 +16,101 @@
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
     let
-      # Define the module outside of the per-system scope
-      # so it can be accessed directly at self.nixosModules.default
+      # Define the module at the top level
       ultronModule = { config, lib, pkgs, ... }:
-      let
-        cfg = config.services.ultron;
+        let
+          cfg = config.services.ultron;
 
-        # Select the package based on the system
-        ultronPackage = self.packages.${pkgs.system}.default;
-      in {
-        options.services.ultron = {
-          enable = lib.mkEnableOption "Ultron Discord bot service";
+          # Get the ultron package for the current system
+          ultronPackage = if self.packages ? ${pkgs.system} &&
+                            self.packages.${pkgs.system} ? default
+                          then self.packages.${pkgs.system}.default
+                          else null;
+        in {
+          options.services.ultron = {
+            enable = lib.mkEnableOption "Ultron Discord bot service";
 
-          user = lib.mkOption {
-            type = lib.types.str;
-            default = "ultron";
-            description = "User account under which Ultron runs";
-          };
+            user = lib.mkOption {
+              type = lib.types.str;
+              default = "ultron";
+              description = "User account under which Ultron runs";
+            };
 
-          group = lib.mkOption {
-            type = lib.types.str;
-            default = "ultron";
-            description = "Group under which Ultron runs";
-          };
+            group = lib.mkOption {
+              type = lib.types.str;
+              default = "ultron";
+              description = "Group under which Ultron runs";
+            };
 
-          environmentFile = lib.mkOption {
-            type = lib.types.nullOr lib.types.path;
-            default = null;
-            description = "Environment file containing Discord tokens and other secrets";
-          };
-        };
-
-        config = lib.mkIf cfg.enable {
-          users.users = lib.mkIf (cfg.user == "ultron") {
-            ultron = {
-              isSystemUser = true;
-              group = cfg.group;
-              description = "Ultron Discord bot service user";
-              home = "/var/lib/ultron";
-              createHome = true;
+            environmentFile = lib.mkOption {
+              type = lib.types.nullOr lib.types.path;
+              default = null;
+              description = "Environment file containing Discord tokens and other secrets";
             };
           };
 
-          users.groups = lib.mkIf (cfg.group == "ultron") {
-            ultron = {};
-          };
+          config = lib.mkIf (cfg.enable && ultronPackage != null) {
+            users.users = lib.mkIf (cfg.user == "ultron") {
+              ultron = {
+                isSystemUser = true;
+                group = cfg.group;
+                description = "Ultron Discord bot service user";
+                home = "/var/lib/ultron";
+                createHome = true;
+              };
+            };
 
-          systemd.services.ultron = {
-            description = "Ultron Discord bot";
-            wantedBy = [ "multi-user.target" ];
-            after = [ "network.target" ];
+            users.groups = lib.mkIf (cfg.group == "ultron") {
+              ultron = {};
+            };
 
-            serviceConfig = {
-              ExecStart = "${ultronPackage}/bin/ultron";
-              User = cfg.user;
-              Group = cfg.group;
-              Restart = "always";
-              RestartSec = "10";
+            systemd.services.ultron = {
+              description = "Ultron Discord bot";
+              wantedBy = [ "multi-user.target" ];
+              after = [ "network.target" ];
 
-              # If an environment file is specified, use it
-              EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
+              serviceConfig = {
+                ExecStart = "${ultronPackage}/bin/ultron";
+                User = cfg.user;
+                Group = cfg.group;
+                Restart = "always";
+                RestartSec = "10";
 
-              # Hardening measures
-              CapabilityBoundingSet = "";
-              DevicePolicy = "closed";
-              LockPersonality = true;
-              MemoryDenyWriteExecute = true;
-              NoNewPrivileges = true;
-              PrivateDevices = true;
-              PrivateTmp = true;
-              ProtectClock = true;
-              ProtectControlGroups = true;
-              ProtectHome = true;
-              ProtectHostname = true;
-              ProtectKernelLogs = true;
-              ProtectKernelModules = true;
-              ProtectKernelTunables = true;
-              ProtectSystem = "strict";
-              ReadWritePaths = [ "/var/lib/ultron" ];
-              RemoveIPC = true;
-              RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
-              RestrictNamespaces = true;
-              RestrictRealtime = true;
-              RestrictSUIDSGID = true;
-              SystemCallArchitectures = "native";
-              SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
-              UMask = "077";
+                # If an environment file is specified, use it
+                EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
+
+                # Hardening measures
+                CapabilityBoundingSet = "";
+                DevicePolicy = "closed";
+                LockPersonality = true;
+                MemoryDenyWriteExecute = true;
+                NoNewPrivileges = true;
+                PrivateDevices = true;
+                PrivateTmp = true;
+                ProtectClock = true;
+                ProtectControlGroups = true;
+                ProtectHome = true;
+                ProtectHostname = true;
+                ProtectKernelLogs = true;
+                ProtectKernelModules = true;
+                ProtectKernelTunables = true;
+                ProtectSystem = "strict";
+                ReadWritePaths = [ "/var/lib/ultron" ];
+                RemoveIPC = true;
+                RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+                RestrictNamespaces = true;
+                RestrictRealtime = true;
+                RestrictSUIDSGID = true;
+                SystemCallArchitectures = "native";
+                SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
+                UMask = "077";
+              };
             };
           };
         };
-      };
     in
     {
-      # Expose the NixOS module at the top level
+      # Expose the module at the top level
       nixosModules.default = ultronModule;
     } //
     flake-utils.lib.eachDefaultSystem (system:
@@ -126,6 +123,7 @@
         # Configure the Rust toolchain using rust-overlay
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [ "rust-analyzer" "clippy" ];
+          targets = [ ];
         };
 
         # Set up crane with our rust toolchain
@@ -136,7 +134,6 @@
           src = craneLib.cleanCargoSource ./.;
 
           buildInputs = with pkgs; [
-            # Add runtime dependencies here
             openssl
           ];
 
@@ -144,7 +141,6 @@
             pkg-config
           ];
 
-          # Environment variables needed during compilation
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
         };
@@ -171,13 +167,11 @@
             rustToolchain
           ];
 
-          # Environment variables
           shellHook = ''
             echo "you are now altering Ultron's programming"
             echo "proceed with caution"
           '';
 
-          # For tools that need OpenSSL
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
 
@@ -191,6 +185,9 @@
           ultron = ultronPackage;
           default = ultronPackage;
         };
+
+        # Keep the per-system module if needed for backward compatibility
+        nixosModules.default = ultronModule;
       }
     );
 }
