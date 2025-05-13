@@ -30,10 +30,10 @@ pub struct Cli {
 
 /// panics if a subscriber was already registered.
 /// configure log levels with the RUST_LOG environment variable.
-fn setup_tracing() {
+fn setup_tracing(rust_log: &str) {
     tracing_subscriber::fmt()
         .json()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(EnvFilter::parse(rust_log))
         .with_current_span(true)
         .init();
 }
@@ -42,7 +42,7 @@ fn setup_tracing() {
 async fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
-    setup_tracing();
+    setup_tracing(&args.rust_log);
     tracing::info!("starting ultron");
 
     let env = envy::from_env::<Env>()?;

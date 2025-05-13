@@ -16,102 +16,102 @@
 
   outputs = { self, nixpkgs, rust-overlay, flake-utils, crane, ... }:
     let
-      # Define the module at the top level
-      ultronModule = { config, lib, pkgs, ... }:
-        let
-          cfg = config.services.ultron;
+      # Create system-independent module function that takes a package as an argument
+      mkUltronModule = ultronPackage: { config, lib, pkgs, ... }:
+      let
+        cfg = config.services.ultron;
+      in {
+        options.services.ultron = {
+          enable = lib.mkEnableOption "Ultron Discord bot service";
 
-          # Get the ultron package for the current system
-          ultronPackage = if self.packages ? ${pkgs.system} &&
-                            self.packages.${pkgs.system} ? default
-                          then self.packages.${pkgs.system}.default
-                          else null;
-        in {
-          options.services.ultron = {
-            enable = lib.mkEnableOption "Ultron Discord bot service";
+          user = lib.mkOption {
+            type = lib.types.str;
+            default = "ultron";
+            description = "User account under which Ultron runs";
+          };
 
-            user = lib.mkOption {
-              type = lib.types.str;
-              default = "ultron";
-              description = "User account under which Ultron runs";
-            };
+          group = lib.mkOption {
+            type = lib.types.str;
+            default = "ultron";
+            description = "Group under which Ultron runs";
+          };
 
-            group = lib.mkOption {
-              type = lib.types.str;
-              default = "ultron";
-              description = "Group under which Ultron runs";
-            };
+          environmentFile = lib.mkOption {
+            type = lib.types.nullOr lib.types.path;
+            default = null;
+            description = "Environment file containing Discord tokens and other secrets";
+          };
+        };
 
-            environmentFile = lib.mkOption {
-              type = lib.types.nullOr lib.types.path;
-              default = null;
-              description = "Environment file containing Discord tokens and other secrets";
+        config = lib.mkIf cfg.enable {
+          users.users = lib.mkIf (cfg.user == "ultron") {
+            ultron = {
+              isSystemUser = true;
+              group = cfg.group;
+              description = "Ultron Discord bot service user";
+              home = "/var/lib/ultron";
+              createHome = true;
             };
           };
 
-          config = lib.mkIf (cfg.enable && ultronPackage != null) {
-            users.users = lib.mkIf (cfg.user == "ultron") {
-              ultron = {
-                isSystemUser = true;
-                group = cfg.group;
-                description = "Ultron Discord bot service user";
-                home = "/var/lib/ultron";
-                createHome = true;
-              };
-            };
+          users.groups = lib.mkIf (cfg.group == "ultron") {
+            ultron = {};
+          };
 
-            users.groups = lib.mkIf (cfg.group == "ultron") {
-              ultron = {};
-            };
+          systemd.services.ultron = {
+            description = "Ultron Discord bot";
+            wantedBy = [ "multi-user.target" ];
+            after = [ "network.target" ];
 
-            systemd.services.ultron = {
-              description = "Ultron Discord bot";
-              wantedBy = [ "multi-user.target" ];
-              after = [ "network.target" ];
+            serviceConfig = {
+              # Use the passed package instead of referencing self
+              ExecStart = "${ultronPackage}/bin/ultron";
+              User = cfg.user;
+              Group = cfg.group;
+              Restart = "always";
+              RestartSec = "10";
 
-              serviceConfig = {
-                ExecStart = "${ultronPackage}/bin/ultron";
-                User = cfg.user;
-                Group = cfg.group;
-                Restart = "always";
-                RestartSec = "10";
+              # If an environment file is specified, use it
+              EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
 
-                # If an environment file is specified, use it
-                EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
-
-                # Hardening measures
-                CapabilityBoundingSet = "";
-                DevicePolicy = "closed";
-                LockPersonality = true;
-                MemoryDenyWriteExecute = true;
-                NoNewPrivileges = true;
-                PrivateDevices = true;
-                PrivateTmp = true;
-                ProtectClock = true;
-                ProtectControlGroups = true;
-                ProtectHome = true;
-                ProtectHostname = true;
-                ProtectKernelLogs = true;
-                ProtectKernelModules = true;
-                ProtectKernelTunables = true;
-                ProtectSystem = "strict";
-                ReadWritePaths = [ "/var/lib/ultron" ];
-                RemoveIPC = true;
-                RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
-                RestrictNamespaces = true;
-                RestrictRealtime = true;
-                RestrictSUIDSGID = true;
-                SystemCallArchitectures = "native";
-                SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
-                UMask = "077";
-              };
+              # Hardening measures
+              CapabilityBoundingSet = "";
+              DevicePolicy = "closed";
+              LockPersonality = true;
+              MemoryDenyWriteExecute = true;
+              NoNewPrivileges = true;
+              PrivateDevices = true;
+              PrivateTmp = true;
+              ProtectClock = true;
+              ProtectControlGroups = true;
+              ProtectHome = true;
+              ProtectHostname = true;
+              ProtectKernelLogs = true;
+              ProtectKernelModules = true;
+              ProtectKernelTunables = true;
+              ProtectSystem = "strict";
+              ReadWritePaths = [ "/var/lib/ultron" ];
+              RemoveIPC = true;
+              RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+              RestrictNamespaces = true;
+              RestrictRealtime = true;
+              RestrictSUIDSGID = true;
+              SystemCallArchitectures = "native";
+              SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
+              UMask = "077";
             };
           };
         };
+      };
+
+      # Expose a system-independent function that takes pkgs
+      ultronModuleWithPkgs = pkgs: mkUltronModule self.packages.${pkgs.system}.default;
     in
     {
-      # Expose the module at the top level
-      nixosModules.default = ultronModule;
+      # Expose a system-independent module function
+      nixosModules.default = { pkgs, ... }: {
+        imports = [ (ultronModuleWithPkgs pkgs) ];
+      };
     } //
     flake-utils.lib.eachDefaultSystem (system:
       let
@@ -175,6 +175,8 @@
           OPENSSL_DIR = "${pkgs.openssl.dev}";
           OPENSSL_LIB_DIR = "${pkgs.openssl.out}/lib";
 
+          RUST_LOG = "info,ultron=debug";
+
           nativeBuildInputs = with pkgs; [
             pkg-config
           ];
@@ -186,8 +188,8 @@
           default = ultronPackage;
         };
 
-        # Keep the per-system module if needed for backward compatibility
-        nixosModules.default = ultronModule;
+        # Also expose the system-specific module
+        nixosModules.default = mkUltronModule ultronPackage;
       }
     );
 }
