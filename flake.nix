@@ -39,7 +39,19 @@
           environmentFile = lib.mkOption {
             type = lib.types.nullOr lib.types.path;
             default = null;
-            description = "Environment file containing Discord tokens and other secrets";
+            description = "environment file containing Discord tokens and other secrets";
+          };
+
+          port = lib.mkOption {
+            type = lib.types.int;
+            default = 8080;
+            description = "port to run the server on";
+          };
+
+          rust_log = lib.mkOption {
+            type = lib.types.str;
+            default = "info";
+            description = "the log level of the service. see: https://docs.rs/env_logger/latest/env_logger/#enabling-logging";
           };
         };
 
