@@ -39,8 +39,10 @@ pub struct AppState<ChatBot> {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum Route {
-    #[strum(to_string = "/bot")]
-    Bot,
+    #[strum(to_string = "/command")]
+    Command,
+    #[strum(to_string = "/echo")]
+    Echo,
     #[strum(to_string = "/healthcheck")]
     Healthcheck,
     #[strum(to_string = "/")]
@@ -68,9 +70,10 @@ where
     Bot: ChatBot + 'static,
 {
     Router::new()
+        .route(Route::Command.into(), post(command))
+        .route(Route::Echo.into(), post(echo))
         .route(Route::Index.into(), get(index))
         .route(Route::Healthcheck.into(), get(healthcheck))
-        .route(Route::Bot.into(), post(bot))
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
 }
@@ -84,20 +87,25 @@ async fn healthcheck() -> String {
     "OK".into()
 }
 
+/// input to the bot.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BotInput {
+    /// the channel to send the command to
     channel: Channel,
-    message: String,
+    /// command input as if it was a message from Discord,
+    /// e.g. `echo hello`
+    command_input: String,
 }
 
-async fn bot<Bot>(
+/// tests bot input.
+async fn command<Bot>(
     State(state): State<AppState<Bot>>,
     Json(bot_input): Json<BotInput>,
 ) -> Result<(), ServerError>
 where
     Bot: ChatBot + 'static,
 {
-    let chat_input = ApiInput::from(bot_input.message);
+    let chat_input = ApiInput::from(bot_input.command_input);
 
     tracing::info!("response: {:?}", chat_input);
 
@@ -106,6 +114,38 @@ where
             state
                 .chat_bot
                 .send_message(bot_input.channel, &response)
+                .await
+                .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// make Ultron say something
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EchoInput {
+    /// the channel to send the command to
+    channel: Channel,
+    /// what Ultron is going to say
+    message: String,
+}
+
+async fn echo<Bot>(
+    State(state): State<AppState<Bot>>,
+    Json(input): Json<EchoInput>,
+) -> Result<(), ServerError>
+where
+    Bot: ChatBot + 'static,
+{
+    let command = format!("echo {}", input.message);
+    let api_input = ApiInput::from(command);
+
+    match state.event_processor.process(api_input).await? {
+        crate::Response::PlainChat(response) => {
+            state
+                .chat_bot
+                .send_message(input.channel, &response)
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
@@ -156,10 +196,10 @@ mod tests {
         };
         let bot_input = BotInput {
             channel: Channel::Debug,
-            message: "echo hello".to_string(),
+            command_input: "echo hello".to_string(),
         };
         let json = Json(bot_input);
-        let () = bot(State(state), json)
+        let () = command(State(state), json)
             .await
             .expect("got an error from the test bot");
     }

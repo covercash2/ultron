@@ -17,5 +17,8 @@ test:
 run:
   cargo run -- --port {{port}}  | lines | each {|line| $line | try { from json } catch { $line }}
 
-hit:
-  http post --content-type application/json http://localhost:{{port}}/bot { channel: debug message: "echo heck" }
+command:
+  http post --content-type application/json http://localhost:{{port}}/command { channel: debug command_input: "echo heck" }
+
+echo:
+  http post --content-type application/json http://localhost:{{port}}/echo { channel: debug message: "echo hello" }
