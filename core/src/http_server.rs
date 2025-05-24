@@ -10,9 +10,11 @@ use axum::{
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use tower_http::trace::TraceLayer;
+use trace_layer::TracingMiddleware;
 
 use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
+
+mod trace_layer;
 
 pub type ServerResult<T> = Result<T, ServerError>;
 
@@ -69,7 +71,7 @@ where
         .route(Route::Index.into(), get(index))
         .route(Route::Healthcheck.into(), get(healthcheck))
         .route(Route::Bot.into(), post(bot))
-        .layer(TraceLayer::new_for_http())
+        .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
 }
 

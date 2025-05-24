@@ -1,6 +1,6 @@
 # come at me
 set shell := ["nu", "-c"]
-port := "9090"
+port := "9091"
 
 default:
   just --list
