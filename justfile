@@ -1,5 +1,6 @@
 # come at me
 set shell := ["nu", "-c"]
+port := "9090"
 
 default:
   just --list
@@ -14,7 +15,7 @@ test:
 
 # run the bot with info logs and parse the output as json
 run:
-  with-env { RUST_LOG: "info" } { cargo run } | lines | each {|line| $line | from json }
+  cargo run -- --port {{port}}  | lines | each {|line| $line | try { from json } catch { $line }}
 
 hit:
-  http post --content-type application/json http://localhost:8080/bot { channel: debug message: "echo heck" }
+  http post --content-type application/json http://localhost:{{port}}/bot { channel: debug message: "echo heck" }

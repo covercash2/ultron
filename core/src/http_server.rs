@@ -34,13 +34,15 @@ pub struct AppState<ChatBot> {
     pub chat_bot: Arc<ChatBot>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, strum::Display)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum Route {
-    #[strum(to_string = "/")]
-    Index,
     #[strum(to_string = "/bot")]
     Bot,
+    #[strum(to_string = "/healthcheck")]
+    Healthcheck,
+    #[strum(to_string = "/")]
+    Index,
 }
 
 pub async fn serve<Bot>(port: u16, state: AppState<Bot>) -> ServerResult<()>
@@ -64,8 +66,9 @@ where
     Bot: ChatBot + 'static,
 {
     Router::new()
-        .route(&Route::Index.to_string(), get(index))
-        .route(&Route::Bot.to_string(), post(bot))
+        .route(Route::Index.into(), get(index))
+        .route(Route::Healthcheck.into(), get(healthcheck))
+        .route(Route::Bot.into(), post(bot))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
@@ -73,6 +76,10 @@ where
 /// index route: [`Route::Index`]
 async fn index() -> String {
     "Hello, World!".into()
+}
+
+async fn healthcheck() -> String {
+    "OK".into()
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

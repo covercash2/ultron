@@ -34,6 +34,7 @@ pub enum Command {
 
 impl Command {
     pub fn execute(self) -> Result<String, EventError> {
+        tracing::debug!(command = ?self, "executing command");
         let result: String = match self {
             Command::Echo(message) => message.to_string(),
             Command::Roll(input) => {

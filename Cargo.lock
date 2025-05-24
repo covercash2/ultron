@@ -2452,6 +2452,7 @@ dependencies = [
  "serde",
  "thiserror 2.0.12",
  "tokio",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
  "ultron_core",
