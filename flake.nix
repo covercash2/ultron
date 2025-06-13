@@ -115,14 +115,106 @@
           };
         };
       };
-
-      # Expose a system-independent function that takes pkgs
-      ultronModuleWithPkgs = pkgs: mkUltronModule self.packages.${pkgs.system}.default;
     in
     {
-      # Expose a system-independent module function
-      nixosModules.default = { pkgs, ... }: {
-        imports = [ (ultronModuleWithPkgs pkgs) ];
+      # Expose a standalone NixOS module that doesn't depend on packages
+      nixosModule = { pkgs, ... }: {
+        imports = [
+          ({ config, lib, ... }:
+            let
+              cfg = config.services.ultron;
+            in {
+              options.services.ultron = {
+                enable = lib.mkEnableOption "Ultron Discord bot service";
+                package = lib.mkOption {
+                  type = lib.types.package;
+                  description = "The ultron package to use";
+                };
+                user = lib.mkOption {
+                  type = lib.types.str;
+                  default = "ultron";
+                  description = "User account under which Ultron runs";
+                };
+                group = lib.mkOption {
+                  type = lib.types.str;
+                  default = "ultron";
+                  description = "Group under which Ultron runs";
+                };
+                environmentFile = lib.mkOption {
+                  type = lib.types.nullOr lib.types.path;
+                  default = null;
+                  description = "environment file containing Discord tokens and other secrets";
+                };
+                port = lib.mkOption {
+                  type = lib.types.int;
+                  default = 8080;
+                  description = "port to run the server on";
+                };
+                rust_log = lib.mkOption {
+                  type = lib.types.str;
+                  default = "info";
+                  description = "the log level of the service";
+                };
+              };
+
+              config = lib.mkIf cfg.enable {
+                users.users = lib.mkIf (cfg.user == "ultron") {
+                  ultron = {
+                    isSystemUser = true;
+                    group = cfg.group;
+                    description = "Ultron Discord bot service user";
+                    home = "/var/lib/ultron";
+                    createHome = true;
+                  };
+                };
+
+                users.groups = lib.mkIf (cfg.group == "ultron") {
+                  ultron = {};
+                };
+
+                systemd.services.ultron = {
+                  description = "Ultron Discord bot";
+                  wantedBy = [ "multi-user.target" ];
+                  after = [ "network.target" ];
+
+                  serviceConfig = {
+                    ExecStart = "${cfg.package}/bin/ultron";
+                    User = cfg.user;
+                    Group = cfg.group;
+                    Restart = "always";
+                    RestartSec = "10";
+                    EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
+
+                    # Hardening measures
+                    CapabilityBoundingSet = "";
+                    DevicePolicy = "closed";
+                    LockPersonality = true;
+                    MemoryDenyWriteExecute = true;
+                    NoNewPrivileges = true;
+                    PrivateDevices = true;
+                    PrivateTmp = true;
+                    ProtectClock = true;
+                    ProtectControlGroups = true;
+                    ProtectHome = true;
+                    ProtectHostname = true;
+                    ProtectKernelLogs = true;
+                    ProtectKernelModules = true;
+                    ProtectKernelTunables = true;
+                    ProtectSystem = "strict";
+                    ReadWritePaths = [ "/var/lib/ultron" ];
+                    RemoveIPC = true;
+                    RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
+                    RestrictNamespaces = true;
+                    RestrictRealtime = true;
+                    RestrictSUIDSGID = true;
+                    SystemCallArchitectures = "native";
+                    SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
+                    UMask = "077";
+                  };
+                };
+              };
+            })
+        ];
       };
     } //
     flake-utils.lib.eachDefaultSystem (system:
@@ -200,7 +292,7 @@
           default = ultronPackage;
         };
 
-        # Also expose the system-specific module
+        # System-specific module that uses the default package
         nixosModules.default = mkUltronModule ultronPackage;
       }
     );
