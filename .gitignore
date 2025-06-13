@@ -1,5 +1,6 @@
 target/
 
+secrets.toml
 secrets
 
 # pre-commit

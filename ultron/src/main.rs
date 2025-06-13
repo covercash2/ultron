@@ -1,14 +1,14 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use ultron_core::http_server::{self, AppState};
+use ultron_core::io::read_file_to_string;
 use ultron_discord::DiscordBotConfig;
 
-/// environment variables
 #[derive(Clone, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct Env {
+pub struct Secrets {
     pub discord_app_id: String,
     pub discord_public_key: String,
     pub discord_token: String,
@@ -22,6 +22,9 @@ pub struct Cli {
 
     #[arg(short, long, default_value = "info")]
     pub rust_log: String,
+
+    #[arg(short, long)]
+    pub secrets: PathBuf,
 }
 
 /// panics if a subscriber was already registered.
@@ -43,7 +46,17 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("starting ultron");
     dbg!("starting ultron");
 
-    let env = envy::from_env::<Env>()?;
+    let contents = read_file_to_string(&args.secrets)
+        .await
+        .inspect_err(|error| {
+            tracing::error!(
+                %error,
+                "unable to read secrets file from CLI args",
+            );
+        })?;
+
+    let secrets: Secrets = toml::from_str(&contents)?;
+
     tracing::info!("log level: {}", args.rust_log);
 
     tracing::info!("CLI args: {args:?}");
@@ -51,9 +64,9 @@ async fn main() -> anyhow::Result<()> {
     let event_processor = Arc::new(ultron_core::EventProcessor);
 
     let discord_config = DiscordBotConfig::builder()
-        .application_id(env.discord_app_id)
-        .token(env.discord_token)
-        .public_key(env.discord_public_key)
+        .application_id(secrets.discord_app_id)
+        .token(secrets.discord_token)
+        .public_key(secrets.discord_public_key)
         .event_processor(event_processor.clone())
         .build();
 

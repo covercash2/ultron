@@ -1,4 +1,4 @@
-use bon::{builder, Builder};
+use bon::{Builder, builder};
 use tower_http::{
     classify::{ServerErrorsAsFailures, SharedClassifier},
     trace::{
@@ -34,4 +34,3 @@ impl TracingMiddleware {
             .on_eos(DefaultOnEos::new().level(self.level))
     }
 }
-

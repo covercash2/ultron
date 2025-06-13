@@ -10,6 +10,7 @@ envy.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+toml = "0.8.23"
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

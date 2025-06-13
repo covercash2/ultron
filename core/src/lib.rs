@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 pub mod command;
 pub mod copypasta;
 pub mod dice;
+pub mod error;
 pub mod http_server;
+pub mod io;
 
 const DEFAULT_COMMAND_PREFIX: &str = "!ultron";
 
