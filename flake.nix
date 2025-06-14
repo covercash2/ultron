@@ -69,52 +69,6 @@
           users.groups = lib.mkIf (cfg.group == "ultron") {
             ultron = {};
           };
-
-          systemd.services.ultron = {
-            description = "Ultron Discord bot";
-            wantedBy = [ "multi-user.target" ];
-            after = [ "network.target" ];
-
-            serviceConfig = {
-              # Use the passed package instead of referencing self
-              ExecStart = ''
-                ${cfg.package}/bin/ultron \
-                  --port ${config.services.ultron.port} \
-                  --rust_log ${config.services.ultron.rustLog} \
-                  --secrets ${config.services.ultron.secretsFile}
-              '';
-              User = cfg.user;
-              Group = cfg.group;
-              Restart = "always";
-              RestartSec = "10";
-
-              # Hardening measures
-              CapabilityBoundingSet = "";
-              DevicePolicy = "closed";
-              LockPersonality = true;
-              MemoryDenyWriteExecute = true;
-              NoNewPrivileges = true;
-              PrivateDevices = true;
-              PrivateTmp = true;
-              ProtectClock = true;
-              ProtectControlGroups = true;
-              ProtectHome = true;
-              ProtectHostname = true;
-              ProtectKernelLogs = true;
-              ProtectKernelModules = true;
-              ProtectKernelTunables = true;
-              ProtectSystem = "strict";
-              ReadWritePaths = [ "/var/lib/ultron" ];
-              RemoveIPC = true;
-              RestrictAddressFamilies = [ "AF_INET" "AF_INET6" ];
-              RestrictNamespaces = true;
-              RestrictRealtime = true;
-              RestrictSUIDSGID = true;
-              SystemCallArchitectures = "native";
-              SystemCallFilter = [ "@system-service" "~@privileged @resources" ];
-              UMask = "077";
-            };
-          };
         };
       };
     in
