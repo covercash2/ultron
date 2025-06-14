@@ -148,7 +148,7 @@
 
                   serviceConfig = {
                     ExecStart = ''
-                      ${cfg.package}/bin/ultron \
+                      ${config.services.ultron.package}/bin/ultron \
                         --port ${config.services.ultron.port} \
                         --rust_log ${config.services.ultron.rustLog} \
                         --secrets ${config.services.ultron.secretsFile}
