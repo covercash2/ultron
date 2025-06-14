@@ -36,7 +36,7 @@
             description = "Group under which Ultron runs";
           };
 
-          environmentFile = lib.mkOption {
+          secretsFile = lib.mkOption {
             type = lib.types.nullOr lib.types.path;
             default = null;
             description = "environment file containing Discord tokens and other secrets";
@@ -48,7 +48,7 @@
             description = "port to run the server on";
           };
 
-          rust_log = lib.mkOption {
+          rustLog = lib.mkOption {
             type = lib.types.str;
             default = "info";
             description = "the log level of the service. see: https://docs.rs/env_logger/latest/env_logger/#enabling-logging";
@@ -77,14 +77,16 @@
 
             serviceConfig = {
               # Use the passed package instead of referencing self
-              ExecStart = "${ultronPackage}/bin/ultron";
+              ExecStart = ''
+                ${cfg.package}/bin/ultron \
+                  --port ${config.services.ultron.port} \
+                  --rust_log ${config.services.ultron.rustLog} \
+                  --secrets ${config.services.ultron.secretsFile}
+              '';
               User = cfg.user;
               Group = cfg.group;
               Restart = "always";
               RestartSec = "10";
-
-              # If an environment file is specified, use it
-              EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
 
               # Hardening measures
               CapabilityBoundingSet = "";
@@ -124,39 +126,6 @@
             let
               cfg = config.services.ultron;
             in {
-              options.services.ultron = {
-                enable = lib.mkEnableOption "Ultron Discord bot service";
-                package = lib.mkOption {
-                  type = lib.types.package;
-                  description = "The ultron package to use";
-                };
-                user = lib.mkOption {
-                  type = lib.types.str;
-                  default = "ultron";
-                  description = "User account under which Ultron runs";
-                };
-                group = lib.mkOption {
-                  type = lib.types.str;
-                  default = "ultron";
-                  description = "Group under which Ultron runs";
-                };
-                secretsFile = lib.mkOption {
-                  type = lib.types.nullOr lib.types.path;
-                  default = null;
-                  description = "environment file containing Discord tokens and other secrets";
-                };
-                port = lib.mkOption {
-                  type = lib.types.int;
-                  default = 8080;
-                  description = "port to run the server on";
-                };
-                logLevel = lib.mkOption {
-                  type = lib.types.str;
-                  default = "info";
-                  description = "the log level of the service";
-                };
-              };
-
               config = lib.mkIf cfg.enable {
                 users.users = lib.mkIf (cfg.user == "ultron") {
                   ultron = {
@@ -188,7 +157,6 @@
                     Group = cfg.group;
                     Restart = "always";
                     RestartSec = "10";
-                    EnvironmentFile = lib.mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
 
                     # Hardening measures
                     CapabilityBoundingSet = "";
