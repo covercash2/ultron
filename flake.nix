@@ -140,7 +140,7 @@
                   default = "ultron";
                   description = "Group under which Ultron runs";
                 };
-                environmentFile = lib.mkOption {
+                secretsFile = lib.mkOption {
                   type = lib.types.nullOr lib.types.path;
                   default = null;
                   description = "environment file containing Discord tokens and other secrets";
@@ -150,7 +150,7 @@
                   default = 8080;
                   description = "port to run the server on";
                 };
-                rust_log = lib.mkOption {
+                logLevel = lib.mkOption {
                   type = lib.types.str;
                   default = "info";
                   description = "the log level of the service";
@@ -178,7 +178,12 @@
                   after = [ "network.target" ];
 
                   serviceConfig = {
-                    ExecStart = "${cfg.package}/bin/ultron";
+                    ExecStart = ''
+                      ${cfg.package}/bin/ultron \
+                        --port ${config.services.ultron.port} \
+                        --rust_log ${config.services.ultron.rustLog} \
+                        --secrets ${config.services.ultron.secretsFile}
+                    '';
                     User = cfg.user;
                     Group = cfg.group;
                     Restart = "always";
