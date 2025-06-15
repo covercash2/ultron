@@ -11,6 +11,9 @@ resolver = "3"
 version = "0.0.0"
 edition = "2024"
 
+[workspace.metadata.crane]
+name = "ultron"
+
 [workspace.dependencies]
 anyhow = "1.0.97"
 async-openai = "0.28.0"
