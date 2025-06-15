@@ -162,7 +162,7 @@
                 # Pass CLI arguments based on configuration options
                 ExecStart = ''
                 ${cfg.package}/bin/ultron --port ${toString cfg.port} \
-                  --rust_log ${cfg.rustLog} \
+                  --rust-log ${cfg.rustLog} \
                   --secrets ${cfg.secretsFile}
                 '';
                 User = cfg.user;
