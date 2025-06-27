@@ -80,6 +80,12 @@
             rust-analyzer
             rustfmt
             clippy
+
+            just
+            just-lsp
+            taplo
+            typos
+            typos-lsp
           ];
         };
       }

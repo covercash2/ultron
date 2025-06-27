@@ -72,7 +72,16 @@ async fn main() -> anyhow::Result<()> {
 
     let bot = Arc::new(discord_config.run().await?);
 
-    bot.debug("coming online").await?;
+    let hostname = read_file_to_string("/etc/hostname").await?
+        .trim()
+        .to_string();
+
+    let startup_message = format!(
+        "coming online, listening from {hostname}:{}",
+        args.port
+    );
+
+    bot.debug(&startup_message).await?;
 
     let discord_thread_bot = bot.clone();
     let server_thread_bot = bot.clone();

@@ -5,16 +5,21 @@ use axum::{
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::{get, post},
 };
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trace_layer::TracingMiddleware;
+use utoipa::{OpenApi, ToSchema};
+use utoipa_axum::{router::OpenApiRouter, routes};
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
 
 mod trace_layer;
+
+pub const BOT_COMMAND_TAG: &str = "bot command";
+pub const TELEMETRY_TAG: &str = "telemetry";
 
 pub type ServerResult<T> = Result<T, ServerError>;
 
@@ -36,6 +41,16 @@ pub struct AppState<ChatBot> {
     pub chat_bot: Arc<ChatBot>,
 }
 
+#[derive(OpenApi)]
+#[openapi(
+    tags(
+        (name = BOT_COMMAND_TAG, description = "orders to submit to Ultron"),
+        (name = TELEMETRY_TAG, description = "figure out what's wrong with Ultron")
+    )
+)]
+struct ApiDoc;
+
+/// Routes for the HTTP server.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, strum::Display, strum::IntoStaticStr)]
 #[strum(serialize_all = "snake_case")]
 pub enum Route {
@@ -49,6 +64,13 @@ pub enum Route {
     Index,
 }
 
+impl Route {
+    pub fn as_str(&self) -> &'static str {
+        self.into()
+    }
+}
+
+/// Starts the HTTP server on the specified port with the given application state.
 pub async fn serve<Bot>(port: u16, state: AppState<Bot>) -> ServerResult<()>
 where
     Bot: ChatBot + 'static,
@@ -69,26 +91,43 @@ pub fn create_router<Bot>(state: AppState<Bot>) -> Router
 where
     Bot: ChatBot + 'static,
 {
-    Router::new()
-        .route(Route::Command.into(), post(command))
-        .route(Route::Echo.into(), post(echo))
-        .route(Route::Index.into(), get(index))
-        .route(Route::Healthcheck.into(), get(healthcheck))
+    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+        .routes(routes!(echo, index))
+        .routes(routes!(command, healthcheck))
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
+        .split_for_parts();
+
+    router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
 }
 
 /// index route: [`Route::Index`]
+#[utoipa::path(
+    get,
+    path = Route::Index.to_string(),
+    responses(
+        (status = OK, description = "index page")
+    ),
+    tag = TELEMETRY_TAG,
+)]
 async fn index() -> String {
     "Hello, World!".into()
 }
 
+#[utoipa::path(
+    get,
+    path = Route::Healthcheck.to_string(),
+    responses(
+        (status = OK, description = "healthcheck OK")
+    ),
+    tag = TELEMETRY_TAG,
+)]
 async fn healthcheck() -> String {
     "OK".into()
 }
 
 /// input to the bot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct BotInput {
     /// the channel to send the command to
     channel: Channel,
@@ -98,6 +137,15 @@ pub struct BotInput {
 }
 
 /// tests bot input.
+#[utoipa::path(
+    post,
+    path = Route::Command.to_string(),
+    responses(
+        (status = OK, description = "command sent"),
+        (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
+    ),
+    tag = BOT_COMMAND_TAG,
+)]
 async fn command<Bot>(
     State(state): State<AppState<Bot>>,
     Json(bot_input): Json<BotInput>,
@@ -123,7 +171,7 @@ where
 }
 
 /// make Ultron say something
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct EchoInput {
     /// the channel to send the command to
     channel: Channel,
@@ -131,6 +179,25 @@ pub struct EchoInput {
     message: String,
 }
 
+impl From<EchoInput> for BotInput {
+    fn from(input: EchoInput) -> Self {
+        Self {
+            channel: input.channel,
+            command_input: format!("echo {}", input.message),
+        }
+    }
+}
+
+/// Make Ultron say something
+#[utoipa::path(
+    post,
+    path = Route::Echo.to_string(),
+    responses(
+        (status = OK, description = "echo command sent"),
+        (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
+    ),
+    tag = BOT_COMMAND_TAG,
+)]
 async fn echo<Bot>(
     State(state): State<AppState<Bot>>,
     Json(input): Json<EchoInput>,
@@ -138,8 +205,8 @@ async fn echo<Bot>(
 where
     Bot: ChatBot + 'static,
 {
-    let command = format!("echo {}", input.message);
-    let api_input = ApiInput::from(command);
+    let input: BotInput = input.into();
+    let api_input = ApiInput::from(input.command_input);
 
     match state.event_processor.process(api_input).await? {
         crate::Response::PlainChat(response) => {

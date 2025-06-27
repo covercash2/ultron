@@ -12,7 +12,7 @@ pub mod io;
 
 const DEFAULT_COMMAND_PREFIX: &str = "!ultron";
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Channel {
     Debug,
@@ -128,7 +128,7 @@ pub struct EventProcessor;
 impl EventProcessor {
     pub async fn process(&self, event: impl Into<Event>) -> Result<Response, EventError> {
         let event = event.into();
-        tracing::debug!("processing event: {:?}", event);
+        tracing::debug!(?event, "processing event");
 
         let command: Command = event.try_into()?;
         let output = command.execute()?;

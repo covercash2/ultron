@@ -27,7 +27,7 @@ pub enum Command {
     #[strum_discriminants(strum(message = "roll some dice"))]
     Roll(String),
     #[strum_discriminants(strum(message = "things that bear repeating"))]
-    CopyPasta(String),
+    Copypasta(String),
     #[strum_discriminants(strum(message = "get help"))]
     Help,
 }
@@ -49,7 +49,7 @@ impl Command {
                     command.get_message().unwrap_or("oops no message")
                 )
             }),
-            Command::CopyPasta(input) => {
+            Command::Copypasta(input) => {
                 if input == "list" {
                     let names = copy_pasta_names()
                         .into_iter()
@@ -59,7 +59,6 @@ impl Command {
                     format!("types of pasta 🍝:\n{}", names)
                 } else {
                     copy_pasta(&input)
-                        .map(ToString::to_string)
                         .unwrap_or("try again loser".to_string())
                 }
             }
@@ -94,7 +93,7 @@ impl FromStr for Command {
         match command {
             "echo" => Ok(Command::Echo(rest.to_string())),
             "roll" => Ok(Command::Roll(rest.to_string())),
-            "pasta" => Ok(Command::CopyPasta(rest.to_string())),
+            "pasta" => Ok(Command::Copypasta(rest.to_string())),
             "help" => Ok(Command::Help),
             _ => Err(CommandParseError::UndefinedCommand(command.to_string())),
         }

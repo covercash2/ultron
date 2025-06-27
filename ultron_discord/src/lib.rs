@@ -43,6 +43,8 @@ pub struct DiscordBotConfig {
     application_id: String,
     #[builder(into)]
     token: String,
+    /// TODO: i'm not sure why i need this field, but it's here
+    #[allow(unused)]
     #[builder(into)]
     public_key: String,
     #[builder(default)]
@@ -171,11 +173,11 @@ impl EventHandler for Handler {
         match self.event_processor.process(event).await {
             Ok(Response::PlainChat(response)) => {
                 if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
-                    tracing::error!("error sending message: {:?}", error);
+                    tracing::error!(%error, "error sending message");
                 }
             }
             Err(error) => {
-                tracing::error!("error processing event: {:?}", error);
+                tracing::error!(%error, "error processing event");
 
                 let error_message = match error {
                     EventError::CommandParse(command_parse_error) => match command_parse_error {
@@ -193,7 +195,7 @@ impl EventHandler for Handler {
 
                 if let Some(error_message) = error_message {
                     if let Err(error) = msg.channel_id.say(&ctx.http, error_message).await {
-                        tracing::error!("error sending message: {:?}", error);
+                        tracing::error!(%error, "error sending message");
                     }
                 }
             }

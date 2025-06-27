@@ -1,9 +1,14 @@
 # come at me
 set shell := ["nu", "-c"]
-port := "9091"
+port := "9092"
 
 default:
   just --list
+
+format_check:
+  cargo fmt --all --check
+  typos
+  taplo format --check
 
 lint:
   cargo clippy --all
@@ -15,7 +20,7 @@ test:
 
 # run the bot with info logs and parse the output as json
 run:
-  cargo run -- --port {{port}}  | lines | each {|line| $line | try { from json } catch { $line }}
+  cargo run -- --port {{port}} --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}
 
 command:
   http post --content-type application/json http://localhost:{{port}}/command { channel: debug command_input: "echo heck" }
