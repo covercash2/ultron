@@ -44,7 +44,6 @@ async fn main() -> anyhow::Result<()> {
 
     setup_tracing(&args.rust_log);
     tracing::info!("starting ultron");
-    dbg!("starting ultron");
 
     let contents = read_file_to_string(&args.secrets)
         .await
