@@ -32,7 +32,8 @@
 
           buildInputs = with pkgs; [
             openssl
-            # Add other runtime dependencies as needed
+            # needed for utoipa
+            curl
           ];
 
           nativeBuildInputs = with pkgs; [
@@ -86,9 +87,6 @@
             taplo
             typos
             typos-lsp
-
-            # need curl for utoipa
-            curl
           ];
         };
       }
