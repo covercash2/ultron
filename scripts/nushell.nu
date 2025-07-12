@@ -3,21 +3,22 @@
 # - running the bot with specific parameters
 
 # the XDG data directory for ultron
-const DATA_DIR = "~/.local/state/ultron"
-const DEFAULT_URL = "http://localhost:8080"
+export const DATA_DIR = "~/.local/state/ultron"
+const LOCAL_URL = "http://localhost:8080"
+const GREEN_URL = "https://ultron.green.chrash.net"
 
 def state_file [] {
   $"($DATA_DIR)/nu_state.toml" | path expand
 }
 
 # default state
-const DEFAULT_STATE = {
-  url: $DEFAULT_URL,
+export const DEFAULT_STATE = {
+  url: $LOCAL_URL,
 }
 
 # check if the input matches the state
 # and save the state to the data directory if so
-def check_state [
+export def "ultron state" [
   --url: string
 ] {
   let state_file = (state_file)
@@ -53,7 +54,7 @@ export def ultron [
   --url: string
   --endpoint: string = "bot"
 ] {
-  let state = (check_state --url $url)
+  let state = (ultron state --url $url)
 
   let url = $state.url
 
