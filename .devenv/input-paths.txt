@@ -1,4 +1,0 @@
-/Users/chrash/github/covercash2/ultron/.devenv.flake.nix
-/Users/chrash/github/covercash2/ultron/devenv.lock
-/Users/chrash/github/covercash2/ultron/devenv.nix
-/Users/chrash/github/covercash2/ultron/devenv.yaml
