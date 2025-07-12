@@ -86,6 +86,9 @@
             taplo
             typos
             typos-lsp
+
+            # need curl for utoipa
+            curl
           ];
         };
       }
