@@ -36,6 +36,5 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "tracing-log"] }
 ultron_core = { path = "core" }
 ultron_discord = { path = "ultron_discord" }
-utoipa = { version = "5.3.1", features = ["axum_extras"] }
+utoipa = { version = "5.3.1", features = ["axum_extras", "yaml"] }
 utoipa-axum = "0.2.0"
-utoipa-swagger-ui = { version = "9.0.2", features = ["axum"] }

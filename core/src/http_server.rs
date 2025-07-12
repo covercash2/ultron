@@ -12,14 +12,26 @@ use thiserror::Error;
 use trace_layer::TracingMiddleware;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
-use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
 
 mod trace_layer;
 
-pub const BOT_COMMAND_TAG: &str = "bot command";
-pub const TELEMETRY_TAG: &str = "telemetry";
+#[derive(
+    Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema, strum::Display, strum::IntoStaticStr,
+)]
+#[strum(serialize_all = "snake_case")]
+pub enum OpenApiTag {
+    BotCommand,
+    Telemetry,
+    Meta,
+}
+
+impl OpenApiTag {
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
 
 pub type ServerResult<T> = Result<T, ServerError>;
 
@@ -27,12 +39,18 @@ pub type ServerResult<T> = Result<T, ServerError>;
 pub enum ServerError {
     #[error("unable to bind to port {0}")]
     UnableToBindPort(u16),
+
     #[error("error running server: {0}")]
     Startup(std::io::Error),
+
     #[error("error processing event: {0}")]
     Event(#[from] EventError),
+
     #[error("error invoking chat bot: {0}")]
     ChatBot(Box<dyn std::error::Error>),
+
+    #[error("failed to generate OpenAPI doc")]
+    OpenApiDocGeneration,
 }
 
 #[derive(Builder, Debug, Clone)]
@@ -43,9 +61,16 @@ pub struct AppState<ChatBot> {
 
 #[derive(OpenApi)]
 #[openapi(
+    paths(
+        command,
+        echo,
+        healthcheck,
+        index,
+        api_doc
+    ),
     tags(
-        (name = BOT_COMMAND_TAG, description = "orders to submit to Ultron"),
-        (name = TELEMETRY_TAG, description = "figure out what's wrong with Ultron")
+        (name = OpenApiTag::BotCommand.as_str(), description = "orders to submit to Ultron"),
+        (name = OpenApiTag::Telemetry.as_str(), description = "figure out what's wrong with Ultron")
     )
 )]
 struct ApiDoc;
@@ -91,14 +116,31 @@ pub fn create_router<Bot>(state: AppState<Bot>) -> Router
 where
     Bot: ChatBot + 'static,
 {
-    let (router, api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
+
+    let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(echo, index))
         .routes(routes!(command, healthcheck))
+        .routes(routes!(api_doc))
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
         .split_for_parts();
 
-    router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", api))
+    router
+}
+
+#[utoipa::path(
+    get,
+    path = Route::Index.to_string(),
+    responses(
+        (status = OK, description = "index page")
+    ),
+    tag = OpenApiTag::Meta.as_str(),
+)]
+async fn api_doc() -> ServerResult<Json<String>> {
+    ApiDoc::openapi()
+        .to_json()
+        .map_err(|_| ServerError::OpenApiDocGeneration)
+        .map(Json)
 }
 
 /// index route: [`Route::Index`]
@@ -108,7 +150,7 @@ where
     responses(
         (status = OK, description = "index page")
     ),
-    tag = TELEMETRY_TAG,
+    tag = OpenApiTag::Telemetry.as_str(),
 )]
 async fn index() -> String {
     "Hello, World!".into()
@@ -120,7 +162,7 @@ async fn index() -> String {
     responses(
         (status = OK, description = "healthcheck OK")
     ),
-    tag = TELEMETRY_TAG,
+    tag = OpenApiTag::Telemetry.as_str(),
 )]
 async fn healthcheck() -> String {
     "OK".into()
@@ -144,7 +186,7 @@ pub struct BotInput {
         (status = OK, description = "command sent"),
         (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
     ),
-    tag = BOT_COMMAND_TAG,
+    tag = OpenApiTag::BotCommand.as_str(),
 )]
 async fn command<Bot>(
     State(state): State<AppState<Bot>>,
@@ -196,7 +238,7 @@ impl From<EchoInput> for BotInput {
         (status = OK, description = "echo command sent"),
         (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
     ),
-    tag = BOT_COMMAND_TAG,
+    tag = OpenApiTag::BotCommand.as_str(),
 )]
 async fn echo<Bot>(
     State(state): State<AppState<Bot>>,
@@ -229,6 +271,7 @@ impl IntoResponse for ServerError {
             ServerError::Startup(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::Event(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::ChatBot(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::OpenApiDocGeneration => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()
     }
