@@ -87,6 +87,8 @@ pub enum Route {
     Healthcheck,
     #[strum(to_string = "/")]
     Index,
+    #[strum(to_string = "/api_doc")]
+    ApiDoc,
 }
 
 impl Route {
@@ -130,7 +132,7 @@ where
 
 #[utoipa::path(
     get,
-    path = Route::Index.to_string(),
+    path = Route::ApiDoc.to_string(),
     responses(
         (status = OK, description = "index page")
     ),
