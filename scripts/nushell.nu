@@ -3,12 +3,12 @@
 # - running the bot with specific parameters
 
 # the XDG data directory for ultron
-export const DATA_DIR = "~/.local/state/ultron"
+export const ULTRON_DATA_DIR = "~/.local/state/ultron"
 const LOCAL_URL = "http://localhost:8080"
 const GREEN_URL = "https://ultron.green.chrash.net"
 
 def state_file [] {
-  $"($DATA_DIR)/nu_state.toml" | path expand
+  $"($ULTRON_DATA_DIR)/nu_state.toml" | path expand
 }
 
 # default state
@@ -19,12 +19,12 @@ export const DEFAULT_STATE = {
 # check if the input matches the state
 # and save the state to the data directory if so
 export def "ultron state" [
-  --url: string
+  --url: string@urls
 ] {
   let state_file = (state_file)
 
   if (not ($state_file | path exists)) {
-    mkdir ($DATA_DIR | path expand)
+    mkdir ($ULTRON_DATA_DIR | path expand)
     $DEFAULT_STATE | save $state_file
   }
 
@@ -51,7 +51,7 @@ export def "ultron state" [
 export def ultron [
   channel: string@channels # the channel to send the message to: e.g. `debug`
   message: string # the input to the bot including the command: e.g. `echo hello`
-  --url: string
+  --url: string@urls
   --endpoint: string = "bot"
 ] {
   let state = (ultron state --url $url)
@@ -68,7 +68,7 @@ export def ultron [
 export def "ultron say" [
   channel: string@channels # the channel to send the message to: e.g. ``
   message: string # what ultron should say
-  --url: string = "http://localhost:8080"
+  --url: string@urls
 ] {
   let message = $"echo ($message)"
   ultron $channel $message
@@ -92,3 +92,9 @@ def channels [] {
   ]
 }
 
+def urls [] {
+  [
+    $LOCAL_URL
+    $GREEN_URL
+  ]
+}
