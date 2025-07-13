@@ -32,8 +32,6 @@
 
           buildInputs = with pkgs; [
             openssl
-            # needed for utoipa
-            curl
           ];
 
           nativeBuildInputs = with pkgs; [
