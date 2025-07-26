@@ -13,7 +13,7 @@ use trace_layer::TracingMiddleware;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{ApiInput, Channel, ChatBot, EventError, EventProcessor};
+use crate::{Channel, ChatBot, Event, EventError, EventProcessor};
 
 mod trace_layer;
 
@@ -118,7 +118,6 @@ pub fn create_router<Bot>(state: AppState<Bot>) -> Router
 where
     Bot: ChatBot + 'static,
 {
-
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(echo, index))
         .routes(routes!(command, healthcheck))
@@ -175,9 +174,19 @@ async fn healthcheck() -> String {
 pub struct BotInput {
     /// the channel to send the command to
     channel: Channel,
+    user: String,
     /// command input as if it was a message from Discord,
     /// e.g. `echo hello`
     command_input: String,
+}
+
+impl From<BotInput> for Event {
+    fn from(input: BotInput) -> Self {
+        Self {
+            user: input.user,
+            content: input.command_input,
+        }
+    }
 }
 
 /// tests bot input.
@@ -197,7 +206,7 @@ async fn command<Bot>(
 where
     Bot: ChatBot + 'static,
 {
-    let chat_input = ApiInput::from(bot_input.command_input);
+    let chat_input = Event::from(bot_input.clone());
 
     tracing::info!("response: {:?}", chat_input);
 
@@ -219,6 +228,7 @@ where
 pub struct EchoInput {
     /// the channel to send the command to
     channel: Channel,
+    user: String,
     /// what Ultron is going to say
     message: String,
 }
@@ -227,6 +237,7 @@ impl From<EchoInput> for BotInput {
     fn from(input: EchoInput) -> Self {
         Self {
             channel: input.channel,
+            user: input.user,
             command_input: format!("echo {}", input.message),
         }
     }
@@ -250,7 +261,7 @@ where
     Bot: ChatBot + 'static,
 {
     let input: BotInput = input.into();
-    let api_input = ApiInput::from(input.command_input);
+    let api_input = Event::from(input.clone());
 
     match state.event_processor.process(api_input).await? {
         crate::Response::PlainChat(response) => {
@@ -303,11 +314,12 @@ mod tests {
     #[tokio::test]
     async fn test_bot() {
         let state = AppState {
-            event_processor: Arc::new(EventProcessor),
+            event_processor: Arc::new(EventProcessor::default()),
             chat_bot: Arc::new(TestBot),
         };
         let bot_input = BotInput {
             channel: Channel::Debug,
+            user: "anonymous".to_string(),
             command_input: "echo hello".to_string(),
         };
         let json = Json(bot_input);

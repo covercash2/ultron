@@ -167,8 +167,18 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         tracing::debug!("handling message event: {:?}", msg);
 
-        let event: ChatInput = msg.content.into();
-        let event: Event = Event::ChatInput(event);
+        let chat_input: ChatInput = ChatInput {
+            user: msg.author.name.clone(),
+            content: msg.content.clone(),
+        };
+
+        let event: Event = match chat_input.try_into() {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::warn!(%error, "error converting chat input to event");
+                return;
+            }
+        };
 
         match self.event_processor.process(event).await {
             Ok(Response::PlainChat(response)) => {

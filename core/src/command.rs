@@ -3,7 +3,7 @@ use std::str::FromStr;
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
 
 use crate::{
-    ApiInput, Event, EventError,
+    Event, EventError,
     copypasta::{copy_pasta, copy_pasta_names},
     dice::DiceRoll,
 };
@@ -58,8 +58,7 @@ impl Command {
                         .join("\n");
                     format!("types of pasta 🍝:\n{}", names)
                 } else {
-                    copy_pasta(&input)
-                        .unwrap_or("try again loser".to_string())
+                    copy_pasta(&input).unwrap_or("try again loser".to_string())
                 }
             }
         };
@@ -71,9 +70,7 @@ impl TryFrom<Event> for Command {
     type Error = CommandParseError;
 
     fn try_from(input: Event) -> Result<Self, Self::Error> {
-        let input: ApiInput = input.try_into()?;
-
-        input.parse()
+        input.content.parse()
     }
 }
 

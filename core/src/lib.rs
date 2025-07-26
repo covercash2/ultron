@@ -1,4 +1,4 @@
-use std::{future::Future, marker::Send, ops::Deref};
+use std::{future::Future, marker::Send};
 
 use command::{Command, CommandParseError};
 use serde::{Deserialize, Serialize};
@@ -26,12 +26,21 @@ pub enum Error {
     CommandParse(CommandParseError),
 }
 
+/// Input from a chat interface, such as Discord
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChatInput {
-    content: String,
+    pub user: String,
+    pub content: String,
 }
 
 impl ChatInput {
+    pub fn anonymous(content: impl ToString) -> Self {
+        Self {
+            user: "anonymous".to_string(),
+            content: content.to_string(),
+        }
+    }
+
     pub fn strip_prefix(&self) -> Result<&str, CommandParseError> {
         self.content
             .strip_prefix(DEFAULT_COMMAND_PREFIX)
@@ -40,73 +49,24 @@ impl ChatInput {
     }
 }
 
-impl TryFrom<ChatInput> for ApiInput {
+impl TryFrom<ChatInput> for Event {
     type Error = CommandParseError;
 
     fn try_from(chat_input: ChatInput) -> Result<Self, Self::Error> {
-        let content = chat_input.strip_prefix()?;
-        Ok(ApiInput(content.to_string()))
+        let content = chat_input.strip_prefix()?.to_string();
+        Ok(Event {
+            user: chat_input.user,
+            content,
+        })
     }
 }
 
-impl<T> From<T> for ChatInput
-where
-    T: ToString,
-{
-    fn from(content: T) -> Self {
-        ChatInput {
-            content: content.to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Event {
-    ChatInput(ChatInput),
-    ApiInput(ApiInput),
-}
-
-impl TryFrom<Event> for ApiInput {
-    type Error = CommandParseError;
-
-    fn try_from(event: Event) -> Result<Self, Self::Error> {
-        match event {
-            Event::ChatInput(chat_input) => chat_input.try_into(),
-            Event::ApiInput(api_input) => Ok(api_input),
-        }
-    }
-}
-
-impl<T: AsRef<str>> From<T> for ApiInput {
-    fn from(input: T) -> Self {
-        ApiInput(input.as_ref().to_string())
-    }
-}
-
-impl From<ApiInput> for Event {
-    fn from(api_input: ApiInput) -> Self {
-        Event::ApiInput(api_input)
-    }
-}
-
-/// the base type for all inputs to the bot.
-/// other input types resolve to this type
-/// with [`From`] (or [`TryFrom`]) implementations.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ApiInput(String);
-
-impl Deref for ApiInput {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl From<ChatInput> for Event {
-    fn from(chat_input: ChatInput) -> Self {
-        Event::ChatInput(chat_input)
-    }
+/// represents an event that can be processed by the bot.
+/// stripped of any command prefix or control characters
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct Event {
+    user: String,
+    content: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,8 +82,10 @@ pub enum EventError {
     DiceRollParse(#[from] dice::DiceRollError),
 }
 
-#[derive(Debug, Clone)]
-pub struct EventProcessor;
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct EventProcessor {
+    raw_events: Vec<Event>,
+}
 
 impl EventProcessor {
     pub async fn process(&self, event: impl Into<Event>) -> Result<Response, EventError> {
@@ -176,9 +138,9 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() {
-        let event: ChatInput = "!ultron echo hello".into();
-        let event: Event = Event::ChatInput(event);
-        let processor = EventProcessor;
+        let event: ChatInput = ChatInput::anonymous("!ultron echo hello");
+        let event: Event = event.try_into().expect("should parse chat input to event");
+        let processor = EventProcessor::default();
         let response = processor
             .process(event)
             .await
@@ -188,8 +150,11 @@ mod tests {
 
     #[test]
     fn strip_prefix() {
-        let chat_input: ChatInput = "!ultron hello".into();
-        let prefix = chat_input.strip_prefix().unwrap();
-        assert_eq!(prefix, "hello");
+        let chat_input: ChatInput = ChatInput::anonymous("!ultron hello");
+        let input: Event = chat_input
+            .try_into()
+            .expect("should parse chat input to api input");
+        assert_eq!(input.user, "anonymous");
+        assert_eq!(input.content, "hello");
     }
 }
