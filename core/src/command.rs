@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
 
 use crate::{
@@ -18,7 +19,9 @@ pub enum CommandParseError {
     UndefinedCommand(String),
 }
 
-#[derive(Debug, Clone, PartialEq, strum::EnumDiscriminants)]
+#[derive(
+    Debug, Clone, PartialEq, strum::EnumDiscriminants, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[strum_discriminants(derive(EnumIter, Display, EnumMessage))]
 #[strum_discriminants(strum(serialize_all = "snake_case"))]
 pub enum Command {
@@ -121,7 +124,7 @@ mod tests {
         let command: Result<Command, CommandParseError> = "undefined hello".parse();
         assert_eq!(
             command.expect_err("should fail to parse"),
-            CommandParseError::UndefinedCommand("undefined hello".to_string())
+            CommandParseError::UndefinedCommand("undefined".to_string())
         );
     }
 }
