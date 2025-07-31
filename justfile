@@ -20,10 +20,5 @@ test:
 
 # run the bot with info logs and parse the output as json
 run:
-  cargo run -- --port {{port}} --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}
+  cargo run -- --port {{port}} --rust-log "info,ultron=debug,ultron_core=debug,ultron_discord=debug" --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}
 
-command:
-  http post --full --allow-errors --content-type application/json http://localhost:{{port}}/command { channel: debug user: test command_input: "echo heck" }
-
-echo:
-  http post --content-type application/json http://localhost:{{port}}/echo { channel: debug user: test message: "echo hello" }

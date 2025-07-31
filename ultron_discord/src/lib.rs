@@ -1,14 +1,14 @@
 use bon::Builder;
 use serenity::{
     Client,
-    all::{ChannelId, Context, EventHandler, GatewayIntents, Message},
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, UserId},
     http::Http,
 };
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use ultron_core::{
-    Channel, ChatBot, ChatInput, Event, EventError, EventProcessor, Response,
+    Channel, ChatBot, ChatInput, Event, EventError, EventProcessor, EventType, Response, User,
     command::CommandParseError, dice::HELP_MESSAGE,
 };
 
@@ -16,6 +16,10 @@ use ultron_core::{
 const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
 const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
 const DEFAULT_DND_CHANNEL_ID: ChannelId = ChannelId::new(874085144284258325);
+
+const ULTRON_USER_ID: UserId = UserId::new(777627943144652801);
+
+const DISCORD_MAX_MESSAGE_LENGTH: usize = 2000;
 
 pub type DiscordBotResult<T> = Result<T, DiscordBotError>;
 
@@ -167,12 +171,27 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         tracing::debug!("handling message event: {:?}", msg);
 
+        let user = if msg.author.id == ULTRON_USER_ID {
+            tracing::debug!("ignoring message from self");
+            User::Ultron
+        } else {
+            User::from(msg.author.name.clone())
+        };
+
+        tracing::debug!(user = ?user, "message from user");
+
+        let event_type: EventType = if msg.mentions_user_id(ULTRON_USER_ID) {
+            EventType::NaturalLanguage
+        } else {
+            EventType::Command
+        };
+
         let chat_input: ChatInput = ChatInput {
-            user: msg.author.name.clone(),
+            user,
             content: msg.content.clone(),
         };
 
-        let event: Event = match chat_input.try_into() {
+        let event: Event = match Event::new(chat_input, event_type) {
             Ok(event) => event,
             Err(error) => {
                 tracing::warn!(%error, "error converting chat input to event");
@@ -180,14 +199,30 @@ impl EventHandler for Handler {
             }
         };
 
-        match self.event_processor.process(event).await {
+        match self.event_processor.process(event.clone()).await {
             Ok(Response::PlainChat(response)) => {
-                if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
-                    tracing::error!(%error, "error sending message");
+                if response.len() >= DISCORD_MAX_MESSAGE_LENGTH {
+                    tracing::debug!(
+                        "response is too long ({} characters), truncating to {}",
+                        response.len(),
+                        DISCORD_MAX_MESSAGE_LENGTH
+                    );
+                }
+
+                let response_chunks = split_message(&response, DISCORD_MAX_MESSAGE_LENGTH);
+
+                for chunk in response_chunks {
+                    if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
+                        tracing::error!(%error, "error sending message");
+                    }
                 }
             }
             Err(error) => {
-                tracing::error!(%error, "error processing event");
+                tracing::error!(
+                    ?event,
+                    %error,
+                    "error processing event",
+                );
 
                 let error_message = match error {
                     EventError::CommandParse(command_parse_error) => match command_parse_error {
@@ -200,6 +235,10 @@ impl EventHandler for Handler {
                         )),
                         _ => None,
                     },
+                    EventError::LanguageModel(language_model_error) => Some(format!(
+                        "brain hurty: {}\n\n{}",
+                        language_model_error, HELP_MESSAGE
+                    )),
                     EventError::DiceRollParse(dice_roll_error) => Some(format!(
                         "ya blew it: {}\n\n{}",
                         dice_roll_error, HELP_MESSAGE
@@ -213,5 +252,59 @@ impl EventHandler for Handler {
                 }
             }
         }
+    }
+}
+
+/// split a message into chunks of at most `max_length` characters
+/// while preserving whole words.
+fn split_message(message: &str, max_length: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    for word in message.split_whitespace() {
+        if current_chunk.len() + word.len() + 1 > max_length {
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+            }
+            current_chunk = String::new();
+        }
+        if !current_chunk.is_empty() {
+            current_chunk.push(' ');
+        }
+        current_chunk.push_str(word);
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk.trim().to_string());
+    }
+
+    chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_message() {
+        let message = "This is a test message that should be split into multiple chunks.";
+        let max_length = 20;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], "This is a test");
+        assert_eq!(chunks[1], "message that should");
+        assert_eq!(chunks[2], "be split into");
+        assert_eq!(chunks[3], "multiple chunks.");
+    }
+
+    #[test]
+    fn test_split_markdown_syntax() {
+        let message = "This is a **test** message with `code` and [link](https://example.com).";
+        let max_length = 30;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], "This is a **test** message");
+        assert_eq!(chunks[1], "with `code` and");
+        assert_eq!(chunks[2], "[link](https://example.com).");
     }
 }

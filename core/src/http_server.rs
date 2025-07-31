@@ -1,3 +1,5 @@
+//! this module implements the HTTP server for Ultron
+//! to accept commands from
 use std::sync::Arc;
 
 use axum::{
@@ -13,7 +15,7 @@ use trace_layer::TracingMiddleware;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{Channel, ChatBot, Event, EventError, EventProcessor};
+use crate::{Channel, ChatBot, Event, EventError, EventProcessor, EventType};
 
 mod trace_layer;
 
@@ -63,14 +65,14 @@ pub struct AppState<ChatBot> {
 #[openapi(
     paths(
         command,
-        echo,
         healthcheck,
         index,
         api_doc
     ),
     tags(
         (name = OpenApiTag::BotCommand.as_str(), description = "orders to submit to Ultron"),
-        (name = OpenApiTag::Telemetry.as_str(), description = "figure out what's wrong with Ultron")
+        (name = OpenApiTag::Telemetry.as_str(), description = "figure out what's wrong with Ultron"),
+        (name = OpenApiTag::Meta.as_str(), description = "meta information about Ultron"),
     )
 )]
 struct ApiDoc;
@@ -119,7 +121,7 @@ where
     Bot: ChatBot + 'static,
 {
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .routes(routes!(echo, index))
+        .routes(routes!(index))
         .routes(routes!(command, healthcheck))
         .routes(routes!(api_doc))
         .layer(TracingMiddleware::builder().build().make_layer())
@@ -177,14 +179,17 @@ pub struct BotInput {
     user: String,
     /// command input as if it was a message from Discord,
     /// e.g. `echo hello`
-    command_input: String,
+    event_input: String,
+    /// the type of event, e.g. `Command` or `NaturalLanguage`
+    event_type: EventType,
 }
 
 impl From<BotInput> for Event {
     fn from(input: BotInput) -> Self {
         Self {
-            user: input.user,
-            content: input.command_input,
+            user: input.user.into(),
+            content: input.event_input,
+            event_type: input.event_type,
         }
     }
 }
@@ -215,59 +220,6 @@ where
             state
                 .chat_bot
                 .send_message(bot_input.channel, &response)
-                .await
-                .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
-        }
-    }
-
-    Ok(())
-}
-
-/// make Ultron say something
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct EchoInput {
-    /// the channel to send the command to
-    channel: Channel,
-    user: String,
-    /// what Ultron is going to say
-    message: String,
-}
-
-impl From<EchoInput> for BotInput {
-    fn from(input: EchoInput) -> Self {
-        Self {
-            channel: input.channel,
-            user: input.user,
-            command_input: format!("echo {}", input.message),
-        }
-    }
-}
-
-/// Make Ultron say something
-#[utoipa::path(
-    post,
-    path = Route::Echo.to_string(),
-    responses(
-        (status = OK, description = "echo command sent"),
-        (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
-    ),
-    tag = OpenApiTag::BotCommand.as_str(),
-)]
-async fn echo<Bot>(
-    State(state): State<AppState<Bot>>,
-    Json(input): Json<EchoInput>,
-) -> Result<(), ServerError>
-where
-    Bot: ChatBot + 'static,
-{
-    let input: BotInput = input.into();
-    let api_input = Event::from(input.clone());
-
-    match state.event_processor.process(api_input).await? {
-        crate::Response::PlainChat(response) => {
-            state
-                .chat_bot
-                .send_message(input.channel, &response)
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
@@ -320,7 +272,8 @@ mod tests {
         let bot_input = BotInput {
             channel: Channel::Debug,
             user: "anonymous".to_string(),
-            command_input: "echo hello".to_string(),
+            event_input: "echo hello".to_string(),
+            event_type: EventType::Command,
         };
         let json = Json(bot_input);
         let () = command(State(state), json)

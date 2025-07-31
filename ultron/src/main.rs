@@ -17,12 +17,21 @@ pub struct Secrets {
 /// CLI args
 #[derive(Debug, Clone, Parser)]
 pub struct Cli {
+    /// port to listen on for HTTP requests
     #[arg(short, long, default_value = "8080")]
     pub port: u16,
 
+    /// log level in the form of the [`env_logger`] crate
+    ///
+    /// [`env_logger`]: https://docs.rs/env_logger/latest/env_logger/#enabling-logging
     #[arg(short, long, default_value = "info")]
     pub rust_log: String,
 
+    /// host to connect to the language model
+    #[arg(short, long, default_value = "https://hoss.faun-truck.ts.net/llm/")]
+    pub lm_endpoint: String,
+
+    /// path to the secrets file
     #[arg(short, long)]
     pub secrets: PathBuf,
 }
@@ -60,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let event_processor = Arc::new(ultron_core::EventProcessor::default());
+    let event_processor = Arc::new(ultron_core::EventProcessor::new(&args.lm_endpoint)?);
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)
