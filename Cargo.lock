@@ -3126,6 +3126,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "bon",
+ "derive_more",
  "serenity",
  "thiserror 2.0.17",
  "tokio",
