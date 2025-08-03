@@ -50,7 +50,7 @@ impl ChatInput {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
     PlainChat(String),
-    Bot(BotMessage)
+    Bot(BotMessage),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, strum::Display)]
