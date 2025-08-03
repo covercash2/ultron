@@ -27,3 +27,6 @@ command:
 
 ask:
   http post --allow-errors --full --content-type application/json http://localhost:{{port}}/command { channel: debug user: test event_type: natural_language event_input: "echo heck" }
+
+events:
+  http get http://localhost:{{port}}/events

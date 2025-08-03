@@ -147,8 +147,7 @@ impl EventHandler for Handler {
         tracing::debug!("handling message event: {:?}", msg);
 
         let user = if msg.author.id == ULTRON_USER_ID {
-            tracing::debug!("ignoring message from self");
-            return;
+            User::Ultron
         } else {
             User::from(msg.author.name.clone())
         };
@@ -157,9 +156,9 @@ impl EventHandler for Handler {
 
         let event_type: EventType = if msg.mentions_ultron() {
             tracing::debug!(user = ?user, "message mentions bot, treating as natural language");
-            EventType::NaturalLanguage
+            EventType::LanguageModel
         } else {
-            EventType::Command
+            EventType::Plain
         };
 
         let chat_input: ChatInput = ChatInput {
@@ -180,7 +179,7 @@ impl EventHandler for Handler {
         tracing::debug!(?result, "processing event result");
 
         match result {
-            Ok(Response::PlainChat(message)) => {
+            Ok(Some(Response::PlainChat(message))) => {
                 tracing::info!(?event, "processing event response",);
 
                 let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
@@ -193,7 +192,7 @@ impl EventHandler for Handler {
                     }
                 }
             }
-            Ok(Response::Bot(bot_message)) => {
+            Ok(Some(Response::Bot(bot_message))) => {
                 tracing::info!(?event, "processing bot message response",);
 
                 let message: String = bot_message.render_without_thinking_parts();
@@ -207,6 +206,9 @@ impl EventHandler for Handler {
                         tracing::error!(%error, "error sending message");
                     }
                 }
+            }
+            Ok(None) => {
+                tracing::debug!(?event, "no response from event processor");
             }
             Err(error) => {
                 tracing::error!(

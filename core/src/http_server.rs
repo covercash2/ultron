@@ -94,6 +94,8 @@ pub enum Route {
     Index,
     #[strum(to_string = "/api_doc")]
     ApiDoc,
+    #[strum(to_string = "/events")]
+    Events,
 }
 
 impl Route {
@@ -127,6 +129,7 @@ where
         .routes(routes!(index))
         .routes(routes!(command, healthcheck))
         .routes(routes!(api_doc))
+        .routes(routes!(events))
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
         .split_for_parts();
@@ -219,14 +222,14 @@ where
     tracing::info!("response: {:?}", chat_input);
 
     match state.event_processor.process(chat_input).await? {
-        crate::Response::PlainChat(response) => {
+        Some(crate::Response::PlainChat(response)) => {
             state
                 .chat_bot
                 .send_message(bot_input.channel, &response)
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
-        crate::Response::Bot(bot_message) => state
+        Some(crate::Response::Bot(bot_message)) => state
             .chat_bot
             .send_message(
                 bot_input.channel,
@@ -234,9 +237,26 @@ where
             )
             .await
             .map_err(|e| ServerError::ChatBot(Box::new(e)))?,
+        None => tracing::debug!("no response from event processor"),
     }
 
     Ok(())
+}
+
+/// tests bot input.
+#[utoipa::path(
+    get,
+    path = Route::Events.to_string(),
+    responses(
+        (status = OK, description = "command sent"),
+        (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
+    ),
+    tag = OpenApiTag::BotCommand.as_str(),
+)]
+async fn events<Bot>(State(state): State<AppState<Bot>>) -> Json<Vec<Event>> {
+    let events: Vec<Event> = state.event_processor.dump_events().await;
+
+    Json(events)
 }
 
 impl IntoResponse for ServerError {

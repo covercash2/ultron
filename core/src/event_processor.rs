@@ -1,7 +1,9 @@
 use std::fmt::Display;
+use std::sync::Arc;
 
 use serde::Deserialize;
 use serde::Serialize;
+use tokio::sync::Mutex;
 
 use crate::ChatInput;
 use crate::Response;
@@ -9,6 +11,8 @@ use crate::User;
 use crate::command::Command;
 use crate::command::CommandParseError;
 use crate::lm::{LanguageModel, LanguageModelError};
+
+const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
 
 #[derive(Debug, thiserror::Error)]
 pub enum EventError {
@@ -25,7 +29,8 @@ pub enum EventError {
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
     Command,
-    NaturalLanguage,
+    LanguageModel,
+    Plain,
 }
 
 /// represents an event that can be processed by the bot.
@@ -41,14 +46,20 @@ impl Event {
     /// Creates a new event from a chat input and an event type.
     /// If the event type is `Command`, it will strip the command prefix from the content.
     pub fn new(chat_input: ChatInput, event_type: EventType) -> Result<Self, CommandParseError> {
-        let content = if event_type == EventType::Command {
-            chat_input.strip_prefix()?.to_string()
+        let user = chat_input.user.clone();
+        let (content, event_type) = if event_type == EventType::Plain {
+            let result = chat_input.strip_prefix();
+            if let Ok(content) = result {
+                (content, EventType::Command)
+            } else {
+                (chat_input.content.as_str(), EventType::Plain)
+            }
         } else {
-            chat_input.content.clone()
+            (chat_input.content.as_str(), event_type)
         };
 
         Ok(Event {
-            user: chat_input.user,
+            user,
             content: BotMessage::raw(content),
             event_type,
         })
@@ -59,7 +70,7 @@ impl Event {
 #[cfg_attr(test, derive(Default))]
 pub struct EventProcessor {
     language_model: LanguageModel,
-    raw_events: Vec<Event>,
+    events: EventLog,
 }
 
 impl EventProcessor {
@@ -68,25 +79,30 @@ impl EventProcessor {
 
         let system_message = Event {
             user: User::Ultron,
-            content: BotMessage::raw(
-                "You are Ultron, a helpful AI assistant. Respond to commands and natural language inputs.",
-            ),
-            event_type: EventType::NaturalLanguage,
+            content: BotMessage::raw(ULTRON_SYSTEM_PROMPT),
+            event_type: EventType::LanguageModel,
         };
 
-        let raw_events = vec![system_message];
+        let events = EventLog::new([system_message]);
 
         Ok(Self {
             language_model,
-            raw_events,
+            events,
         })
     }
 }
 
 impl EventProcessor {
-    pub async fn process(&self, event: impl Into<Event>) -> Result<Response, EventError> {
+    pub async fn process(&self, event: impl Into<Event>) -> Result<Option<Response>, EventError> {
         let event = event.into();
         tracing::debug!(?event, "processing event");
+
+        self.events.log_event(event.clone()).await;
+
+        if event.user == User::Ultron {
+            tracing::debug!("ignoring event from Ultron");
+            return Ok(None);
+        }
 
         match event.event_type {
             EventType::Command => {
@@ -95,15 +111,10 @@ impl EventProcessor {
 
                 tracing::debug!("computed output: {}", output);
 
-                Ok(Response::PlainChat(output))
+                Ok(Some(Response::PlainChat(output)))
             }
-            EventType::NaturalLanguage => {
-                let events = self
-                    .raw_events
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(event))
-                    .collect::<Vec<_>>();
+            EventType::LanguageModel => {
+                let events = self.events.get_events().await;
 
                 let next_event = self.language_model.chat(events).await?;
 
@@ -112,9 +123,41 @@ impl EventProcessor {
                     "language model response"
                 );
 
-                Ok(Response::Bot(next_event.content))
+                Ok(Some(Response::Bot(next_event.content)))
+            }
+            EventType::Plain => {
+                tracing::debug!("plain event, no processing needed");
+                Ok(None)
             }
         }
+    }
+
+    pub async fn dump_events(&self) -> Vec<Event> {
+        self.events.get_events().await
+    }
+}
+
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(Default))]
+pub struct EventLog {
+    events: Arc<Mutex<Vec<Event>>>,
+}
+
+impl EventLog {
+    pub fn new(initial_events: impl IntoIterator<Item = Event>) -> Self {
+        EventLog {
+            events: Arc::new(Mutex::new(initial_events.into_iter().collect())),
+        }
+    }
+
+    async fn log_event(&self, event: Event) {
+        let mut events = self.events.lock().await;
+        events.push(event);
+    }
+
+    async fn get_events(&self) -> Vec<Event> {
+        let events = self.events.lock().await;
+        events.clone()
     }
 }
 
@@ -265,7 +308,8 @@ mod tests {
         let response = processor
             .process(event)
             .await
-            .expect("echo should not error");
+            .expect("echo should not error")
+            .expect("should return a response");
         assert_eq!(response, Response::PlainChat("hello".to_string()));
     }
 
