@@ -77,10 +77,10 @@ impl TryFrom<Event> for Command {
 
     fn try_from(input: Event) -> Result<Self, Self::Error> {
         match input.event_type {
-            EventType::NaturalLanguage => {
+            EventType::Command => input.content.to_string().parse(),
+            _ => {
                 Err(CommandParseError::MissingPrefix(input.content.to_string()))
             }
-            EventType::Command => input.content.to_string().parse(),
         }
     }
 }

@@ -58,7 +58,7 @@ impl Ollama {
         let event = Event {
             user,
             content,
-            event_type: EventType::NaturalLanguage, // Assuming event_type is not set in this conversion
+            event_type: EventType::LanguageModel, // Assuming event_type is not set in this conversion
         };
 
         Ok(event)
