@@ -226,10 +226,14 @@ where
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
-        crate::Response::Bot(bot_message) => state.chat_bot.send_message(
-            bot_input.channel,
-            &bot_message.render_without_thinking_parts(),
-        ).await.map_err(|e| ServerError::ChatBot(Box::new(e)))?,
+        crate::Response::Bot(bot_message) => state
+            .chat_bot
+            .send_message(
+                bot_input.channel,
+                &bot_message.render_without_thinking_parts(),
+            )
+            .await
+            .map_err(|e| ServerError::ChatBot(Box::new(e)))?,
     }
 
     Ok(())

@@ -24,6 +24,7 @@ clap = { version = "4.5.48", features = ["derive"] }
 derive_more = { version = "2.0.1", features = ["display"] }
 envy = "0.4.2"
 insta = { version = "1.43.2", features = ["redactions", "json"] }
+extend = "1.2.0"
 ollama-rs = "0.3.2"
 reqwest = { version = "0.12.23", features = [ "stream", "deflate", "rustls-tls" ] }
 rmcp = { version = "0.2.1", features = ["server"] }

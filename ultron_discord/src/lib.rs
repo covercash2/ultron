@@ -1,4 +1,5 @@
 use bon::Builder;
+use extend::ext;
 use serenity::{
     Client,
     all::{ChannelId, Context, EventHandler, GatewayIntents, Message, UserId},
@@ -154,8 +155,8 @@ impl EventHandler for Handler {
 
         tracing::debug!(user = ?user, "message from user");
 
-        let event_type: EventType = if msg.mentions_user_id(ULTRON_USER_ID) {
-            tracing::info!(user = ?user, "message mentions bot, treating as natural language");
+        let event_type: EventType = if msg.mentions_ultron() {
+            tracing::debug!(user = ?user, "message mentions bot, treating as natural language");
             EventType::NaturalLanguage
         } else {
             EventType::Command
@@ -242,6 +243,13 @@ impl EventHandler for Handler {
                 }
             }
         }
+    }
+}
+
+#[ext]
+impl Message {
+    fn mentions_ultron(&self) -> bool {
+        self.mentions_user_id(ULTRON_USER_ID) || self.content.contains("<@&777660234842898483>")
     }
 }
 

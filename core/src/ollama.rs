@@ -4,7 +4,11 @@ use ollama_rs::{
 };
 use reqwest::Url;
 
-use crate::{event_processor::{BotMessage, Event, EventType, ThinkingIterator}, lm::LanguageModelError, User};
+use crate::{
+    User,
+    event_processor::{BotMessage, Event, EventType, ThinkingIterator},
+    lm::LanguageModelError,
+};
 
 #[derive(Debug, Clone)]
 pub struct Ollama {
@@ -48,8 +52,8 @@ impl Ollama {
             _ => User::Anonymous,
         };
 
-        let content: BotMessage = ThinkingIterator::new(&response.message.content, "<think>", "</think>")
-            .collect();
+        let content: BotMessage =
+            ThinkingIterator::new(&response.message.content, "<think>", "</think>").collect();
 
         let event = Event {
             user,

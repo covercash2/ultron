@@ -3,10 +3,10 @@ use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+use ultron_core::ChatBot;
 use ultron_core::event_processor::EventProcessor;
 use ultron_core::http_server::{self, AppState};
 use ultron_core::io::read_file_to_string;
-use ultron_core::ChatBot;
 use ultron_discord::DiscordBotConfig;
 
 #[derive(Clone, serde::Deserialize)]
