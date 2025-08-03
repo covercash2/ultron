@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
 
 use crate::{
-    Event, EventError,
     copypasta::{copy_pasta, copy_pasta_names},
     dice::DiceRoll,
+    event_processor::{Event, EventError, EventType},
 };
 
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
@@ -76,7 +76,12 @@ impl TryFrom<Event> for Command {
     type Error = CommandParseError;
 
     fn try_from(input: Event) -> Result<Self, Self::Error> {
-        input.content.parse()
+        match input.event_type {
+            EventType::NaturalLanguage => {
+                Err(CommandParseError::MissingPrefix(input.content.to_string()))
+            }
+            EventType::Command => input.content.to_string().parse(),
+        }
     }
 }
 

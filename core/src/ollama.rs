@@ -4,7 +4,7 @@ use ollama_rs::{
 };
 use reqwest::Url;
 
-use crate::{Event, EventType, User, lm::LanguageModelError};
+use crate::{event_processor::{BotMessage, Event, EventType, ThinkingIterator}, lm::LanguageModelError, User};
 
 #[derive(Debug, Clone)]
 pub struct Ollama {
@@ -43,7 +43,21 @@ impl Ollama {
 
         tracing::debug!(?response, "received response from Ollama");
 
-        Ok(response.message.into())
+        let user = match response.message.role {
+            MessageRole::Assistant => User::Ultron,
+            _ => User::Anonymous,
+        };
+
+        let content: BotMessage = ThinkingIterator::new(&response.message.content, "<think>", "</think>")
+            .collect();
+
+        let event = Event {
+            user,
+            content,
+            event_type: EventType::NaturalLanguage, // Assuming event_type is not set in this conversion
+        };
+
+        Ok(event)
     }
 }
 
@@ -54,23 +68,6 @@ impl From<Event> for ChatMessage {
             _ => MessageRole::User,
         };
 
-        ChatMessage::new(role, event.content)
-    }
-}
-
-impl From<ChatMessage> for Event {
-    fn from(message: ChatMessage) -> Self {
-        tracing::debug!(message = ?message, "converting ChatMessage to Event");
-
-        let user = match message.role {
-            MessageRole::Assistant => User::Ultron,
-            _ => User::Anonymous,
-        };
-
-        Event {
-            user,
-            content: message.content,
-            event_type: EventType::NaturalLanguage, // Assuming event_type is not set in this conversion
-        }
+        ChatMessage::new(role, event.content.to_string())
     }
 }
