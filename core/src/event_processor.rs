@@ -172,17 +172,17 @@ pub enum MessagePart {
     Text(String),
 }
 
-/// and iterator over a message that returns [`MessagePart`]s,
+/// an iterator over a message that returns [`MessagePart`]s,
 /// separating out different parts of the message,
 /// crucially separating "thinking" sections from normal text.
-pub struct ThinkingIterator<'msg> {
+pub struct MessagePartsIterator<'msg> {
     message: &'msg str,
     start_delim: &'msg str,
     end_delim: &'msg str,
     cursor: usize,
 }
 
-impl<'msg> ThinkingIterator<'msg> {
+impl<'msg> MessagePartsIterator<'msg> {
     pub fn new(message: &'msg str, start_delim: &'msg str, end_delim: &'msg str) -> Self {
         Self {
             message,
@@ -193,7 +193,7 @@ impl<'msg> ThinkingIterator<'msg> {
     }
 }
 
-impl Iterator for ThinkingIterator<'_> {
+impl Iterator for MessagePartsIterator<'_> {
     type Item = MessagePart;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -296,7 +296,7 @@ mod tests {
         let message = "This is a test <think>thinking part</think> and another part.";
         let start_delim = "<think>";
         let end_delim = "</think>";
-        let mut iterator = ThinkingIterator::new(message, start_delim, end_delim);
+        let mut iterator = MessagePartsIterator::new(message, start_delim, end_delim);
         let first_part = iterator.next().unwrap();
         assert_eq!(first_part, MessagePart::Text("This is a test ".to_string()));
         let thinking_part = iterator.next().unwrap();
@@ -317,7 +317,7 @@ mod tests {
         let message = "This is a test message without thinking parts.";
         let start_delim = "<think>";
         let end_delim = "</think>";
-        let mut iterator = ThinkingIterator::new(message, start_delim, end_delim);
+        let mut iterator = MessagePartsIterator::new(message, start_delim, end_delim);
         let first_part = iterator.next().unwrap();
         assert_eq!(first_part, MessagePart::Text(message.to_string()));
         assert!(iterator.next().is_none());
@@ -328,7 +328,7 @@ mod tests {
         let message = "This is a test <think>thinking part 1</think> and another <think>thinking part 2</think>.";
         let start_delim = "<think>";
         let end_delim = "</think>";
-        let mut iterator = ThinkingIterator::new(message, start_delim, end_delim);
+        let mut iterator = MessagePartsIterator::new(message, start_delim, end_delim);
         let first_part = iterator.next().unwrap();
         assert_eq!(first_part, MessagePart::Text("This is a test ".to_string()));
         let thinking_part1 = iterator.next().unwrap();

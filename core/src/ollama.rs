@@ -6,7 +6,7 @@ use reqwest::Url;
 
 use crate::{
     User,
-    event_processor::{BotMessage, Event, EventType, ThinkingIterator},
+    event_processor::{BotMessage, Event, EventType, MessagePartsIterator},
     lm::LanguageModelError,
 };
 
@@ -53,7 +53,7 @@ impl Ollama {
         };
 
         let content: BotMessage =
-            ThinkingIterator::new(&response.message.content, "<think>", "</think>").collect();
+            MessagePartsIterator::new(&response.message.content, "<think>", "</think>").collect();
 
         let event = Event {
             user,
