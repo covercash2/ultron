@@ -15,7 +15,10 @@ use trace_layer::TracingMiddleware;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{Channel, ChatBot, Event, EventError, EventProcessor, EventType};
+use crate::{
+    Channel, ChatBot,
+    event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
+};
 
 mod trace_layer;
 
@@ -188,7 +191,7 @@ impl From<BotInput> for Event {
     fn from(input: BotInput) -> Self {
         Self {
             user: input.user.into(),
-            content: input.event_input,
+            content: BotMessage::raw(input.event_input),
             event_type: input.event_type,
         }
     }
@@ -223,6 +226,10 @@ where
                 .await
                 .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
         }
+        crate::Response::Bot(bot_message) => state.chat_bot.send_message(
+            bot_input.channel,
+            &bot_message.render_without_thinking_parts(),
+        ).await.map_err(|e| ServerError::ChatBot(Box::new(e)))?,
     }
 
     Ok(())

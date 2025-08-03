@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+use ultron_core::event_processor::EventProcessor;
 use ultron_core::http_server::{self, AppState};
 use ultron_core::io::read_file_to_string;
 use ultron_core::ChatBot;
@@ -70,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let event_processor = Arc::new(ultron_core::EventProcessor::new(&args.lm_endpoint)?);
+    let event_processor = Arc::new(EventProcessor::new(&args.lm_endpoint)?);
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)
