@@ -1,9 +1,7 @@
 use bon::Builder;
 use extend::ext;
 use serenity::{
-    Client,
-    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, UserId},
-    http::Http,
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Typing, UserId}, http::Http, Client
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -132,7 +130,9 @@ pub struct Intents(GatewayIntents);
 
 impl Default for Intents {
     fn default() -> Self {
-        let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+        let intents = GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::MESSAGE_CONTENT
+            | GatewayIntents::GUILD_MESSAGE_TYPING;
         Self(intents)
     }
 }
@@ -159,6 +159,12 @@ impl EventHandler for Handler {
             EventType::LanguageModel
         } else {
             EventType::Plain
+        };
+
+        let typing: Option<Typing> = if event_type == EventType::LanguageModel {
+            Some(ctx.http.start_typing(msg.channel_id))
+        } else {
+            None
         };
 
         let chat_input: ChatInput = ChatInput {

@@ -2,10 +2,11 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
+use tyche::dice;
 
 use crate::{
     copypasta::{copy_pasta, copy_pasta_names},
-    dice::DiceRoll,
+    dice::{DiceRollResult, DiceRoller, RollerImpl},
     event_processor::{Event, EventError, EventType},
 };
 
@@ -38,13 +39,25 @@ pub enum Command {
     Help,
 }
 
+/// context for executing a command
+/// that lives for the duration of the command execution.
+pub struct CommandContext<T: dice::Roller> {
+    pub dice_roller: DiceRoller<T>,
+}
+
 impl Command {
-    pub fn execute(self) -> Result<String, EventError> {
+    pub fn execute<TRoller>(
+        self,
+        context: CommandContext<TRoller>,
+    ) -> Result<String, EventError>
+    where
+        TRoller: RollerImpl,
+    {
         tracing::debug!(command = ?self, "executing command");
         let result: String = match self {
             Command::Echo(message) => message.to_string(),
             Command::Roll(input) => {
-                let dice_roll: DiceRoll = input.parse()?;
+                let dice_roll = DiceRollResult::from_str(&input, context.dice_roller.clone())?;
                 dice_roll.to_string()
             }
             Command::Help => CommandDiscriminants::iter().fold(String::new(), |acc, command| {
@@ -78,9 +91,7 @@ impl TryFrom<Event> for Command {
     fn try_from(input: Event) -> Result<Self, Self::Error> {
         match input.event_type {
             EventType::Command => input.content.to_string().parse(),
-            _ => {
-                Err(CommandParseError::MissingPrefix(input.content.to_string()))
-            }
+            _ => Err(CommandParseError::MissingPrefix(input.content.to_string())),
         }
     }
 }

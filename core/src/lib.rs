@@ -13,6 +13,7 @@ pub mod http_server;
 pub mod io;
 pub mod lm;
 pub mod ollama;
+pub mod mcp;
 
 const DEFAULT_COMMAND_PREFIX: &str = "!ultron";
 
@@ -57,6 +58,7 @@ pub enum Response {
 #[strum(serialize_all = "snake_case")]
 pub enum User {
     Ultron,
+    System,
     Anonymous,
     #[strum(serialize = "{0}")]
     Normal(String),

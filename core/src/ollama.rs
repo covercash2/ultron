@@ -69,6 +69,7 @@ impl From<Event> for ChatMessage {
     fn from(event: Event) -> Self {
         let role: MessageRole = match event.user {
             User::Ultron => MessageRole::Assistant,
+            User::System => MessageRole::System,
             _ => MessageRole::User,
         };
 
