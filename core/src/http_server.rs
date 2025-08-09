@@ -17,6 +17,7 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     Channel, ChatBot,
+    dice::RollerImpl,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
 };
 
@@ -59,8 +60,9 @@ pub enum ServerError {
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct AppState<ChatBot> {
-    pub event_processor: Arc<EventProcessor>,
+pub struct AppState<ChatBot, DiceRoller>
+{
+    pub event_processor: Arc<EventProcessor<DiceRoller>>,
     pub chat_bot: Arc<ChatBot>,
 }
 
@@ -105,9 +107,10 @@ impl Route {
 }
 
 /// Starts the HTTP server on the specified port with the given application state.
-pub async fn serve<Bot>(port: u16, state: AppState<Bot>) -> ServerResult<()>
+pub async fn serve<Bot, DiceRoller>(port: u16, state: AppState<Bot, DiceRoller>) -> ServerResult<()>
 where
     Bot: ChatBot + 'static,
+    DiceRoller: RollerImpl + 'static,
 {
     let router = create_router(state);
 
@@ -121,9 +124,10 @@ where
     Ok(())
 }
 
-pub fn create_router<Bot>(state: AppState<Bot>) -> Router
+pub fn create_router<Bot, DiceRoller>(state: AppState<Bot, DiceRoller>) -> Router
 where
     Bot: ChatBot + 'static,
+    DiceRoller: RollerImpl + 'static,
 {
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(index))
@@ -210,12 +214,13 @@ impl From<BotInput> for Event {
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn command<Bot>(
-    State(state): State<AppState<Bot>>,
+async fn command<Bot, DiceRoller>(
+    State(state): State<AppState<Bot, DiceRoller>>,
     Json(bot_input): Json<BotInput>,
 ) -> Result<(), ServerError>
 where
     Bot: ChatBot + 'static,
+    DiceRoller: RollerImpl,
 {
     let chat_input = Event::from(bot_input.clone());
 
@@ -253,7 +258,9 @@ where
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn events<Bot>(State(state): State<AppState<Bot>>) -> Json<Vec<Event>> {
+async fn events<Bot, DiceRoller>(
+    State(state): State<AppState<Bot, DiceRoller>>,
+) -> Json<Vec<Event>> {
     let events: Vec<Event> = state.event_processor.dump_events().await;
 
     Json(events)

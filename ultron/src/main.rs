@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let event_processor = Arc::new(EventProcessor::new(&args.lm_endpoint)?);
+    let event_processor = Arc::new(EventProcessor::new(&args.lm_endpoint, Default::default())?);
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)
