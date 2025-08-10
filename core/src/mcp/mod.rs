@@ -1,25 +1,71 @@
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
+use bon::Builder;
 use rmcp::{
-    RoleServer, ServerHandler,
+    ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::*,
-    model::{ServerCapabilities, ServerInfo},
-    service::RequestContext,
-    tool, tool_handler, tool_router,
+    model::{ServerCapabilities, ServerInfo, *},
+    schemars, tool, tool_handler, tool_router,
+    transport::{
+        StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
+    },
 };
 
-use crate::User;
-use crate::event_processor::EventProcessor;
+use crate::{User, dice::RollerImpl};
+use crate::{
+    dice::{DiceRoll, DiceRollError},
+    event_processor::EventProcessor,
+};
 
-struct UltronCommands {
-    event_processor: Arc<EventProcessor>,
+#[derive(Debug, Clone)]
+pub struct UltronMcp<TRoller> {
+    pub event_processor: Arc<EventProcessor<TRoller>>,
+}
+
+pub struct UltronCommands<TRoller> {
+    event_processor: Arc<EventProcessor<TRoller>>,
     tool_router: ToolRouter<Self>,
 }
 
+impl<TRoller> From<UltronMcp<TRoller>> for StreamableHttpService<UltronCommands<TRoller>>
+where
+    TRoller: RollerImpl + 'static,
+{
+    fn from(UltronMcp { event_processor }: UltronMcp<TRoller>) -> Self {
+        build(event_processor)
+    }
+}
+
+pub fn build<TRoller>(
+    event_processor: Arc<EventProcessor<TRoller>>,
+) -> StreamableHttpService<UltronCommands<TRoller>>
+where
+    TRoller: RollerImpl + 'static,
+{
+    let event_processor = event_processor.clone();
+    StreamableHttpService::new(
+        move || Ok(UltronCommands::new(event_processor.clone())),
+        LocalSessionManager::default().into(),
+        Default::default(),
+    )
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DiceRollRequest {
+    #[schemars(description = "a dice expression according to the tyche library and Foundry VTT")]
+    #[schemars(example = "4d6kh3+2")]
+    #[schemars(example = "1d20+5")]
+    #[schemars(example = "2d10")]
+    #[schemars(example = "4d6+2d8-2")]
+    expression: String,
+}
+
 #[tool_router]
-impl UltronCommands {
-    pub fn new(event_processor: Arc<EventProcessor>) -> Self {
+impl<TRoller> UltronCommands<TRoller>
+where
+    TRoller: RollerImpl + 'static,
+{
+    pub fn new(event_processor: Arc<EventProcessor<TRoller>>) -> Self {
         Self {
             event_processor,
             tool_router: Self::tool_router(),
@@ -43,14 +89,52 @@ impl UltronCommands {
             .join("\n")
     }
 
-    // #[tool(description = "roll dice given the dice number and values")]
-    // pub async fn roll_dice(&self, parameters: Parameters) -> String {
-    //
-    // }
+    #[tool(description = "roll dice given Foundry VTT/tyche expression")]
+    pub async fn roll_dice(
+        &self,
+        Parameters(DiceRollRequest { expression }): Parameters<DiceRollRequest>,
+    ) -> Result<CallToolResult, rmcp::ErrorData> {
+        tracing::debug!(expression, "rolling dice");
+
+        let dice_roll: DiceRoll = self
+            .event_processor
+            .dice_roller
+            .clone()
+            .roll_string(&expression)
+            .and_then(|evaled| evaled.try_into())
+            .map_err(ErrorData::from)?;
+
+        Ok(CallToolResult::success(vec![Content::json(dice_roll)?]))
+    }
+}
+
+impl From<DiceRollError> for rmcp::ErrorData {
+    /// https://www.jsonrpc.org/specification
+    /// these error codes are part of the response to the agent,
+    /// so they need to be more semantically correct
+    /// than technically correct
+    fn from(error: DiceRollError) -> Self {
+        let code = match error {
+            DiceRollError::Parse(_) => ErrorCode::INVALID_REQUEST,
+            DiceRollError::Eval(_) => ErrorCode::INVALID_PARAMS,
+            DiceRollError::Calc(_) => ErrorCode::INVALID_PARAMS,
+        };
+
+        let message: Cow<'_, str> = error.to_string().into();
+
+        rmcp::ErrorData {
+            code,
+            message,
+            data: None,
+        }
+    }
 }
 
 #[tool_handler]
-impl ServerHandler for UltronCommands {
+impl<TDiceRoller> ServerHandler for UltronCommands<TDiceRoller>
+where
+    TDiceRoller: RollerImpl + 'static,
+{
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some("Commands available to query and control Ultron".into()),

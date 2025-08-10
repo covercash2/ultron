@@ -9,6 +9,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bon::Builder;
+use rmcp::transport::StreamableHttpService;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trace_layer::TracingMiddleware;
@@ -19,6 +20,7 @@ use crate::{
     Channel, ChatBot,
     dice::RollerImpl,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
+    mcp::{UltronCommands, UltronMcp},
 };
 
 mod trace_layer;
@@ -60,10 +62,21 @@ pub enum ServerError {
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct AppState<ChatBot, DiceRoller>
-{
+pub struct AppState<ChatBot, DiceRoller> {
     pub event_processor: Arc<EventProcessor<DiceRoller>>,
     pub chat_bot: Arc<ChatBot>,
+}
+
+impl<ChatBot, DiceRoller> AppState<ChatBot, DiceRoller>
+where
+    DiceRoller: RollerImpl + 'static,
+{
+    pub fn make_ultron_commands_mcp(&self) -> StreamableHttpService<UltronCommands<DiceRoller>> {
+        UltronMcp {
+            event_processor: self.event_processor.clone(),
+        }
+        .into()
+    }
 }
 
 #[derive(OpenApi)]
@@ -98,6 +111,9 @@ pub enum Route {
     ApiDoc,
     #[strum(to_string = "/events")]
     Events,
+    /// Model Context Protocol endpoint
+    #[strum(to_string = "/mcp")]
+    Mcp,
 }
 
 impl Route {
@@ -134,6 +150,7 @@ where
         .routes(routes!(command, healthcheck))
         .routes(routes!(api_doc))
         .routes(routes!(events))
+        .nest_service(Route::Mcp.as_str(), state.make_ultron_commands_mcp())
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
         .split_for_parts();
