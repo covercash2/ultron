@@ -74,7 +74,7 @@ impl Event {
 pub struct EventProcessor<TRoller = FastRand> {
     language_model: LanguageModel,
     events: EventLog,
-    dice_roller: DiceRoller<TRoller>,
+    pub dice_roller: DiceRoller<TRoller>,
 }
 
 #[cfg(test)]

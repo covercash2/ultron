@@ -2,10 +2,12 @@
 //! similar to other dice rolling libraries, this module
 use std::{fmt::Display, str::FromStr};
 
+use rmcp::schemars;
+use serde::{Deserialize, Serialize};
 use tyche::{
     Expr,
     dice::{self, Roller},
-    expr::Evaled,
+    expr::{Describe, Evaled},
 };
 
 pub const HELP_MESSAGE: &str = r#"
@@ -43,6 +45,11 @@ where
 {
     pub fn roll_expr(mut self, expr: Expr) -> Result<Evaled<'static>, DiceRollError> {
         Ok(expr.eval(&mut self.inner)?.into_owned())
+    }
+
+    pub fn roll_string(self, input: &str) -> Result<Evaled<'static>, DiceRollError> {
+        let expr = Expr::from_str(input)?;
+        self.roll_expr(expr)
     }
 }
 
@@ -96,10 +103,26 @@ pub fn test_roller() -> dice::roller::Max {
 /// and taking the highest or lowest respectively.
 ///
 /// [`Evaled`] shows the individual rolls
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DiceRoll {
+    #[schemars(description = "the evaluated expression of the dice roll")]
     evaluated_expression: String,
+    #[schemars(description = "the total of the dice roll")]
     total: i32,
+}
+
+impl TryFrom<Evaled<'_>> for DiceRoll {
+    type Error = DiceRollError;
+
+    fn try_from(evaled: Evaled<'_>) -> Result<Self, Self::Error> {
+        let total = evaled.calc()?;
+        let dice_limit = None;
+        let evaluated_expression = evaled.describe(dice_limit);
+        Ok(Self {
+            evaluated_expression,
+            total,
+        })
+    }
 }
 
 impl Display for DiceRoll {
@@ -130,11 +153,10 @@ impl DiceRollResult {
         let expr = Expr::from_str(input)?;
         let result = roller.roll_expr(expr)?;
 
-        tracing::debug!("computed roll: {result}");
-        Ok(DiceRollResult::Roll(DiceRoll {
-            evaluated_expression: result.to_string(),
-            total: result.calc()?,
-        }))
+        let dice_roll: DiceRoll = result.try_into()?;
+
+        tracing::debug!("computed roll: {dice_roll}");
+        Ok(DiceRollResult::Roll(dice_roll))
     }
 }
 
