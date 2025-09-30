@@ -33,11 +33,10 @@ pub mod sync {
 
     pub fn read_file_to_string(path: impl AsRef<Path>) -> Result<String> {
         let path = path.as_ref();
-        fs::read_to_string(path)
-            .map_err(|source| Error::FileRead {
-                source,
-                path: path.to_path_buf(),
-            })
+        fs::read_to_string(path).map_err(|source| Error::FileRead {
+            source,
+            path: path.to_path_buf(),
+        })
     }
 
     pub fn read_toml_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Result<T> {

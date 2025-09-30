@@ -71,14 +71,12 @@ async fn main() -> anyhow::Result<()> {
 
     let bot = Arc::new(discord_config.run().await?);
 
-    let hostname = read_file_to_string("/etc/hostname").await?
+    let hostname = read_file_to_string("/etc/hostname")
+        .await?
         .trim()
         .to_string();
 
-    let startup_message = format!(
-        "coming online, listening from {hostname}:{}",
-        args.port
-    );
+    let startup_message = format!("coming online, listening from {hostname}:{}", args.port);
 
     bot.debug(&startup_message).await?;
 
