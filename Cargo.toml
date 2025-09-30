@@ -15,26 +15,28 @@ edition = "2024"
 name = "ultron"
 
 [workspace.dependencies]
-anyhow = "1.0.97"
-async-openai = "0.28.0"
-axum = { version = "0.8.1", features = ["macros"] }
-bon = "3.4.0"
+anyhow = "1.0.100"
+async-openai = "0.28.3"
+axum = { version = "0.8.5", features = ["macros"] }
+bon = "3.7.2"
 caith = "4.2.4"
-clap = { version = "4.5.28", features = ["derive"] }
+clap = { version = "4.5.48", features = ["derive"] }
 derive_more = { version = "2.0.1", features = ["display"] }
 envy = "0.4.2"
-insta = { version = "1.42.2", features = ["redactions", "json"] }
-reqwest = { version = "0.12.15", features = [ "stream", "deflate", "rustls-tls" ] }
-serde = { version = "1.0.219", features = ["derive"] }
+insta = { version = "1.43.2", features = ["redactions", "json"] }
+ollama-rs = "0.3.2"
+reqwest = { version = "0.12.23", features = [ "stream", "deflate", "rustls-tls" ] }
+rmcp = { version = "0.2.1", features = ["server"] }
+serde = { version = "1.0.228", features = ["derive"] }
 serenity = { version = "0.12", features = ["framework", "standard_framework"] }
-strum = { version = "0.27.1", features = ["derive"] }
-thiserror = "2.0.12"
-tokio = { version = "1.44.1", features = ["full"] }
+strum = { version = "0.27.2", features = ["derive"] }
+thiserror = "2.0.17"
+tokio = { version = "1.47.1", features = ["full"] }
 toml = "0.8.23"
-tower-http = { version = "0.6.2", features = ["trace"] }
+tower-http = { version = "0.6.6", features = ["trace"] }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json", "tracing-log"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json", "tracing-log"] }
 ultron_core = { path = "core" }
 ultron_discord = { path = "ultron_discord" }
-utoipa = { version = "5.3.1", features = ["axum_extras", "yaml"] }
+utoipa = { version = "5.4.0", features = ["axum_extras", "yaml"] }
 utoipa-axum = "0.2.0"

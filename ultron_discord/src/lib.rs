@@ -191,10 +191,13 @@ impl EventHandler for Handler {
 
                 let error_message = match error {
                     EventError::CommandParse(command_parse_error) => match command_parse_error {
-                        CommandParseError::MissingCommand(error_msg)
-                        | CommandParseError::UndefinedCommand(error_msg) => {
+                        CommandParseError::MissingCommand(error_msg) => {
                             Some(format!("ya blew it: {}\n\n{}", error_msg, HELP_MESSAGE))
                         }
+                        CommandParseError::UndefinedCommand { command, args } => Some(format!(
+                            "ya blew it: undefined command '{}' with args {:?}\n\n{}",
+                            command, args, HELP_MESSAGE
+                        )),
                         _ => None,
                     },
                     EventError::DiceRollParse(dice_roll_error) => Some(format!(

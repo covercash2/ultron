@@ -14,8 +14,11 @@ pub enum CommandParseError {
     MissingPrefix(String),
     #[error("input is missing command {0}")]
     MissingCommand(String),
-    #[error("undefined command in input {0}")]
-    UndefinedCommand(String),
+    #[error("undefined command in input '{command}' with args {args:?}")]
+    UndefinedCommand {
+        command: String,
+        args: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, strum::EnumDiscriminants)]
@@ -92,7 +95,10 @@ impl FromStr for Command {
             "roll" => Ok(Command::Roll(rest.to_string())),
             "pasta" => Ok(Command::Copypasta(rest.to_string())),
             "help" => Ok(Command::Help),
-            _ => Err(CommandParseError::UndefinedCommand(command.to_string())),
+            command => Err(CommandParseError::UndefinedCommand {
+                command: command.to_string(),
+                args: if rest.is_empty() { None } else { Some(rest) },
+            }),
         }
     }
 }
@@ -121,7 +127,10 @@ mod tests {
         let command: Result<Command, CommandParseError> = "undefined hello".parse();
         assert_eq!(
             command.expect_err("should fail to parse"),
-            CommandParseError::UndefinedCommand("undefined hello".to_string())
+            CommandParseError::UndefinedCommand {
+                command: "undefined".to_string(),
+                args: Some("hello".to_string()),
+            }
         );
     }
 }

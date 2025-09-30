@@ -16,7 +16,4 @@ pub enum Error {
         source: toml::de::Error,
         path: PathBuf,
     },
-
-    #[error("failed to generate OpenAPI doc")]
-    OpenApiDocGeneration,
 }

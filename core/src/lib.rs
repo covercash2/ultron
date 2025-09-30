@@ -145,7 +145,7 @@ mod tests {
             .process(event)
             .await
             .expect("echo should not error");
-        assert_eq!(response, Response::PlainChat("you said: hello".to_string()));
+        assert_eq!(response, Response::PlainChat("hello".to_string()));
     }
 
     #[test]

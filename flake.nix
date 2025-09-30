@@ -76,6 +76,7 @@
           packages = with pkgs; [
             rustc
             cargo
+            cargo-edit
             rust-analyzer
             rustfmt
             clippy
