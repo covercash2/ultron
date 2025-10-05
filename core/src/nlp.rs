@@ -2,7 +2,8 @@
 //! encapsulates LLMs and MCP for now.
 
 use crate::{
-    event_processor::Event,
+    Response,
+    event_processor::{Event, EventConsumer, EventError},
     lm::{LanguageModel, ModelName},
     mcp::client::McpClient,
 };
@@ -19,7 +20,7 @@ pub enum AgentError {
     NoEvents,
 }
 
-pub trait ChatAgent: Clone + Send + Sync {
+pub trait ChatAgent: Clone + std::fmt::Debug + Send + Sync {
     fn chat(&self, events: Vec<Event>) -> impl Future<Output = Result<Event, AgentError>> + Send;
 }
 
@@ -30,15 +31,31 @@ pub struct EchoAgent;
 #[cfg(test)]
 impl ChatAgent for EchoAgent {
     async fn chat(&self, events: Vec<Event>) -> Result<Event, AgentError> {
-        let event = events
-            .last()
-            .cloned()
-            .ok_or(AgentError::NoEvents)?;
+        let event = events.last().cloned().ok_or(AgentError::NoEvents)?;
 
         Ok(Event {
             user: crate::User::Ultron,
             ..event
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl<TAgent> EventConsumer for TAgent
+where
+    TAgent: ChatAgent + 'static,
+{
+    async fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError> {
+        let events = vec![event];
+
+        let next_event = self.chat(events).await?;
+
+        tracing::info!(
+            user = ?next_event.user,
+            "language model response"
+        );
+
+        Ok(Some(Response::Bot(next_event.content)))
     }
 }
 

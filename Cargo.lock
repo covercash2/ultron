@@ -3352,6 +3352,7 @@ dependencies = [
 name = "ultron_core"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "axum",
  "bon",
  "caith",

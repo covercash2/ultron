@@ -5,10 +5,46 @@ use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
 use tyche::dice;
 
 use crate::{
+    Response,
     copypasta::{copy_pasta, copy_pasta_names},
     dice::{DiceRollResult, DiceRoller, RollerImpl},
-    event_processor::{Event, EventError, EventType},
+    event_processor::{Event, EventConsumer, EventError, EventType},
 };
+
+#[derive(Debug, Clone)]
+pub struct CommandConsumer<TRoller> {
+    pub dice_roller: DiceRoller<TRoller>,
+}
+
+impl<TRoller> CommandConsumer<TRoller>
+where
+    TRoller: RollerImpl,
+{
+    pub fn new(dice_roller: DiceRoller<TRoller>) -> Self {
+        Self { dice_roller }
+    }
+
+    pub async fn consume(&self, event: Event) -> Result<Option<String>, EventError> {
+        let command: Command = event.try_into()?;
+        let context = CommandContext {
+            dice_roller: self.dice_roller.clone(),
+        };
+        let response = command.execute(context)?;
+        Ok(Some(response))
+    }
+}
+
+#[async_trait::async_trait]
+impl<TRoller> EventConsumer for CommandConsumer<TRoller>
+where
+    TRoller: RollerImpl + 'static,
+{
+    async fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError> {
+        self.consume(event)
+            .await
+            .map(|response: Option<String>| response.map(Response::PlainChat))
+    }
+}
 
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
 pub enum CommandParseError {
@@ -46,10 +82,7 @@ pub struct CommandContext<T: dice::Roller> {
 }
 
 impl Command {
-    pub fn execute<TRoller>(
-        self,
-        context: CommandContext<TRoller>,
-    ) -> Result<String, EventError>
+    pub fn execute<TRoller>(self, context: CommandContext<TRoller>) -> Result<String, EventError>
     where
         TRoller: RollerImpl,
     {

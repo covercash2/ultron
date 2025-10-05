@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 axum.workspace = true
+async-trait.workspace = true
 bon.workspace = true
 caith.workspace = true
 derive_more.workspace = true

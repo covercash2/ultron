@@ -13,6 +13,7 @@ name = "ultron"
 [workspace.dependencies]
 anyhow = "1.0.100"
 async-openai = "0.29.3"
+async-trait = "0.1.89"
 axum = { version = "0.8.6", features = ["macros"] }
 bon = "3.8.0"
 caith = "4.2.4"

@@ -1,7 +1,9 @@
 use bon::Builder;
 use extend::ext;
 use serenity::{
-    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Typing, UserId}, http::Http, Client
+    Client,
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Typing, UserId},
+    http::Http,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -180,42 +182,10 @@ impl EventHandler for Handler {
             }
         };
 
-        let result = self.event_processor.process(event.clone()).await;
+        let results = self.event_processor.process(event.clone()).await;
 
-        tracing::debug!(?result, "processing event result");
-
-        match result {
-            Ok(Some(Response::PlainChat(message))) => {
-                tracing::info!(?event, "processing event response",);
-
-                let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
-
-                tracing::debug!(?response_chunks, "response chunks");
-
-                for chunk in response_chunks {
-                    if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
-                        tracing::error!(%error, "error sending message");
-                    }
-                }
-            }
-            Ok(Some(Response::Bot(bot_message))) => {
-                tracing::info!(?event, "processing bot message response",);
-
-                let message: String = bot_message.render_without_thinking_parts();
-
-                let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
-
-                tracing::debug!(?response_chunks, "response chunks");
-
-                for chunk in response_chunks {
-                    if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
-                        tracing::error!(%error, "error sending message");
-                    }
-                }
-            }
-            Ok(None) => {
-                tracing::debug!(?event, "no response from event processor");
-            }
+        let results = match results {
+            Ok(results) => results,
             Err(error) => {
                 tracing::error!(
                     ?event,
@@ -234,9 +204,9 @@ impl EventHandler for Handler {
                         )),
                         _ => None,
                     },
-                    EventError::Agent(agent_error) => Some(format!(
-                        "brain hurty: {agent_error}\n{HELP_MESSAGE}",
-                    )),
+                    EventError::Agent(agent_error) => {
+                        Some(format!("brain hurty: {agent_error}\n{HELP_MESSAGE}",))
+                    }
                     EventError::DiceRollParse(dice_roll_error) => Some(format!(
                         "ya blew it: {}\n\n{}",
                         dice_roll_error, HELP_MESSAGE
@@ -246,6 +216,43 @@ impl EventHandler for Handler {
                 if let Some(error_message) = error_message {
                     if let Err(error) = msg.channel_id.say(&ctx.http, error_message).await {
                         tracing::error!(%error, "error sending message");
+                    }
+                }
+
+                return;
+            }
+        };
+
+        tracing::debug!(?results, "processing event result");
+
+        for result in results {
+            match result {
+                Response::PlainChat(message) => {
+                    tracing::info!(?event, "processing event response",);
+
+                    let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
+
+                    tracing::debug!(?response_chunks, "response chunks");
+
+                    for chunk in response_chunks {
+                        if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
+                            tracing::error!(%error, "error sending message");
+                        }
+                    }
+                }
+                Response::Bot(bot_message) => {
+                    tracing::info!(?event, "processing bot message response",);
+
+                    let message: String = bot_message.render_without_thinking_parts();
+
+                    let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
+
+                    tracing::debug!(?response_chunks, "response chunks");
+
+                    for chunk in response_chunks {
+                        if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
+                            tracing::error!(%error, "error sending message");
+                        }
                     }
                 }
             }

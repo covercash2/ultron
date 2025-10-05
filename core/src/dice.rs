@@ -10,6 +10,11 @@ use tyche::{
     expr::{Describe, Evaled},
 };
 
+use crate::{
+    command::Command,
+    event_processor::{BotMessage, Event, EventConsumer, EventResult},
+};
+
 pub const HELP_MESSAGE: &str = r#"
 roll a d20: `d20`
 roll _2_ d20s: `2d20`

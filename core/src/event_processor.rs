@@ -2,23 +2,19 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use futures::StreamExt as _;
-use futures::TryStreamExt as _;
+use futures::stream;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Mutex;
-use tyche::dice::roller::FastRand;
 
 use crate::ChatInput;
 use crate::Response;
 use crate::User;
-use crate::command::Command;
-use crate::command::CommandContext;
+use crate::command::CommandConsumer;
 use crate::command::CommandParseError;
 use crate::dice::DiceRoller;
-use crate::dice::RollerImpl;
 use crate::nlp::AgentError;
 use crate::nlp::ChatAgent;
-use crate::nlp::LmChatAgent;
 
 const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
 
@@ -75,52 +71,39 @@ impl Event {
 }
 
 #[derive(Debug, Clone)]
-pub struct EventProcessor<TRoller = FastRand, TAgent = LmChatAgent> {
-    chat_agent: TAgent,
+pub struct EventProcessor {
     events: EventLog,
-    pub dice_roller: DiceRoller<TRoller>,
     consumers: EventConsumers,
 }
 
 // TODO: Default is dumb here
 // TODO: add filters
-#[derive(Debug, Clone, Default, derive_more::IntoIterator)]
-pub struct EventConsumers(Vec<Arc<dyn EventConsumer + Send + Sync>>);
+#[derive(Debug, Clone, Default)]
+pub struct EventConsumers(Vec<Arc<dyn EventConsumer>>);
 
 impl EventConsumers {
-    pub fn iter(&self) -> impl Iterator<Item = Arc<dyn EventConsumer + Send + Sync>> {
+    pub fn iter(&self) -> impl Iterator<Item = Arc<dyn EventConsumer>> {
         self.0.iter().cloned()
     }
 }
 
+pub type EventResult = Result<Option<Response>, EventError>;
+#[async_trait::async_trait]
+pub trait EventConsumer: std::fmt::Debug + Send + Sync + 'static {
+    async fn consume_event(&self, event: Event) -> EventResult;
+}
+
 #[cfg(test)]
-impl EventProcessor<tyche::dice::roller::Max, crate::nlp::EchoAgent> {
+impl EventProcessor {
     pub async fn test() -> Self {
-        Self::new(Default::default(), DiceRoller::max())
+        Self::new()
+            .with_consumer(CommandConsumer::new(DiceRoller::max()))
+            .with_consumer(crate::nlp::EchoAgent)
     }
 }
 
-impl<TAgent> EventProcessor<FastRand, TAgent>
-where
-    TAgent: ChatAgent + Clone + 'static,
-{
-    pub fn with_rng(chat_agent: TAgent, seed: u64) -> Self {
-        let dice_roller = DiceRoller::with_rng(seed);
-        Self::new(chat_agent, dice_roller)
-    }
-
-    pub fn with_default_rng(chat_agent: TAgent) -> Self {
-        let dice_roller = DiceRoller::with_default_rng();
-        Self::new(chat_agent, dice_roller)
-    }
-}
-
-impl<TRoller, TAgent> EventProcessor<TRoller, TAgent>
-where
-    TAgent: ChatAgent + 'static,
-    TRoller: RollerImpl,
-{
-    pub fn new(chat_agent: TAgent, dice_roller: DiceRoller<TRoller>) -> Self {
+impl EventProcessor {
+    pub fn new() -> Self {
         let system_message = Event {
             user: User::System,
             content: BotMessage::raw(ULTRON_SYSTEM_PROMPT),
@@ -131,85 +114,72 @@ where
 
         Self {
             events,
-            dice_roller,
-            chat_agent,
             consumers: EventConsumers::default(),
         }
     }
-}
 
-pub trait EventConsumer: std::fmt::Debug {
-    fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError>;
-}
+    pub fn with_rng<TAgent>(chat_agent: TAgent, seed: u64) -> Self
+    where
+        TAgent: ChatAgent + 'static,
+    {
+        let dice_roller = DiceRoller::with_rng(seed);
+        let command_consumer = CommandConsumer::new(dice_roller);
+        Self::new()
+            .with_consumer(command_consumer)
+            .with_consumer(chat_agent)
+    }
 
-impl<TRoller, TAgent> EventProcessor<TRoller, TAgent>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
-    pub async fn process(&self, event: impl Into<Event>) -> Result<Option<Response>, EventError> {
+    pub fn with_default_rng() -> Self {
+        let dice_roller = DiceRoller::with_default_rng();
+        Self::new().with_consumer(CommandConsumer::new(dice_roller))
+    }
+
+    pub fn with_consumer<T>(mut self, consumer: T) -> Self
+    where
+        T: EventConsumer + 'static,
+    {
+        self.consumers.0.push(Arc::new(consumer));
+        self
+    }
+
+    pub async fn process(&self, event: impl Into<Event>) -> Result<Vec<Response>, EventError> {
         let event = event.into();
         tracing::debug!(?event, "processing event");
 
         self.events.log_event(event.clone()).await;
 
-        // let consumer_stream = futures::stream::iter(
-        //     self.consumers
-        //         .iter()
-        //         .map(|consumer| async move { consumer.consume_event(event.clone()) }),
-        // )
-        // .try_buffer_unordered(4);
+        let event_results: Vec<EventResult> = Box::pin(
+            stream::iter(self.consumers.iter().map(move |consumer| {
+                let event = event.clone();
+                async move { consumer.consume_event(event.clone()).await }
+            }))
+            .buffer_unordered(4)
+            .collect(),
+        )
+        .await;
 
-        if event.user == User::Ultron {
-            tracing::debug!("ignoring event from Ultron");
-            return Ok(None);
-        }
+        let responses: Vec<Response> = event_results
+            .into_iter()
+            .filter_map(|response| match response {
+                Ok(resp) => resp,
+                Err(error) => {
+                    tracing::error!(%error, "error processing event");
+                    None
+                }
+            })
+            .collect();
 
-        match event.event_type {
-            EventType::Command => {
-                let command: Command = event.try_into()?;
-                self.process_command(command).await.map(Some)
-            }
-            EventType::LanguageModel => self.process_language_model().await,
-            EventType::Plain => {
-                tracing::debug!("just plain input; don't do anything with it");
-                Ok(None)
-            }
-        }
-    }
-
-    async fn process_command(&self, command: impl Into<Command>) -> Result<Response, EventError> {
-        let command = command.into();
-        let result = self.command_context().and_then(move |context| {
-            tracing::debug!(?command, "executing command");
-            command.execute(context)
-        })?;
-
-        tracing::debug!("computed output: {result}");
-
-        Ok(Response::PlainChat(result))
-    }
-
-    async fn process_language_model(&self) -> Result<Option<Response>, EventError> {
-        let events = self.events.get_events().await;
-        let next_event = self.chat_agent.chat(events).await?;
-
-        tracing::info!(
-            user = ?next_event.user,
-            "language model response"
-        );
-
-        Ok(Some(Response::Bot(next_event.content)))
-    }
-
-    pub fn command_context(&self) -> Result<CommandContext<TRoller>, EventError> {
-        Ok(CommandContext {
-            dice_roller: self.dice_roller.clone(),
-        })
+        Ok(responses)
     }
 }
 
-impl<T, U> EventProcessor<T, U> {
+impl Default for EventProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EventProcessor {
     pub async fn dump_events(&self) -> Vec<Event> {
         self.events.get_events().await
     }
@@ -382,12 +352,13 @@ mod tests {
         let event: Event =
             Event::new(event, EventType::Plain).expect("should parse chat input to event");
         let processor = EventProcessor::test().await;
-        let response = processor
+        let responses = processor
             .process(event)
             .await
-            .expect("echo should not error")
-            .expect("should return a response");
-        assert_eq!(response, Response::PlainChat("hello".to_string()));
+            .expect("echo should not error");
+
+        assert_eq!(responses.len(), 1);
+        assert_eq!(responses[0], Response::PlainChat("hello".to_string()));
     }
 
     #[test]

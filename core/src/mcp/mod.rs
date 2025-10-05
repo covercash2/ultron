@@ -1,17 +1,16 @@
 use std::{borrow::Cow, sync::Arc};
 
 use rmcp::{
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters}, model::{ServerCapabilities, ServerInfo, *}, schemars, tool, tool_handler, tool_router, transport::{
-        streamable_http_server::session::local::LocalSessionManager, StreamableHttpService
-    }, ServerHandler
+    ServerHandler,
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    model::{ServerCapabilities, ServerInfo, *},
+    schemars, tool, tool_handler, tool_router,
+    transport::{
+        StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
+    },
 };
-use tyche::dice::roller::FastRand;
 
-use crate::{
-    User,
-    dice::RollerImpl,
-    nlp::{ChatAgent, LmChatAgent},
-};
+use crate::User;
 use crate::{
     dice::{DiceRoll, DiceRollError},
     event_processor::EventProcessor,
@@ -20,33 +19,24 @@ use crate::{
 pub mod client;
 
 #[derive(Debug, Clone)]
-pub struct UltronMcp<TRoller, TAgent: ChatAgent = LmChatAgent> {
-    pub event_processor: Arc<EventProcessor<TRoller, TAgent>>,
+pub struct UltronMcp {
+    pub event_processor: Arc<EventProcessor>,
 }
 
-pub struct UltronCommands<TRoller = FastRand, TAgent = LmChatAgent> {
-    event_processor: Arc<EventProcessor<TRoller, TAgent>>,
+pub struct UltronCommands {
+    event_processor: Arc<EventProcessor>,
+    // TODO: parameterize the RNG
+    dice_roller: crate::dice::DiceRoller<tyche::dice::roller::FastRand>,
     tool_router: ToolRouter<Self>,
 }
 
-impl<TRoller, TAgent> From<UltronMcp<TRoller, TAgent>>
-    for StreamableHttpService<UltronCommands<TRoller, TAgent>>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
-    fn from(UltronMcp { event_processor }: UltronMcp<TRoller, TAgent>) -> Self {
+impl From<UltronMcp> for StreamableHttpService<UltronCommands> {
+    fn from(UltronMcp { event_processor }: UltronMcp) -> Self {
         build(event_processor)
     }
 }
 
-pub fn build<TRoller, TAgent>(
-    event_processor: Arc<EventProcessor<TRoller, TAgent>>,
-) -> StreamableHttpService<UltronCommands<TRoller, TAgent>>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
+pub fn build(event_processor: Arc<EventProcessor>) -> StreamableHttpService<UltronCommands> {
     let event_processor = event_processor.clone();
     StreamableHttpService::new(
         move || Ok(UltronCommands::new(event_processor.clone())),
@@ -66,14 +56,11 @@ pub struct DiceRollRequest {
 }
 
 #[tool_router]
-impl<TRoller, TAgent> UltronCommands<TRoller, TAgent>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
-    pub fn new(event_processor: Arc<EventProcessor<TRoller, TAgent>>) -> Self {
+impl UltronCommands {
+    pub fn new(event_processor: Arc<EventProcessor>) -> Self {
         Self {
             event_processor,
+            dice_roller: crate::dice::DiceRoller::default(),
             tool_router: Self::tool_router(),
         }
     }
@@ -103,7 +90,6 @@ where
         tracing::debug!(expression, "rolling dice");
 
         let dice_roll: DiceRoll = self
-            .event_processor
             .dice_roller
             .clone()
             .roll_string(&expression)
@@ -137,11 +123,7 @@ impl From<DiceRollError> for rmcp::ErrorData {
 }
 
 #[tool_handler]
-impl<TRoller, TAgent> ServerHandler for UltronCommands<TRoller, TAgent>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
+impl ServerHandler for UltronCommands {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some("Commands available to query and control Ultron".into()),

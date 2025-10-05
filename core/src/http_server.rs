@@ -13,7 +13,6 @@ use rmcp::transport::StreamableHttpService;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trace_layer::TracingMiddleware;
-use tyche::dice::roller::FastRand;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -22,7 +21,7 @@ use crate::{
     dice::RollerImpl,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
     mcp::{UltronCommands, UltronMcp},
-    nlp::{ChatAgent, LmChatAgent},
+    nlp::ChatAgent,
 };
 
 mod trace_layer;
@@ -64,19 +63,13 @@ pub enum ServerError {
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct AppState<TBot, TAgent = LmChatAgent, TRoller = FastRand> {
-    pub event_processor: Arc<EventProcessor<TRoller, TAgent>>,
+pub struct AppState<TBot> {
+    pub event_processor: Arc<EventProcessor>,
     pub chat_bot: Arc<TBot>,
 }
 
-impl<TBot, TAgent, TRoller> AppState<TBot, TAgent, TRoller>
-where
-    TRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
-{
-    pub fn make_ultron_commands_mcp(
-        &self,
-    ) -> StreamableHttpService<UltronCommands<TRoller, TAgent>> {
+impl<TBot> AppState<TBot> {
+    pub fn make_ultron_commands_mcp(&self) -> StreamableHttpService<UltronCommands> {
         UltronMcp {
             event_processor: self.event_processor.clone(),
         }
@@ -128,10 +121,7 @@ impl Route {
 }
 
 /// Starts the HTTP server on the specified port with the given application state.
-pub async fn serve<Bot, DiceRoller, TAgent>(
-    port: u16,
-    state: AppState<Bot, TAgent, DiceRoller>,
-) -> ServerResult<()>
+pub async fn serve<Bot, DiceRoller, TAgent>(port: u16, state: AppState<Bot>) -> ServerResult<()>
 where
     Bot: ChatBot + 'static,
     DiceRoller: RollerImpl + 'static,
@@ -149,15 +139,14 @@ where
     Ok(())
 }
 
-pub fn create_router<Bot, DiceRoller, TAgent>(state: AppState<Bot, TAgent, DiceRoller>) -> Router
+pub fn create_router<Bot>(state: AppState<Bot>) -> Router
 where
     Bot: ChatBot + 'static,
-    DiceRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
 {
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(index))
-        .routes(routes!(command, healthcheck))
+        .routes(routes!(healthcheck))
+        // .routes(routes!(command))
         .routes(routes!(api_doc))
         .routes(routes!(events))
         .nest_service(Route::Mcp.as_str(), state.make_ultron_commands_mcp())
@@ -241,36 +230,41 @@ impl From<BotInput> for Event {
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn command<Bot, DiceRoller, TAgent>(
-    State(state): State<AppState<Bot, TAgent, DiceRoller>>,
+async fn command<Bot>(
+    State(state): State<AppState<Bot>>,
     Json(bot_input): Json<BotInput>,
 ) -> Result<(), ServerError>
 where
     Bot: ChatBot + 'static,
-    DiceRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
 {
     let chat_input = Event::from(bot_input.clone());
 
     tracing::info!("response: {:?}", chat_input);
 
-    match state.event_processor.process(chat_input).await? {
-        Some(crate::Response::PlainChat(response)) => {
-            state
+    let responses = Box::pin(state.event_processor.process(chat_input)).await?;
+
+    if responses.is_empty() {
+        tracing::warn!("no response from event processor");
+    }
+
+    for response in responses.iter() {
+        match response {
+            crate::Response::PlainChat(response) => {
+                state
+                    .chat_bot
+                    .send_message(bot_input.channel, response)
+                    .await
+                    .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
+            }
+            crate::Response::Bot(bot_message) => state
                 .chat_bot
-                .send_message(bot_input.channel, &response)
+                .send_message(
+                    bot_input.channel,
+                    &bot_message.render_without_thinking_parts(),
+                )
                 .await
-                .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
+                .map_err(|e| ServerError::ChatBot(Box::new(e)))?,
         }
-        Some(crate::Response::Bot(bot_message)) => state
-            .chat_bot
-            .send_message(
-                bot_input.channel,
-                &bot_message.render_without_thinking_parts(),
-            )
-            .await
-            .map_err(|e| ServerError::ChatBot(Box::new(e)))?,
-        None => tracing::debug!("no response from event processor"),
     }
 
     Ok(())
@@ -286,9 +280,7 @@ where
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn events<Bot, Agent, DiceRoller>(
-    State(state): State<AppState<Bot, Agent, DiceRoller>>,
-) -> Json<Vec<Event>> {
+async fn events<Bot>(State(state): State<AppState<Bot>>) -> Json<Vec<Event>> {
     let events: Vec<Event> = state.event_processor.dump_events().await;
 
     Json(events)
