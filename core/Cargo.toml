@@ -8,6 +8,7 @@ axum.workspace = true
 bon.workspace = true
 caith.workspace = true
 derive_more.workspace = true
+futures.workspace = true
 ollama-rs.workspace = true
 papaya.workspace = true
 rmcp.workspace = true

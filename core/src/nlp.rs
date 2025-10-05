@@ -76,6 +76,8 @@ impl LmChatAgent {
         }
     }
 
+    /// Load a [`LmChatAgent`] from a [`ChatAgentConfig`].
+    /// This will create a new [`McpClient`] and [`LanguageModel`].
     pub async fn load(
         ChatAgentConfig {
             llm_uri,
