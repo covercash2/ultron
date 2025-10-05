@@ -7,6 +7,7 @@ use ultron_core::ChatBot;
 use ultron_core::event_processor::EventProcessor;
 use ultron_core::http_server::{self, AppState};
 use ultron_core::io::read_file_to_string;
+use ultron_core::nlp::{ChatAgentConfig, LmChatAgent};
 use ultron_discord::DiscordBotConfig;
 
 #[derive(Clone, serde::Deserialize)]
@@ -20,7 +21,7 @@ pub struct Secrets {
 #[derive(Debug, Clone, Parser)]
 pub struct Cli {
     /// port to listen on for HTTP requests
-    #[arg(short, long, default_value = "8080")]
+    #[arg(short, long)]
     pub port: u16,
 
     /// log level in the form of the [`env_logger`] crate
@@ -33,9 +34,23 @@ pub struct Cli {
     #[arg(short, long, default_value = "https://hoss.faun-truck.ts.net/llm/")]
     pub lm_endpoint: String,
 
+    /// path to the Ultron MCP server
+    #[arg(short, long)]
+    pub mcp_endpoint: String,
+
     /// path to the secrets file
     #[arg(short, long)]
     pub secrets: PathBuf,
+}
+
+impl From<&Cli> for ChatAgentConfig {
+    fn from(value: &Cli) -> Self {
+        Self {
+            llm_uri: value.lm_endpoint.clone(),
+            llm_model: "llama3.2:latest".into(),
+            mcp_uri: value.mcp_endpoint.clone(),
+        }
+    }
 }
 
 /// panics if a subscriber was already registered.
@@ -71,7 +86,9 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let event_processor = Arc::new(EventProcessor::new(&args.lm_endpoint, Default::default())?);
+    let chat_agent = LmChatAgent::load((&args).into()).await?;
+
+    let event_processor = Arc::new(EventProcessor::new(chat_agent, Default::default()));
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)

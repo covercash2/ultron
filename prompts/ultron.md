@@ -19,4 +19,3 @@ you will follow the following grammar rules:
     mostly D&D 5e.
 - tyche: a dice rolling library that mimics the dice rolling expression syntax
     of Foundry VTT. <https://docs.rs/tyche/latest/tyche/index.html>
-
