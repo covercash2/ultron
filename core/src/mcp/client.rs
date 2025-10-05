@@ -48,6 +48,7 @@ impl FromIterator<(Cow<'static, str>, Tool)> for ToolSet {
 impl McpClient {
     pub async fn new(server_uri: &str) -> McpClientResult<Self> {
         // uses current package info for client info
+        // let transport = StreamableHttpClientTransport::from(server_uri);
         let transport = StreamableHttpClientTransport::from_uri(server_uri);
         let client_info = ClientInfo::default();
         let client: InnerClient = client_info.clone().serve(transport).await?;
@@ -67,6 +68,11 @@ impl McpClient {
             inner: client.into(),
             tools,
         })
+    }
+
+    pub async fn localhost(port: u16) -> McpClientResult<Self> {
+        let server_uri = format!("http://localhost:{port}");
+        Self::new(&server_uri).await
     }
 
     pub fn info(&self) -> &ClientInfo {
@@ -136,6 +142,13 @@ mod tests {
                   "description": "The name of the tool",
                   "type": "string"
                 },
+                "title": {
+                  "description": "A human-readable title for the tool",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "description": {
                   "description": "A description of what the tool does",
                   "type": [
@@ -166,6 +179,16 @@ mod tests {
                       "type": "null"
                     }
                   ]
+                },
+                "icons": {
+                  "description": "Optional list of icons for the tool",
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "$ref": "#/$defs/Icon"
+                  }
                 }
               },
               "required": [
@@ -213,6 +236,33 @@ mod tests {
                   ]
                 }
               }
+            },
+            "Icon": {
+              "description": "A URL pointing to an icon resource or a base64-encoded data URI.\n\nClients that support rendering icons MUST support at least the following MIME types:\n- image/png - PNG images (safe, universal compatibility)\n- image/jpeg (and image/jpg) - JPEG images (safe, universal compatibility)\n\nClients that support rendering icons SHOULD also support:\n- image/svg+xml - SVG images (scalable but requires security precautions)\n- image/webp - WebP images (modern, efficient format)",
+              "type": "object",
+              "properties": {
+                "src": {
+                  "description": "A standard URI pointing to an icon resource",
+                  "type": "string"
+                },
+                "mimeType": {
+                  "description": "Optional override if the server's MIME type is missing or generic",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "sizes": {
+                  "description": "Size specification (e.g., \"48x48\", \"any\" for SVG, or \"48x48 96x96\")",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "src"
+              ]
             }
           }
         }

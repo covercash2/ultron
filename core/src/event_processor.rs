@@ -1,6 +1,8 @@
 use std::fmt::Display;
 use std::sync::Arc;
 
+use futures::StreamExt as _;
+use futures::TryStreamExt as _;
 use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Mutex;
@@ -77,6 +79,18 @@ pub struct EventProcessor<TRoller = FastRand, TAgent = LmChatAgent> {
     chat_agent: TAgent,
     events: EventLog,
     pub dice_roller: DiceRoller<TRoller>,
+    consumers: EventConsumers,
+}
+
+// TODO: Default is dumb here
+// TODO: add filters
+#[derive(Debug, Clone, Default, derive_more::IntoIterator)]
+pub struct EventConsumers(Vec<Arc<dyn EventConsumer + Send + Sync>>);
+
+impl EventConsumers {
+    pub fn iter(&self) -> impl Iterator<Item = Arc<dyn EventConsumer + Send + Sync>> {
+        self.0.iter().cloned()
+    }
 }
 
 #[cfg(test)]
@@ -119,8 +133,13 @@ where
             events,
             dice_roller,
             chat_agent,
+            consumers: EventConsumers::default(),
         }
     }
+}
+
+pub trait EventConsumer: std::fmt::Debug {
+    fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError>;
 }
 
 impl<TRoller, TAgent> EventProcessor<TRoller, TAgent>
@@ -133,6 +152,13 @@ where
         tracing::debug!(?event, "processing event");
 
         self.events.log_event(event.clone()).await;
+
+        // let consumer_stream = futures::stream::iter(
+        //     self.consumers
+        //         .iter()
+        //         .map(|consumer| async move { consumer.consume_event(event.clone()) }),
+        // )
+        // .try_buffer_unordered(4);
 
         if event.user == User::Ultron {
             tracing::debug!("ignoring event from Ultron");

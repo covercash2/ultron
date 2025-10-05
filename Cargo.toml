@@ -12,43 +12,48 @@ name = "ultron"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
-async-openai = "0.28.3"
-axum = { version = "0.8.5", features = ["macros"] }
-bon = "3.7.2"
+async-openai = "0.29.3"
+axum = { version = "0.8.6", features = ["macros"] }
+bon = "3.8.0"
 caith = "4.2.4"
 clap = { version = "4.5.48", features = ["derive"] }
-derive_more = { version = "2.0.1", features = ["display"] }
+derive_more = { version = "2.0.1", features = ["display", "into_iterator"] }
 envy = "0.4.2"
 extend = "1.2.0"
-insta = { version = "1.43.2", features = ["redactions", "json"] }
+futures = "0.3.31"
+insta = { version = "1.43.2", features = ["redactions", "json", "yaml"] }
 ollama-rs = "0.3.2"
 papaya = "0.2.3"
-rmcp = { version = "0.5.0", features = [
+rmcp = { version = "0.8.0", features = [
   "client",
   "macros",
   "reqwest",
   "schemars",
   "server",
-  "transport-streamable-http-client",
+  "transport-streamable-http-client-reqwest",
   "transport-streamable-http-server",
   "transport-worker",
 ] }
-reqwest = { version = "0.12.22", features = [
+reqwest = { version = "0.12.23", features = [
   "stream",
   "deflate",
   "rustls-tls",
 ] }
 schemars = "1.0.4"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.142"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
 serenity = { version = "0.12", features = ["framework", "standard_framework"] }
 strum = { version = "0.27.2", features = ["derive"] }
 thiserror = "2.0.17"
 tokio = { version = "1.47.1", features = ["full"] }
-toml = "0.9.5"
+toml = "0.9.7"
 tower-http = { version = "0.6.6", features = ["trace"] }
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json", "tracing-log"] }
+tracing-subscriber = { version = "0.3.20", features = [
+  "env-filter",
+  "json",
+  "tracing-log",
+] }
 tyche = "0.3.1"
 ultron_core = { path = "core" }
 ultron_discord = { path = "ultron_discord" }

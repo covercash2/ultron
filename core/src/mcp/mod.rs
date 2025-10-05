@@ -1,13 +1,9 @@
 use std::{borrow::Cow, sync::Arc};
 
 use rmcp::{
-    ServerHandler,
-    handler::server::{router::tool::ToolRouter, tool::Parameters},
-    model::{ServerCapabilities, ServerInfo, *},
-    schemars, tool, tool_handler, tool_router,
-    transport::{
-        StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
-    },
+    handler::server::{router::tool::ToolRouter, wrapper::Parameters}, model::{ServerCapabilities, ServerInfo, *}, schemars, tool, tool_handler, tool_router, transport::{
+        streamable_http_server::session::local::LocalSessionManager, StreamableHttpService
+    }, ServerHandler
 };
 use tyche::dice::roller::FastRand;
 

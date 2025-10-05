@@ -1,6 +1,7 @@
 # come at me
 set shell := ["nu", "-c"]
 port := "9092"
+mcp_port := "12556"
 
 default:
   just --list

@@ -36,7 +36,7 @@ pub struct Cli {
 
     /// path to the Ultron MCP server
     #[arg(short, long)]
-    pub mcp_endpoint: String,
+    pub mcp_port: u16,
 
     /// path to the secrets file
     #[arg(short, long)]
@@ -48,7 +48,7 @@ impl From<&Cli> for ChatAgentConfig {
         Self {
             llm_uri: value.lm_endpoint.clone(),
             llm_model: "llama3.2:latest".into(),
-            mcp_uri: value.mcp_endpoint.clone(),
+            mcp_uri: format!("http://localhost:{}", value.mcp_port),
         }
     }
 }
@@ -86,7 +86,11 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let chat_agent = LmChatAgent::load((&args).into()).await?;
+    let chat_agent = LmChatAgent::load((&args).into()).await
+        .inspect_err(|error| {
+            tracing::error!(%error, "!!! unable to create chat agent !!!");
+            tracing::error!(%error, "the server will continue to run, but LLM capabilities will be unavailable");
+        })?;
 
     let event_processor = Arc::new(EventProcessor::new(chat_agent, Default::default()));
 

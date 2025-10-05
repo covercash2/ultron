@@ -2144,9 +2144,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "0.5.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2faf35b7d3c4b7f8c21c45bb014011b32a0ce6444bf6094da04daab01a8c3c34"
+checksum = "6f35acda8f89fca5fd8c96cae3c6d5b4c38ea0072df4c8030915f3b5ff469c1c"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -2175,9 +2175,9 @@ dependencies = [
 
 [[package]]
 name = "rmcp-macros"
-version = "0.5.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad9720d9d2a943779f1dc3d47fa9072c7eeffaff4e1a82f67eb9f7ea52696091"
+checksum = "c9f1d5220aaa23b79c3d02e18f7a554403b3ccea544bbb6c69d6bcb3e854a274"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -3335,6 +3335,7 @@ dependencies = [
  "anyhow",
  "clap",
  "envy",
+ "futures",
  "ollama-rs",
  "serde",
  "thiserror 2.0.17",
@@ -3355,6 +3356,7 @@ dependencies = [
  "bon",
  "caith",
  "derive_more",
+ "futures",
  "insta",
  "ollama-rs",
  "papaya",
