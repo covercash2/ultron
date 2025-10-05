@@ -9,9 +9,12 @@ bon.workspace = true
 caith.workspace = true
 derive_more.workspace = true
 ollama-rs.workspace = true
+papaya.workspace = true
 rmcp.workspace = true
 reqwest.workspace = true
+schemars.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 strum.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -21,3 +24,6 @@ tracing.workspace = true
 tyche.workspace = true
 utoipa-axum.workspace = true
 utoipa.workspace = true
+
+[dev-dependencies]
+insta.workspace = true

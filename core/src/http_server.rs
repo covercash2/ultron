@@ -13,6 +13,7 @@ use rmcp::transport::StreamableHttpService;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trace_layer::TracingMiddleware;
+use tyche::dice::roller::FastRand;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -21,6 +22,7 @@ use crate::{
     dice::RollerImpl,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
     mcp::{UltronCommands, UltronMcp},
+    nlp::{ChatAgent, LmChatAgent},
 };
 
 mod trace_layer;
@@ -62,16 +64,19 @@ pub enum ServerError {
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct AppState<ChatBot, DiceRoller> {
-    pub event_processor: Arc<EventProcessor<DiceRoller>>,
-    pub chat_bot: Arc<ChatBot>,
+pub struct AppState<TBot, TAgent = LmChatAgent, TRoller = FastRand> {
+    pub event_processor: Arc<EventProcessor<TRoller, TAgent>>,
+    pub chat_bot: Arc<TBot>,
 }
 
-impl<ChatBot, DiceRoller> AppState<ChatBot, DiceRoller>
+impl<TBot, TAgent, TRoller> AppState<TBot, TAgent, TRoller>
 where
-    DiceRoller: RollerImpl + 'static,
+    TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
-    pub fn make_ultron_commands_mcp(&self) -> StreamableHttpService<UltronCommands<DiceRoller>> {
+    pub fn make_ultron_commands_mcp(
+        &self,
+    ) -> StreamableHttpService<UltronCommands<TRoller, TAgent>> {
         UltronMcp {
             event_processor: self.event_processor.clone(),
         }
@@ -123,10 +128,14 @@ impl Route {
 }
 
 /// Starts the HTTP server on the specified port with the given application state.
-pub async fn serve<Bot, DiceRoller>(port: u16, state: AppState<Bot, DiceRoller>) -> ServerResult<()>
+pub async fn serve<Bot, DiceRoller, TAgent>(
+    port: u16,
+    state: AppState<Bot, TAgent, DiceRoller>,
+) -> ServerResult<()>
 where
     Bot: ChatBot + 'static,
     DiceRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     let router = create_router(state);
 
@@ -140,10 +149,11 @@ where
     Ok(())
 }
 
-pub fn create_router<Bot, DiceRoller>(state: AppState<Bot, DiceRoller>) -> Router
+pub fn create_router<Bot, DiceRoller, TAgent>(state: AppState<Bot, TAgent, DiceRoller>) -> Router
 where
     Bot: ChatBot + 'static,
     DiceRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(index))
@@ -231,13 +241,14 @@ impl From<BotInput> for Event {
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn command<Bot, DiceRoller>(
-    State(state): State<AppState<Bot, DiceRoller>>,
+async fn command<Bot, DiceRoller, TAgent>(
+    State(state): State<AppState<Bot, TAgent, DiceRoller>>,
     Json(bot_input): Json<BotInput>,
 ) -> Result<(), ServerError>
 where
     Bot: ChatBot + 'static,
-    DiceRoller: RollerImpl,
+    DiceRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     let chat_input = Event::from(bot_input.clone());
 
@@ -275,8 +286,8 @@ where
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn events<Bot, DiceRoller>(
-    State(state): State<AppState<Bot, DiceRoller>>,
+async fn events<Bot, Agent, DiceRoller>(
+    State(state): State<AppState<Bot, Agent, DiceRoller>>,
 ) -> Json<Vec<Event>> {
     let events: Vec<Event> = state.event_processor.dump_events().await;
 
@@ -321,7 +332,7 @@ mod tests {
     #[tokio::test]
     async fn test_bot() {
         let state = AppState {
-            event_processor: Arc::new(EventProcessor::default()),
+            event_processor: Arc::new(EventProcessor::test().await),
             chat_bot: Arc::new(TestBot),
         };
         let bot_input = BotInput {

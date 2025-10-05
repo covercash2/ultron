@@ -14,7 +14,9 @@ use crate::command::CommandContext;
 use crate::command::CommandParseError;
 use crate::dice::DiceRoller;
 use crate::dice::RollerImpl;
-use crate::lm::{LanguageModel, LanguageModelError};
+use crate::nlp::AgentError;
+use crate::nlp::ChatAgent;
+use crate::nlp::LmChatAgent;
 
 const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
 
@@ -25,8 +27,8 @@ pub enum EventError {
     #[error("failed to parse dice roll from input: {0}")]
     DiceRollParse(#[from] crate::dice::DiceRollError),
 
-    #[error("language model error: {0}")]
-    LanguageModel(#[from] LanguageModelError),
+    #[error("agent error: {0}")]
+    Agent(#[from] AgentError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -71,27 +73,40 @@ impl Event {
 }
 
 #[derive(Debug, Clone)]
-pub struct EventProcessor<TRoller = FastRand> {
-    language_model: LanguageModel,
+pub struct EventProcessor<TRoller = FastRand, TAgent = LmChatAgent> {
+    chat_agent: TAgent,
     events: EventLog,
     pub dice_roller: DiceRoller<TRoller>,
 }
 
 #[cfg(test)]
-impl Default for EventProcessor<tyche::dice::roller::Max> {
-    fn default() -> Self {
-        Self::new("http://localhost:11434", DiceRoller::max())
-            .expect("should create default event processor")
+impl EventProcessor<tyche::dice::roller::Max, crate::nlp::EchoAgent> {
+    pub async fn test() -> Self {
+        Self::new(Default::default(), DiceRoller::max())
     }
 }
 
-impl<TRoller: RollerImpl> EventProcessor<TRoller> {
-    pub fn new(
-        lm_endpoint: impl AsRef<str>,
-        dice_roller: DiceRoller<TRoller>,
-    ) -> Result<Self, LanguageModelError> {
-        let language_model = LanguageModel::ollama(lm_endpoint.as_ref(), Default::default())?;
+impl<TAgent> EventProcessor<FastRand, TAgent>
+where
+    TAgent: ChatAgent + Clone + 'static,
+{
+    pub fn with_rng(chat_agent: TAgent, seed: u64) -> Self {
+        let dice_roller = DiceRoller::with_rng(seed);
+        Self::new(chat_agent, dice_roller)
+    }
 
+    pub fn with_default_rng(chat_agent: TAgent) -> Self {
+        let dice_roller = DiceRoller::with_default_rng();
+        Self::new(chat_agent, dice_roller)
+    }
+}
+
+impl<TRoller, TAgent> EventProcessor<TRoller, TAgent>
+where
+    TAgent: ChatAgent + 'static,
+    TRoller: RollerImpl,
+{
+    pub fn new(chat_agent: TAgent, dice_roller: DiceRoller<TRoller>) -> Self {
         let system_message = Event {
             user: User::System,
             content: BotMessage::raw(ULTRON_SYSTEM_PROMPT),
@@ -100,29 +115,18 @@ impl<TRoller: RollerImpl> EventProcessor<TRoller> {
 
         let events = EventLog::new([system_message]);
 
-        Ok(Self {
-            language_model,
+        Self {
             events,
             dice_roller,
-        })
+            chat_agent,
+        }
     }
 }
 
-impl EventProcessor<FastRand> {
-    pub fn with_rng(lm_endpoint: impl AsRef<str>, seed: u64) -> Result<Self, LanguageModelError> {
-        let dice_roller = DiceRoller::with_rng(seed);
-        Self::new(lm_endpoint, dice_roller)
-    }
-
-    pub fn with_default_rng(lm_endpoint: impl AsRef<str>) -> Result<Self, LanguageModelError> {
-        let dice_roller = DiceRoller::with_default_rng();
-        Self::new(lm_endpoint, dice_roller)
-    }
-}
-
-impl<TRoller> EventProcessor<TRoller>
+impl<TRoller, TAgent> EventProcessor<TRoller, TAgent>
 where
-    TRoller: RollerImpl,
+    TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     pub async fn process(&self, event: impl Into<Event>) -> Result<Option<Response>, EventError> {
         let event = event.into();
@@ -138,27 +142,9 @@ where
         match event.event_type {
             EventType::Command => {
                 let command: Command = event.try_into()?;
-                let result = self.command_context().and_then(move |context| {
-                    tracing::debug!(?command, "executing command");
-                    command.execute(context)
-                })?;
-
-                tracing::debug!("computed output: {result}");
-
-                Ok(Some(Response::PlainChat(result)))
+                self.process_command(command).await.map(Some)
             }
-            EventType::LanguageModel => {
-                let events = self.events.get_events().await;
-
-                let next_event = self.language_model.chat(events).await?;
-
-                tracing::info!(
-                    user = ?next_event.user,
-                    "language model response"
-                );
-
-                Ok(Some(Response::Bot(next_event.content)))
-            }
+            EventType::LanguageModel => self.process_language_model().await,
             EventType::Plain => {
                 tracing::debug!("just plain input; don't do anything with it");
                 Ok(None)
@@ -166,15 +152,38 @@ where
         }
     }
 
+    async fn process_command(&self, command: impl Into<Command>) -> Result<Response, EventError> {
+        let command = command.into();
+        let result = self.command_context().and_then(move |context| {
+            tracing::debug!(?command, "executing command");
+            command.execute(context)
+        })?;
+
+        tracing::debug!("computed output: {result}");
+
+        Ok(Response::PlainChat(result))
+    }
+
+    async fn process_language_model(&self) -> Result<Option<Response>, EventError> {
+        let events = self.events.get_events().await;
+        let next_event = self.chat_agent.chat(events).await?;
+
+        tracing::info!(
+            user = ?next_event.user,
+            "language model response"
+        );
+
+        Ok(Some(Response::Bot(next_event.content)))
+    }
+
     pub fn command_context(&self) -> Result<CommandContext<TRoller>, EventError> {
         Ok(CommandContext {
             dice_roller: self.dice_roller.clone(),
         })
     }
-
 }
 
-impl<T> EventProcessor<T> {
+impl<T, U> EventProcessor<T, U> {
     pub async fn dump_events(&self) -> Vec<Event> {
         self.events.get_events().await
     }
@@ -346,7 +355,7 @@ mod tests {
         let event: ChatInput = ChatInput::anonymous("!ultron echo hello");
         let event: Event =
             Event::new(event, EventType::Plain).expect("should parse chat input to event");
-        let processor = EventProcessor::default();
+        let processor = EventProcessor::test().await;
         let response = processor
             .process(event)
             .await
@@ -358,8 +367,8 @@ mod tests {
     #[test]
     fn strip_prefix() {
         let chat_input: ChatInput = ChatInput::anonymous("!ultron hello");
-        let input: Event = Event::new(chat_input, EventType::Plain)
-            .expect("should parse chat input to api input");
+        let input: Event =
+            Event::new(chat_input, EventType::Plain).expect("should parse chat input to api input");
         assert_eq!(input.user, User::Anonymous);
         assert_eq!(input.content, BotMessage::raw("hello"));
     }

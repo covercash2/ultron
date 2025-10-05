@@ -161,7 +161,7 @@ impl EventHandler for Handler {
             EventType::Plain
         };
 
-        let typing: Option<Typing> = if event_type == EventType::LanguageModel {
+        let _typing: Option<Typing> = if event_type == EventType::LanguageModel {
             Some(ctx.http.start_typing(msg.channel_id))
         } else {
             None
@@ -234,9 +234,8 @@ impl EventHandler for Handler {
                         )),
                         _ => None,
                     },
-                    EventError::LanguageModel(language_model_error) => Some(format!(
-                        "brain hurty: {}\n\n{}",
-                        language_model_error, HELP_MESSAGE
+                    EventError::Agent(agent_error) => Some(format!(
+                        "brain hurty: {agent_error}\n{HELP_MESSAGE}",
                     )),
                     EventError::DiceRollParse(dice_roll_error) => Some(format!(
                         "ya blew it: {}\n\n{}",

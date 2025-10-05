@@ -12,6 +12,7 @@ pub mod event_processor;
 pub mod http_server;
 pub mod io;
 pub mod lm;
+pub mod nlp;
 pub mod ollama;
 pub mod mcp;
 
@@ -57,9 +58,13 @@ pub enum Response {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, strum::Display)]
 #[strum(serialize_all = "snake_case")]
 pub enum User {
+    /// the assistant role in an LLM
     Ultron,
+    /// the system role in an LLM
     System,
+    /// a user role that is not identified
     Anonymous,
+    /// a user role with a name
     #[strum(serialize = "{0}")]
     Normal(String),
 }

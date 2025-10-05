@@ -1,6 +1,5 @@
 use std::{borrow::Cow, sync::Arc};
 
-use bon::Builder;
 use rmcp::{
     ServerHandler,
     handler::server::{router::tool::ToolRouter, tool::Parameters},
@@ -10,37 +9,47 @@ use rmcp::{
         StreamableHttpService, streamable_http_server::session::local::LocalSessionManager,
     },
 };
+use tyche::dice::roller::FastRand;
 
-use crate::{User, dice::RollerImpl};
+use crate::{
+    User,
+    dice::RollerImpl,
+    nlp::{ChatAgent, LmChatAgent},
+};
 use crate::{
     dice::{DiceRoll, DiceRollError},
     event_processor::EventProcessor,
 };
 
+pub mod client;
+
 #[derive(Debug, Clone)]
-pub struct UltronMcp<TRoller> {
-    pub event_processor: Arc<EventProcessor<TRoller>>,
+pub struct UltronMcp<TRoller, TAgent: ChatAgent = LmChatAgent> {
+    pub event_processor: Arc<EventProcessor<TRoller, TAgent>>,
 }
 
-pub struct UltronCommands<TRoller> {
-    event_processor: Arc<EventProcessor<TRoller>>,
+pub struct UltronCommands<TRoller = FastRand, TAgent = LmChatAgent> {
+    event_processor: Arc<EventProcessor<TRoller, TAgent>>,
     tool_router: ToolRouter<Self>,
 }
 
-impl<TRoller> From<UltronMcp<TRoller>> for StreamableHttpService<UltronCommands<TRoller>>
+impl<TRoller, TAgent> From<UltronMcp<TRoller, TAgent>>
+    for StreamableHttpService<UltronCommands<TRoller, TAgent>>
 where
     TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
-    fn from(UltronMcp { event_processor }: UltronMcp<TRoller>) -> Self {
+    fn from(UltronMcp { event_processor }: UltronMcp<TRoller, TAgent>) -> Self {
         build(event_processor)
     }
 }
 
-pub fn build<TRoller>(
-    event_processor: Arc<EventProcessor<TRoller>>,
-) -> StreamableHttpService<UltronCommands<TRoller>>
+pub fn build<TRoller, TAgent>(
+    event_processor: Arc<EventProcessor<TRoller, TAgent>>,
+) -> StreamableHttpService<UltronCommands<TRoller, TAgent>>
 where
     TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     let event_processor = event_processor.clone();
     StreamableHttpService::new(
@@ -61,11 +70,12 @@ pub struct DiceRollRequest {
 }
 
 #[tool_router]
-impl<TRoller> UltronCommands<TRoller>
+impl<TRoller, TAgent> UltronCommands<TRoller, TAgent>
 where
     TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
-    pub fn new(event_processor: Arc<EventProcessor<TRoller>>) -> Self {
+    pub fn new(event_processor: Arc<EventProcessor<TRoller, TAgent>>) -> Self {
         Self {
             event_processor,
             tool_router: Self::tool_router(),
@@ -131,9 +141,10 @@ impl From<DiceRollError> for rmcp::ErrorData {
 }
 
 #[tool_handler]
-impl<TDiceRoller> ServerHandler for UltronCommands<TDiceRoller>
+impl<TRoller, TAgent> ServerHandler for UltronCommands<TRoller, TAgent>
 where
-    TDiceRoller: RollerImpl + 'static,
+    TRoller: RollerImpl + 'static,
+    TAgent: ChatAgent + 'static,
 {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {

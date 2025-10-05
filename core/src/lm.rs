@@ -13,7 +13,7 @@ const KNOWN_MODELS: &[&str] = &[
     "llama3.1:latest",
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize, schemars::JsonSchema)]
 pub struct ModelName(String);
 
 impl Default for ModelName {
@@ -91,6 +91,9 @@ pub enum LanguageModelBackend {
 pub enum LanguageModelError {
     #[error("Ollama error: {0}")]
     Ollama(#[from] OllamaError),
+
+    #[error("MCP error: {0}")]
+    McpClient(#[from] crate::mcp::client::ClientError),
 
     #[error("empty event provided for chat")]
     EmptyEvent,
