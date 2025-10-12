@@ -4,6 +4,8 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 use ultron_core::ChatBot;
+use ultron_core::command::CommandConsumer;
+use ultron_core::dice::DiceRoller;
 use ultron_core::event_processor::EventProcessor;
 use ultron_core::http_server::{self, AppState};
 use ultron_core::io::read_file_to_string;
@@ -86,13 +88,18 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let chat_agent = LmChatAgent::load((&args).into()).await
+    let event_processor =
+        EventProcessor::new().with_consumer(CommandConsumer::new(DiceRoller::default()));
+
+    let event_processor: Arc<EventProcessor> = if let Ok(chat_agent) = LmChatAgent::load((&args).into()).await
         .inspect_err(|error| {
             tracing::error!(%error, "!!! unable to create chat agent !!!");
             tracing::error!(%error, "the server will continue to run, but LLM capabilities will be unavailable");
-        })?;
-
-    let event_processor = Arc::new(EventProcessor::new(chat_agent, Default::default()));
+        }) {
+        event_processor.with_consumer(chat_agent).into()
+    } else {
+        event_processor.into()
+    };
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)

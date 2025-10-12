@@ -85,9 +85,19 @@ impl EventConsumers {
     pub fn iter(&self) -> impl Iterator<Item = Arc<dyn EventConsumer>> {
         self.0.iter().cloned()
     }
+
+    /// propagate an event to all consumers, returning a stream of results
+    pub fn propagate_event(&self, event: Event) -> impl futures::Stream<Item = EventResult> {
+        stream::iter(self.iter().map(move |consumer| {
+            let event = event.clone();
+            async move { consumer.consume_event(event).await }
+        }))
+        .buffer_unordered(4)
+    }
 }
 
 pub type EventResult = Result<Option<Response>, EventError>;
+
 #[async_trait::async_trait]
 pub trait EventConsumer: std::fmt::Debug + Send + Sync + 'static {
     async fn consume_event(&self, event: Event) -> EventResult;
@@ -148,15 +158,8 @@ impl EventProcessor {
 
         self.events.log_event(event.clone()).await;
 
-        let event_results: Vec<EventResult> = Box::pin(
-            stream::iter(self.consumers.iter().map(move |consumer| {
-                let event = event.clone();
-                async move { consumer.consume_event(event.clone()).await }
-            }))
-            .buffer_unordered(4)
-            .collect(),
-        )
-        .await;
+        let event_results: Vec<EventResult> =
+            Box::pin(self.consumers.propagate_event(event).collect()).await;
 
         let responses: Vec<Response> = event_results
             .into_iter()
@@ -351,11 +354,20 @@ mod tests {
         let event: ChatInput = ChatInput::anonymous("!ultron echo hello");
         let event: Event =
             Event::new(event, EventType::Plain).expect("should parse chat input to event");
-        let processor = EventProcessor::test().await;
+        let processor =
+            EventProcessor::new().with_consumer(CommandConsumer::new(DiceRoller::max()));
         let responses = processor
             .process(event)
             .await
             .expect("echo should not error");
+
+        insta::assert_debug_snapshot!(responses, @r#"
+        [
+            PlainChat(
+                "hello",
+            ),
+        ]
+        "#);
 
         assert_eq!(responses.len(), 1);
         assert_eq!(responses[0], Response::PlainChat("hello".to_string()));

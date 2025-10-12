@@ -21,4 +21,4 @@ test:
 
 # run the bot with info logs and parse the output as json
 run:
-  cargo run -- --port {{port}} --rust-log "info,ultron=debug,ultron_core=debug,ultron_discord=debug" --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}
+  cargo run -- --port {{port}} --mcp-port {{mcp_port}} --rust-log "info,rmcp=debug,ultron=debug,ultron_core=debug,ultron_discord=debug" --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}

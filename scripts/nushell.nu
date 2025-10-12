@@ -4,8 +4,23 @@
 
 # the XDG data directory for ultron
 export const ULTRON_DATA_DIR = "~/.local/state/ultron"
-const LOCAL_URL = "http://localhost:8080"
+const LOCAL_URL = "http://localhost:9092"
 const GREEN_URL = "https://ultron.green.chrash.net"
+
+export const ENDPOINTS = {
+  api_doc: "/api_doc"
+  command: "/command"
+  echo: "/echo"
+  events: "/events"
+  health: "/healthcheck"
+  index: "/"
+  mcp: "/mcp"
+}
+
+const HOSTS = {
+  local: $LOCAL_URL
+  green: $GREEN_URL
+}
 
 def state_file [] {
   $"($ULTRON_DATA_DIR)/nu_state.toml" | path expand
@@ -16,10 +31,13 @@ export const DEFAULT_STATE = {
   url: $LOCAL_URL,
 }
 
-# check if the input matches the state
-# and save the state to the data directory if so
+# manage ultron state.
+# this command will create a state file if it doesn't exist.
+# if a url is given, it will update the state file
+# to use the new url.
+# if no url is given, it will return the current state.
 export def "ultron state" [
-  --url: string@urls
+  --host: string@hosts
 ] {
   let state_file = (state_file)
 
@@ -30,6 +48,8 @@ export def "ultron state" [
 
   let state = open $state_file
 
+  let url = if $host != null { $HOSTS | get $host } else { null }
+
   if $url == null {
     $state
   } else if $url == $state.url {
@@ -39,30 +59,51 @@ export def "ultron state" [
       url: $url,
     }
 
-    print "new state" $new_state
+    let file = (state_file)
 
-    $new_state | save --force (state_file)
+    print $"updating state file at ($file) to use url: ($url)"
+
+    $new_state | save --force $file
+
+    $new_state
   }
-
-  $state
 }
 
-# the API call script
+# a wrapper around POST operations
 export def ultron [
   channel: string@channels # the channel to send the message to: e.g. `debug`
-  message: string # the input to the bot including the command: e.g. `echo hello`
-  --url: string@urls
-  --endpoint: string = "bot"
+  event_input: string # the input to the bot including the command: e.g. `echo hello`
+  --host: string@hosts # the host to send the message to
+  --endpoint: string@endpoints = "command"
 ] {
-  let state = (ultron state --url $url)
+  let route = ultron route --host $host --endpoint $endpoint
+
+  print "POSTing to" $route
+
+  (http post
+    --content-type application/json
+    $route {
+      channel: $channel
+      user: "nushell"
+      event_input: $event_input
+      event_type: "command"
+    })
+}
+
+# a wrapper around GET operations
+export def "ultron get" [
+  --host: string@hosts # the host to send the message to
+  --endpoint: string@endpoints = "command"
+] {
+  let state = (ultron state --host $host)
 
   let url = $state.url
 
   let route = $"($url)/($endpoint)"
-  http post --content-type application/json $route {
-    channel: $channel
-    message: $message
-  }
+
+  print "GETting from" $route
+
+  http get --full --allow-errors $route
 }
 
 export def "ultron say" [
@@ -74,6 +115,7 @@ export def "ultron say" [
   ultron $channel $message
 }
 
+# run the server
 export def "ultron run" [
   --port: int # the port to run the bot on
   --log_level: string = "info" # the log level to run the bot with
@@ -81,6 +123,19 @@ export def "ultron run" [
   with-env { RUST_LOG: $log_level } { cargo run -- --port $port }
   | lines
   | each {|line| $line | from json }
+}
+
+# construct the full route to an endpoint
+# uses the saved state if no url is given
+export def "ultron route" [
+  --host: string@hosts
+  --endpoint: string@endpoints = "command"
+] {
+  let state = (ultron state --host $host)
+
+  let url = $state.url
+
+  $"($url)/($endpoint)"
 }
 
 # returns a list of predefined channels for autocomplete
@@ -92,9 +147,11 @@ def channels [] {
   ]
 }
 
-def urls [] {
-  [
-    $LOCAL_URL
-    $GREEN_URL
-  ]
+# returns a list of endpoint names for autocomplete
+def endpoints [] {
+  $ENDPOINTS | columns
+}
+
+def hosts [] {
+  $HOSTS | columns
 }

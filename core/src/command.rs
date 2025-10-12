@@ -34,6 +34,13 @@ where
     }
 }
 
+#[cfg(test)]
+impl CommandConsumer<tyche::dice::roller::Max> {
+    pub fn with_max_dice_roller() -> Self {
+        Self::new(DiceRoller::max())
+    }
+}
+
 #[async_trait::async_trait]
 impl<TRoller> EventConsumer for CommandConsumer<TRoller>
 where

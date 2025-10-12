@@ -18,10 +18,8 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
     Channel, ChatBot,
-    dice::RollerImpl,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
     mcp::{UltronCommands, UltronMcp},
-    nlp::ChatAgent,
 };
 
 mod trace_layer;
@@ -121,11 +119,9 @@ impl Route {
 }
 
 /// Starts the HTTP server on the specified port with the given application state.
-pub async fn serve<Bot, DiceRoller, TAgent>(port: u16, state: AppState<Bot>) -> ServerResult<()>
+pub async fn serve<Bot>(port: u16, state: AppState<Bot>) -> ServerResult<()>
 where
     Bot: ChatBot + 'static,
-    DiceRoller: RollerImpl + 'static,
-    TAgent: ChatAgent + 'static,
 {
     let router = create_router(state);
 
@@ -146,7 +142,7 @@ where
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
         .routes(routes!(index))
         .routes(routes!(healthcheck))
-        // .routes(routes!(command))
+        .routes(routes!(command))
         .routes(routes!(api_doc))
         .routes(routes!(events))
         .nest_service(Route::Mcp.as_str(), state.make_ultron_commands_mcp())

@@ -182,7 +182,7 @@ impl EventHandler for Handler {
             }
         };
 
-        let results = self.event_processor.process(event.clone()).await;
+        let results = Box::pin(self.event_processor.process(event.clone())).await;
 
         let results = match results {
             Ok(results) => results,
