@@ -11,6 +11,13 @@ use crate::{
     event_processor::{Event, EventConsumer, EventError, EventType},
 };
 
+/// consumes [`Event`]s and produces [`Response`]s
+/// based on the contents of the event.
+///
+/// implements the [`EventConsumer`] trait
+/// to be used with the [`crate::event_processor::EventProcessor`].
+///
+/// see [`Command`] for the list of supported commands.
 #[derive(Debug, Clone)]
 pub struct CommandConsumer<TRoller> {
     pub dice_roller: DiceRoller<TRoller>,
