@@ -1,5 +1,5 @@
 //! this module implements the HTTP server for Ultron
-//! to accept commands from
+//! to accept commands from external sources.
 use std::sync::Arc;
 
 use axum::{
