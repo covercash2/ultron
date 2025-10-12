@@ -193,16 +193,10 @@ mod tests {
         let command: Result<Command, CommandParseError> = "undefined hello".parse();
         assert_eq!(
             command.expect_err("should fail to parse"),
-<<<<<<< HEAD
             CommandParseError::UndefinedCommand {
                 command: "undefined".to_string(),
                 args: Some("hello".to_string()),
             }
-||||||| parent of 5566c5f (feat: add Ollama integration)
-            CommandParseError::UndefinedCommand("undefined hello".to_string())
-=======
-            CommandParseError::UndefinedCommand("undefined".to_string())
->>>>>>> 5566c5f (feat: add Ollama integration)
         );
     }
 }
