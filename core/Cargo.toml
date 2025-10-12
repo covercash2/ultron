@@ -10,6 +10,7 @@ bon.workspace = true
 caith.workspace = true
 derive_more.workspace = true
 futures.workspace = true
+http.workspace = true
 ollama-rs.workspace = true
 papaya.workspace = true
 rmcp.workspace = true

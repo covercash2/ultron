@@ -45,7 +45,7 @@ impl<TAgent> EventConsumer for TAgent
 where
     TAgent: ChatAgent + 'static,
 {
-    async fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError> {
+    async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
         let events = vec![event];
 
         let next_event = self.chat(events).await?;
@@ -55,7 +55,7 @@ where
             "language model response"
         );
 
-        Ok(Some(Response::Bot(next_event.content)))
+        Ok(Response::Bot(next_event.content))
     }
 }
 

@@ -3358,6 +3358,7 @@ dependencies = [
  "caith",
  "derive_more",
  "futures",
+ "http 1.3.1",
  "insta",
  "ollama-rs",
  "papaya",

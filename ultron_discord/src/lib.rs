@@ -44,6 +44,12 @@ pub enum DiscordBotError {
     JoinError(#[from] tokio::task::JoinError),
 }
 
+impl From<DiscordBotError> for ultron_core::error::Error {
+    fn from(value: DiscordBotError) -> Self {
+        ultron_core::error::Error::ChatBot(Box::new(value))
+    }
+}
+
 #[derive(Builder, Debug, Clone)]
 pub struct DiscordBotConfig {
     #[builder(into)]
@@ -254,6 +260,9 @@ impl EventHandler for Handler {
                             tracing::error!(%error, "error sending message");
                         }
                     }
+                }
+                Response::Ignored => {
+                    tracing::debug!(?event, "consumer ignored the event",);
                 }
             }
         }

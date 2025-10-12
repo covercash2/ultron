@@ -51,8 +51,14 @@ impl ChatInput {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Response {
+    /// a plain chat response, e.g. from a command
     PlainChat(String),
+    /// a response from the bot, e.g. from an LLM
+    /// that may contain additional metadata.
+    /// see [`event_processor::BotMessage`].
     Bot(BotMessage),
+    /// the [`crate::event_processor::EventConsumer`] ignored the event
+    Ignored,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema, strum::Display)]
@@ -80,7 +86,7 @@ impl<T: Into<String>> From<T> for User {
 }
 
 pub trait ChatBot: Clone + Send + Sync {
-    type Error: std::error::Error;
+    type Error: Into<crate::error::Error>;
 
     fn send_message(
         &self,

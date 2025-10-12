@@ -76,10 +76,11 @@ pub struct EventProcessor {
     consumers: EventConsumers,
 }
 
-// TODO: Default is dumb here
+/// a collection of [`EventConsumer`]s
+/// that simplifies the [`futures::Stream`] API.
 // TODO: add filters
 #[derive(Debug, Clone, Default)]
-pub struct EventConsumers(Vec<Arc<dyn EventConsumer>>);
+struct EventConsumers(Vec<Arc<dyn EventConsumer>>);
 
 impl EventConsumers {
     pub fn iter(&self) -> impl Iterator<Item = Arc<dyn EventConsumer>> {
@@ -96,7 +97,9 @@ impl EventConsumers {
     }
 }
 
-pub type EventResult = Result<Option<Response>, EventError>;
+/// the result of processing an event.
+/// if the event was not handled, the result will be `Ok(None)`.
+pub type EventResult = Result<Response, EventError>;
 
 #[async_trait::async_trait]
 pub trait EventConsumer: std::fmt::Debug + Send + Sync + 'static {
@@ -164,7 +167,7 @@ impl EventProcessor {
         let responses: Vec<Response> = event_results
             .into_iter()
             .filter_map(|response| match response {
-                Ok(resp) => resp,
+                Ok(resp) => Some(resp),
                 Err(error) => {
                     tracing::error!(%error, "error processing event");
                     None

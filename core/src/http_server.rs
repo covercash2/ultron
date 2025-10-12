@@ -6,9 +6,10 @@ use axum::{
     Json, Router,
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Response as AxumResponse},
 };
 use bon::Builder;
+use futures::{StreamExt as _, TryStreamExt as _};
 use rmcp::transport::StreamableHttpService;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -17,7 +18,7 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    Channel, ChatBot,
+    Channel, ChatBot, Response,
     event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
     mcp::{UltronCommands, UltronMcp},
 };
@@ -58,6 +59,9 @@ pub enum ServerError {
 
     #[error("failed to generate OpenAPI doc")]
     OpenApiDocGeneration,
+
+    #[error("internal server error: {0}")]
+    Internal(#[from] crate::error::Error),
 }
 
 #[derive(Builder, Debug, Clone)]
@@ -229,7 +233,7 @@ impl From<BotInput> for Event {
 async fn command<Bot>(
     State(state): State<AppState<Bot>>,
     Json(bot_input): Json<BotInput>,
-) -> Result<(), ServerError>
+) -> Result<Json<Vec<String>>, ServerError>
 where
     Bot: ChatBot + 'static,
 {
@@ -243,27 +247,36 @@ where
         tracing::warn!("no response from event processor");
     }
 
-    for response in responses.iter() {
-        match response {
-            crate::Response::PlainChat(response) => {
-                state
-                    .chat_bot
-                    .send_message(bot_input.channel, response)
-                    .await
-                    .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
-            }
-            crate::Response::Bot(bot_message) => state
-                .chat_bot
-                .send_message(
-                    bot_input.channel,
-                    &bot_message.render_without_thinking_parts(),
-                )
-                .await
-                .map_err(|e| ServerError::ChatBot(Box::new(e)))?,
-        }
-    }
+    let results: Vec<String> = futures::stream::iter(responses)
+        .then(async |response| {
+            handle_event_response(state.chat_bot.as_ref(), bot_input.channel, response).await
+        })
+        .try_collect()
+        .await?;
 
-    Ok(())
+    Ok(Json(results))
+}
+
+async fn handle_event_response<TBot: ChatBot>(
+    bot: &TBot,
+    channel: Channel,
+    response: Response,
+) -> Result<String, crate::error::Error> {
+    let body = match response {
+        Response::PlainChat(message) => message.clone(),
+        Response::Bot(bot_message) => bot_message.render_without_thinking_parts(),
+        Response::Ignored => "ignored".into(),
+    };
+
+    tracing::info!(
+        ?channel,
+        ?body,
+        "sending message to `{channel:?}`: `{body}`"
+    );
+
+    bot.send_message(channel, &body).await.map_err(Into::into)?;
+
+    Ok(body)
 }
 
 /// tests bot input.
@@ -283,7 +296,7 @@ async fn events<Bot>(State(state): State<AppState<Bot>>) -> Json<Vec<Event>> {
 }
 
 impl IntoResponse for ServerError {
-    fn into_response(self) -> Response {
+    fn into_response(self) -> AxumResponse {
         tracing::warn!("error: {}", self);
         let status = match self {
             ServerError::UnableToBindPort(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -291,6 +304,7 @@ impl IntoResponse for ServerError {
             ServerError::Event(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::ChatBot(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::OpenApiDocGeneration => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()
     }
@@ -298,13 +312,15 @@ impl IntoResponse for ServerError {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::TestError;
+
     use super::*;
 
     #[derive(Debug, Clone)]
     struct TestBot;
 
     impl ChatBot for TestBot {
-        type Error = std::io::Error;
+        type Error = TestError;
 
         async fn send_message(&self, _channel: Channel, _message: &str) -> Result<(), Self::Error> {
             Ok(())
@@ -330,8 +346,15 @@ mod tests {
             event_type: EventType::Command,
         };
         let json = Json(bot_input);
-        let () = command(State(state), json)
+        let Json(results) = command(State(state), json)
             .await
             .expect("got an error from the test bot");
+
+        insta::assert_json_snapshot!(results, @r#"
+        [
+          "hello",
+          "echo hello"
+        ]
+        "#);
     }
 }

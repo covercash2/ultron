@@ -31,13 +31,13 @@ where
         Self { dice_roller }
     }
 
-    pub async fn consume(&self, event: Event) -> Result<Option<String>, EventError> {
+    pub async fn consume(&self, event: Event) -> Result<String, EventError> {
         let command: Command = event.try_into()?;
         let context = CommandContext {
             dice_roller: self.dice_roller.clone(),
         };
         let response = command.execute(context)?;
-        Ok(Some(response))
+        Ok(response)
     }
 }
 
@@ -53,10 +53,10 @@ impl<TRoller> EventConsumer for CommandConsumer<TRoller>
 where
     TRoller: RollerImpl + 'static,
 {
-    async fn consume_event(&self, event: Event) -> Result<Option<Response>, EventError> {
+    async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
         self.consume(event)
             .await
-            .map(|response: Option<String>| response.map(Response::PlainChat))
+            .map(Response::PlainChat)
     }
 }
 
