@@ -1,24 +1,26 @@
 use serde::{Deserialize, Serialize};
 
-
+/// a message from a language model bot
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct BotMessage {
+pub struct LmResponse {
     parts: Vec<MessagePart>,
 }
 
-impl FromIterator<MessagePart> for BotMessage {
+impl FromIterator<MessagePart> for LmResponse {
     fn from_iter<I: IntoIterator<Item = MessagePart>>(iter: I) -> Self {
         let parts = iter.into_iter().collect();
-        BotMessage { parts }
+        LmResponse { parts }
     }
 }
 
-impl BotMessage {
+impl LmResponse {
+    /// create a raw message without any thinking parts
     pub fn raw(string: impl Into<String>) -> Self {
         let part = MessagePart::Text(string.into());
-        BotMessage { parts: vec![part] }
+        LmResponse { parts: vec![part] }
     }
 
+    /// render the message without any thinking parts
     pub fn render_without_thinking_parts(&self) -> String {
         self.parts
             .iter()
@@ -34,7 +36,7 @@ impl BotMessage {
     }
 }
 
-impl std::fmt::Display for BotMessage {
+impl std::fmt::Display for LmResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rendered = self
             .parts
@@ -211,7 +213,7 @@ mod tests {
 
     #[test]
     fn bot_message_render_without_thinking_parts() {
-        let message = BotMessage {
+        let message = LmResponse {
             parts: vec![
                 MessagePart::Text("This is a test".to_string()),
                 MessagePart::Thinking("thinking part".to_string()),
@@ -224,7 +226,7 @@ mod tests {
 
     #[test]
     fn bot_message_render_without_thinking_parts_no_thinking_parts() {
-        let message = BotMessage {
+        let message = LmResponse {
             parts: vec![MessagePart::Text("This is a test".to_string())],
         };
         let rendered = message.render_without_thinking_parts();

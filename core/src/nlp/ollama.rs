@@ -9,7 +9,7 @@ use crate::{
     event_processor::{Event, EventType},
     nlp::{
         lm::LanguageModelError,
-        response::{BotMessage, MessagePartsIterator},
+        response::{LmResponse, MessagePartsIterator},
     },
 };
 
@@ -55,7 +55,7 @@ impl Ollama {
             _ => User::Anonymous,
         };
 
-        let content: BotMessage =
+        let content: LmResponse =
             MessagePartsIterator::new(&response.message.content, "<think>", "</think>").collect();
 
         let event = Event {

@@ -1,4 +1,4 @@
-use nlp::response::BotMessage;
+use nlp::response::LmResponse;
 use serde::{Deserialize, Serialize};
 
 pub mod chatbot;
@@ -29,7 +29,7 @@ pub enum Response {
     /// a response from the bot, e.g. from an LLM
     /// that may contain additional metadata.
     /// see [`event_processor::BotMessage`].
-    Bot(BotMessage),
+    Bot(LmResponse),
     /// the [`crate::event_processor::EventConsumer`] ignored the event
     Ignored,
 }

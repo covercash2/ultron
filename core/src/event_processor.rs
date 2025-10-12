@@ -6,15 +6,15 @@ use serde::Deserialize;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
-use crate::chatbot::ChatInput;
-use crate::nlp::response::BotMessage;
 use crate::Response;
 use crate::User;
+use crate::chatbot::ChatInput;
 use crate::command::CommandConsumer;
 use crate::command::CommandParseError;
 use crate::dice::DiceRoller;
 use crate::nlp::AgentError;
 use crate::nlp::ChatAgent;
+use crate::nlp::response::LmResponse;
 
 const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
 
@@ -42,7 +42,7 @@ pub enum EventType {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Event {
     pub user: User,
-    pub content: BotMessage,
+    pub content: LmResponse,
     pub event_type: EventType,
 }
 
@@ -64,7 +64,7 @@ impl Event {
 
         Ok(Event {
             user,
-            content: BotMessage::raw(content),
+            content: LmResponse::raw(content),
             event_type,
         })
     }
@@ -119,7 +119,7 @@ impl EventProcessor {
     pub fn new() -> Self {
         let system_message = Event {
             user: User::System,
-            content: BotMessage::raw(ULTRON_SYSTEM_PROMPT),
+            content: LmResponse::raw(ULTRON_SYSTEM_PROMPT),
             event_type: EventType::LanguageModel,
         };
 
@@ -248,6 +248,6 @@ mod tests {
         let input: Event =
             Event::new(chat_input, EventType::Plain).expect("should parse chat input to api input");
         assert_eq!(input.user, User::Anonymous);
-        assert_eq!(input.content, BotMessage::raw("hello"));
+        assert_eq!(input.content, LmResponse::raw("hello"));
     }
 }

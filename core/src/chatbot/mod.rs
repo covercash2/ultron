@@ -1,4 +1,4 @@
-use crate::{command::CommandParseError, Channel, User, DEFAULT_COMMAND_PREFIX};
+use crate::{Channel, DEFAULT_COMMAND_PREFIX, User, command::CommandParseError};
 
 pub trait ChatBot: Clone + Send + Sync {
     type Error: Into<crate::error::Error>;
@@ -53,4 +53,3 @@ impl ChatInput {
             .ok_or(CommandParseError::MissingPrefix(self.content.clone()))
     }
 }
-
