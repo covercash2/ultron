@@ -54,9 +54,7 @@ where
     TRoller: RollerImpl + 'static,
 {
     async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
-        self.consume(event)
-            .await
-            .map(Response::PlainChat)
+        self.consume(event).await.map(Response::PlainChat)
     }
 }
 

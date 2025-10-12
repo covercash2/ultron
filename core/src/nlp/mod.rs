@@ -4,14 +4,18 @@
 use crate::{
     Response,
     event_processor::{Event, EventConsumer, EventError},
-    lm::{LanguageModel, ModelName},
     mcp::client::McpClient,
+    nlp::lm::{LanguageModel, ModelName},
 };
+
+pub mod lm;
+pub mod ollama;
+pub mod response;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
     #[error("language model error: {0}")]
-    LanguageModel(#[from] crate::lm::LanguageModelError),
+    LanguageModel(#[from] crate::nlp::lm::LanguageModelError),
 
     #[error("MCP client error: {0}")]
     McpClient(#[from] crate::mcp::client::ClientError),

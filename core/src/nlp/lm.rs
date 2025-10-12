@@ -1,6 +1,6 @@
 use ollama_rs::error::OllamaError;
 
-use crate::{event_processor::Event, ollama::Ollama};
+use crate::{event_processor::Event, nlp::ollama::Ollama};
 
 const KNOWN_MODELS: &[&str] = &[
     "deepseek-r1:8b",

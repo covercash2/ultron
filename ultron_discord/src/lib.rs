@@ -9,10 +9,7 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use ultron_core::{
-    Channel, ChatBot, ChatInput, Response, User,
-    command::CommandParseError,
-    dice::HELP_MESSAGE,
-    event_processor::{Event, EventError, EventProcessor, EventType},
+    chatbot::{ChatBot, ChatInput}, command::CommandParseError, dice::HELP_MESSAGE, event_processor::{Event, EventError, EventProcessor, EventType}, Channel, Response, User
 };
 
 /// ultron#ultron-test
@@ -175,7 +172,7 @@ impl EventHandler for Handler {
             None
         };
 
-        let chat_input: ChatInput = ChatInput {
+        let chat_input = ChatInput {
             user,
             content: msg.content.clone(),
         };

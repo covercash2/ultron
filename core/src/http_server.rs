@@ -18,9 +18,7 @@ use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::{
-    Channel, ChatBot, Response,
-    event_processor::{BotMessage, Event, EventError, EventProcessor, EventType},
-    mcp::{UltronCommands, UltronMcp},
+    chatbot::ChatBot, event_processor::{Event, EventError, EventProcessor, EventType}, mcp::{UltronCommands, UltronMcp}, nlp::response::BotMessage, Channel, Response
 };
 
 mod trace_layer;

@@ -6,8 +6,11 @@ use reqwest::Url;
 
 use crate::{
     User,
-    event_processor::{BotMessage, Event, EventType, MessagePartsIterator},
-    lm::LanguageModelError,
+    event_processor::{Event, EventType},
+    nlp::{
+        lm::LanguageModelError,
+        response::{BotMessage, MessagePartsIterator},
+    },
 };
 
 #[derive(Debug, Clone)]
