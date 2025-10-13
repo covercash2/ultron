@@ -21,7 +21,13 @@ const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
 const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
 const DEFAULT_DND_CHANNEL_ID: ChannelId = ChannelId::new(874085144284258325);
 
+/// the [`UserId`] of the bot itself
 const ULTRON_USER_ID: UserId = UserId::new(777627943144652801);
+
+/// the string used to mention the bot in messages
+/// this is the bot's role mention, which is used in some servers.
+/// TODO: expand on this
+const ULTRON_USER_ID_STR: &str = "<@&777660234842898483>";
 
 const DISCORD_MAX_MESSAGE_LENGTH: usize = 2000;
 
@@ -273,7 +279,7 @@ impl EventHandler for Handler {
 #[ext]
 impl Message {
     fn mentions_ultron(&self) -> bool {
-        self.mentions_user_id(ULTRON_USER_ID) || self.content.contains("<@&777660234842898483>")
+        self.mentions_user_id(ULTRON_USER_ID) || self.content.contains(ULTRON_USER_ID_STR)
     }
 }
 

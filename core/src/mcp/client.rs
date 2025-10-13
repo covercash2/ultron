@@ -94,11 +94,16 @@ impl McpClient {
         Ok(())
     }
 
-    pub async fn refresh_tools(&self) -> McpClientResult<Vec<Tool>> {
+    pub async fn refresh_tools(&self) -> McpClientResult<ToolSet> {
         let tools = list_tools(&self.inner).await?;
 
         *self.tools.write().expect("tools lock poisoned") = tools;
-        todo!()
+
+        Ok(self
+            .tools
+            .read()
+            .expect("tools lock poisoned")
+            .clone())
     }
 }
 

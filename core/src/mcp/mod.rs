@@ -25,7 +25,6 @@ pub struct UltronMcp {
 
 pub struct UltronCommands {
     event_processor: Arc<EventProcessor>,
-    // TODO: parameterize the RNG
     dice_roller: crate::dice::DiceRoller<tyche::dice::roller::FastRand>,
     tool_router: ToolRouter<Self>,
 }
