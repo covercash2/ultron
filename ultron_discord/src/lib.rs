@@ -21,6 +21,12 @@ const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
 const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
 const DEFAULT_DND_CHANNEL_ID: ChannelId = ChannelId::new(874085144284258325);
 
+/// FunZone#stream
+const FUN_ZONE_STREAM_CHANNEL_ID: ChannelId = ChannelId::new(1375319100124827748);
+
+/// FunZone#bots
+const FUN_ZONE_BOT_CHANNEL_ID: ChannelId = ChannelId::new(1249097633520160808);
+
 /// the [`UserId`] of the bot itself
 const ULTRON_USER_ID: UserId = UserId::new(777627943144652801);
 
@@ -117,6 +123,8 @@ impl From<Channel> for DiscordChannel {
             Channel::Debug => DiscordChannel(DEFAULT_DEBUG_CHANNEL_ID),
             Channel::Psa => DiscordChannel(DEFAULT_GENERAL_CHANNEL_ID),
             Channel::Dnd => DiscordChannel(DEFAULT_DND_CHANNEL_ID),
+            Channel::FunZoneBots => DiscordChannel(FUN_ZONE_BOT_CHANNEL_ID),
+            Channel::FunZoneStream => DiscordChannel(FUN_ZONE_STREAM_CHANNEL_ID),
         }
     }
 }

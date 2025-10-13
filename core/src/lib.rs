@@ -15,11 +15,15 @@ pub mod nlp;
 const DEFAULT_COMMAND_PREFIX: &str = "!ultron";
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Channel {
     Debug,
     Psa,
     Dnd,
+    /// #bot channel in the FunZone server
+    FunZoneBots,
+    /// #stream channel in the FunZone server
+    FunZoneStream,
 }
 
 #[derive(Debug, Clone, PartialEq)]

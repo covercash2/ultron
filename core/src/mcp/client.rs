@@ -99,11 +99,7 @@ impl McpClient {
 
         *self.tools.write().expect("tools lock poisoned") = tools;
 
-        Ok(self
-            .tools
-            .read()
-            .expect("tools lock poisoned")
-            .clone())
+        Ok(self.tools.read().expect("tools lock poisoned").clone())
     }
 }
 
