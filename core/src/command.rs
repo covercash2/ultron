@@ -1,12 +1,62 @@
 use std::str::FromStr;
 
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumMessage, IntoEnumIterator as _};
+use tyche::dice;
 
 use crate::{
-    Event, EventError,
+    Response,
     copypasta::{copy_pasta, copy_pasta_names},
-    dice::DiceRoll,
+    dice::{DiceRollResult, DiceRoller, RollerImpl},
+    event_processor::{Event, EventConsumer, EventError, EventType},
 };
+
+/// consumes [`Event`]s and produces [`Response`]s
+/// based on the contents of the event.
+///
+/// implements the [`EventConsumer`] trait
+/// to be used with the [`crate::event_processor::EventProcessor`].
+///
+/// see [`Command`] for the list of supported commands.
+#[derive(Debug, Clone)]
+pub struct CommandConsumer<TRoller> {
+    pub dice_roller: DiceRoller<TRoller>,
+}
+
+impl<TRoller> CommandConsumer<TRoller>
+where
+    TRoller: RollerImpl,
+{
+    pub fn new(dice_roller: DiceRoller<TRoller>) -> Self {
+        Self { dice_roller }
+    }
+
+    pub async fn consume(&self, event: Event) -> Result<String, EventError> {
+        let command: Command = event.try_into()?;
+        let context = CommandContext {
+            dice_roller: self.dice_roller.clone(),
+        };
+        let response = command.execute(context)?;
+        Ok(response)
+    }
+}
+
+#[cfg(test)]
+impl CommandConsumer<tyche::dice::roller::Max> {
+    pub fn with_max_dice_roller() -> Self {
+        Self::new(DiceRoller::max())
+    }
+}
+
+#[async_trait::async_trait]
+impl<TRoller> EventConsumer for CommandConsumer<TRoller>
+where
+    TRoller: RollerImpl + 'static,
+{
+    async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
+        self.consume(event).await.map(Response::PlainChat)
+    }
+}
 
 #[derive(thiserror::Error, Debug, PartialEq, Clone)]
 pub enum CommandParseError {
@@ -21,7 +71,9 @@ pub enum CommandParseError {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, strum::EnumDiscriminants)]
+#[derive(
+    Debug, Clone, PartialEq, strum::EnumDiscriminants, Serialize, Deserialize, utoipa::ToSchema,
+)]
 #[strum_discriminants(derive(EnumIter, Display, EnumMessage))]
 #[strum_discriminants(strum(serialize_all = "snake_case"))]
 pub enum Command {
@@ -35,13 +87,22 @@ pub enum Command {
     Help,
 }
 
+/// context for executing a command
+/// that lives for the duration of the command execution.
+pub struct CommandContext<T: dice::Roller> {
+    pub dice_roller: DiceRoller<T>,
+}
+
 impl Command {
-    pub fn execute(self) -> Result<String, EventError> {
+    pub fn execute<TRoller>(self, context: CommandContext<TRoller>) -> Result<String, EventError>
+    where
+        TRoller: RollerImpl,
+    {
         tracing::debug!(command = ?self, "executing command");
         let result: String = match self {
             Command::Echo(message) => message.to_string(),
             Command::Roll(input) => {
-                let dice_roll: DiceRoll = input.parse()?;
+                let dice_roll = DiceRollResult::from_str(&input, context.dice_roller.clone())?;
                 dice_roll.to_string()
             }
             Command::Help => CommandDiscriminants::iter().fold(String::new(), |acc, command| {
@@ -73,7 +134,10 @@ impl TryFrom<Event> for Command {
     type Error = CommandParseError;
 
     fn try_from(input: Event) -> Result<Self, Self::Error> {
-        input.content.parse()
+        match input.event_type {
+            EventType::Command => input.content.to_string().parse(),
+            _ => Err(CommandParseError::MissingPrefix(input.content.to_string())),
+        }
     }
 }
 

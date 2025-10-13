@@ -6,6 +6,8 @@ version.workspace = true
 [dependencies]
 anyhow.workspace = true
 bon.workspace = true
+derive_more.workspace = true
+extend.workspace = true
 serenity.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

@@ -3,8 +3,15 @@ use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
-use ultron_core::http_server::{self, AppState};
-use ultron_core::io::read_file_to_string;
+use ultron_core::{
+    chatbot::ChatBot,
+    command::CommandConsumer,
+    dice::DiceRoller,
+    event_processor::EventProcessor,
+    http_server::{self, AppState},
+    io::read_file_to_string,
+    nlp::{ChatAgentConfig, LmChatAgent},
+};
 use ultron_discord::DiscordBotConfig;
 
 #[derive(Clone, serde::Deserialize)]
@@ -17,14 +24,37 @@ pub struct Secrets {
 /// CLI args
 #[derive(Debug, Clone, Parser)]
 pub struct Cli {
-    #[arg(short, long, default_value = "8080")]
+    /// port to listen on for HTTP requests
+    #[arg(short, long)]
     pub port: u16,
 
+    /// log level in the form of the [`env_logger`] crate
+    ///
+    /// [`env_logger`]: https://docs.rs/env_logger/latest/env_logger/#enabling-logging
     #[arg(short, long, default_value = "info")]
     pub rust_log: String,
 
+    /// host to connect to the language model
+    #[arg(short, long, default_value = "https://hoss.faun-truck.ts.net/llm/")]
+    pub lm_endpoint: String,
+
+    /// path to the Ultron MCP server
+    #[arg(short, long)]
+    pub mcp_port: u16,
+
+    /// path to the secrets file
     #[arg(short, long)]
     pub secrets: PathBuf,
+}
+
+impl From<&Cli> for ChatAgentConfig {
+    fn from(value: &Cli) -> Self {
+        Self {
+            llm_uri: value.lm_endpoint.clone(),
+            llm_model: "llama3.2:latest".into(),
+            mcp_uri: format!("http://localhost:{}", value.mcp_port),
+        }
+    }
 }
 
 /// panics if a subscriber was already registered.
@@ -60,7 +90,18 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("CLI args: {args:?}");
 
-    let event_processor = Arc::new(ultron_core::EventProcessor::default());
+    let event_processor =
+        EventProcessor::new().with_consumer(CommandConsumer::new(DiceRoller::default()));
+
+    let event_processor: Arc<EventProcessor> = if let Ok(chat_agent) = LmChatAgent::load((&args).into()).await
+        .inspect_err(|error| {
+            tracing::error!(%error, "!!! unable to create chat agent !!!");
+            tracing::error!(%error, "the server will continue to run, but LLM capabilities will be unavailable");
+        }) {
+        event_processor.with_consumer(chat_agent).into()
+    } else {
+        event_processor.into()
+    };
 
     let discord_config = DiscordBotConfig::builder()
         .application_id(secrets.discord_app_id)

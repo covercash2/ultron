@@ -1,19 +1,29 @@
+//! this module implements the HTTP server for Ultron
+//! to accept commands from external sources.
 use std::sync::Arc;
 
 use axum::{
     Json, Router,
     extract::State,
     http::StatusCode,
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Response as AxumResponse},
 };
 use bon::Builder;
+use futures::{StreamExt as _, TryStreamExt as _};
+use rmcp::transport::StreamableHttpService;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use trace_layer::TracingMiddleware;
 use utoipa::{OpenApi, ToSchema};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
-use crate::{Channel, ChatBot, Event, EventError, EventProcessor};
+use crate::{
+    Channel, Response,
+    chatbot::ChatBot,
+    event_processor::{Event, EventError, EventProcessor, EventType},
+    mcp::{UltronCommands, UltronMcp},
+    nlp::response::LmResponse,
+};
 
 mod trace_layer;
 
@@ -51,26 +61,38 @@ pub enum ServerError {
 
     #[error("failed to generate OpenAPI doc")]
     OpenApiDocGeneration,
+
+    #[error("internal server error: {0}")]
+    Internal(#[from] crate::error::Error),
 }
 
 #[derive(Builder, Debug, Clone)]
-pub struct AppState<ChatBot> {
+pub struct AppState<TBot> {
     pub event_processor: Arc<EventProcessor>,
-    pub chat_bot: Arc<ChatBot>,
+    pub chat_bot: Arc<TBot>,
+}
+
+impl<TBot> AppState<TBot> {
+    pub fn make_ultron_commands_mcp(&self) -> StreamableHttpService<UltronCommands> {
+        UltronMcp {
+            event_processor: self.event_processor.clone(),
+        }
+        .into()
+    }
 }
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         command,
-        echo,
         healthcheck,
         index,
         api_doc
     ),
     tags(
         (name = OpenApiTag::BotCommand.as_str(), description = "orders to submit to Ultron"),
-        (name = OpenApiTag::Telemetry.as_str(), description = "figure out what's wrong with Ultron")
+        (name = OpenApiTag::Telemetry.as_str(), description = "figure out what's wrong with Ultron"),
+        (name = OpenApiTag::Meta.as_str(), description = "meta information about Ultron"),
     )
 )]
 struct ApiDoc;
@@ -89,6 +111,11 @@ pub enum Route {
     Index,
     #[strum(to_string = "/api_doc")]
     ApiDoc,
+    #[strum(to_string = "/events")]
+    Events,
+    /// Model Context Protocol endpoint
+    #[strum(to_string = "/mcp")]
+    Mcp,
 }
 
 impl Route {
@@ -119,9 +146,12 @@ where
     Bot: ChatBot + 'static,
 {
     let (router, _api) = OpenApiRouter::with_openapi(ApiDoc::openapi())
-        .routes(routes!(echo, index))
-        .routes(routes!(command, healthcheck))
+        .routes(routes!(index))
+        .routes(routes!(healthcheck))
+        .routes(routes!(command))
         .routes(routes!(api_doc))
+        .routes(routes!(events))
+        .nest_service(Route::Mcp.as_str(), state.make_ultron_commands_mcp())
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
         .split_for_parts();
@@ -177,14 +207,17 @@ pub struct BotInput {
     user: String,
     /// command input as if it was a message from Discord,
     /// e.g. `echo hello`
-    command_input: String,
+    event_input: String,
+    /// the type of event, e.g. `Command` or `NaturalLanguage`
+    event_type: EventType,
 }
 
 impl From<BotInput> for Event {
     fn from(input: BotInput) -> Self {
         Self {
-            user: input.user,
-            content: input.command_input,
+            user: input.user.into(),
+            content: LmResponse::raw(input.event_input),
+            event_type: input.event_type,
         }
     }
 }
@@ -202,7 +235,7 @@ impl From<BotInput> for Event {
 async fn command<Bot>(
     State(state): State<AppState<Bot>>,
     Json(bot_input): Json<BotInput>,
-) -> Result<(), ServerError>
+) -> Result<Json<Vec<String>>, ServerError>
 where
     Bot: ChatBot + 'static,
 {
@@ -210,74 +243,62 @@ where
 
     tracing::info!("response: {:?}", chat_input);
 
-    match state.event_processor.process(chat_input).await? {
-        crate::Response::PlainChat(response) => {
-            state
-                .chat_bot
-                .send_message(bot_input.channel, &response)
-                .await
-                .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
-        }
+    let responses = Box::pin(state.event_processor.process(chat_input)).await?;
+
+    if responses.is_empty() {
+        tracing::warn!("no response from event processor");
     }
 
-    Ok(())
+    let results: Vec<String> = futures::stream::iter(responses)
+        .then(async |response| {
+            handle_event_response(state.chat_bot.as_ref(), bot_input.channel, response).await
+        })
+        .try_collect()
+        .await?;
+
+    Ok(Json(results))
 }
 
-/// make Ultron say something
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
-pub struct EchoInput {
-    /// the channel to send the command to
+async fn handle_event_response<TBot: ChatBot>(
+    bot: &TBot,
     channel: Channel,
-    user: String,
-    /// what Ultron is going to say
-    message: String,
+    response: Response,
+) -> Result<String, crate::error::Error> {
+    let body = match response {
+        Response::PlainChat(message) => message.clone(),
+        Response::Bot(bot_message) => bot_message.render_without_thinking_parts(),
+        Response::Ignored => "ignored".into(),
+    };
+
+    tracing::info!(
+        ?channel,
+        ?body,
+        "sending message to `{channel:?}`: `{body}`"
+    );
+
+    bot.send_message(channel, &body).await.map_err(Into::into)?;
+
+    Ok(body)
 }
 
-impl From<EchoInput> for BotInput {
-    fn from(input: EchoInput) -> Self {
-        Self {
-            channel: input.channel,
-            user: input.user,
-            command_input: format!("echo {}", input.message),
-        }
-    }
-}
-
-/// Make Ultron say something
+/// tests bot input.
 #[utoipa::path(
-    post,
-    path = Route::Echo.to_string(),
+    get,
+    path = Route::Events.to_string(),
     responses(
-        (status = OK, description = "echo command sent"),
+        (status = OK, description = "command sent"),
         (status = INTERNAL_SERVER_ERROR, description = "error sending message to Discord")
     ),
     tag = OpenApiTag::BotCommand.as_str(),
 )]
-async fn echo<Bot>(
-    State(state): State<AppState<Bot>>,
-    Json(input): Json<EchoInput>,
-) -> Result<(), ServerError>
-where
-    Bot: ChatBot + 'static,
-{
-    let input: BotInput = input.into();
-    let api_input = Event::from(input.clone());
+async fn events<Bot>(State(state): State<AppState<Bot>>) -> Json<Vec<Event>> {
+    let events: Vec<Event> = state.event_processor.dump_events().await;
 
-    match state.event_processor.process(api_input).await? {
-        crate::Response::PlainChat(response) => {
-            state
-                .chat_bot
-                .send_message(input.channel, &response)
-                .await
-                .map_err(|e| ServerError::ChatBot(Box::new(e)))?;
-        }
-    }
-
-    Ok(())
+    Json(events)
 }
 
 impl IntoResponse for ServerError {
-    fn into_response(self) -> Response {
+    fn into_response(self) -> AxumResponse {
         tracing::warn!("error: {}", self);
         let status = match self {
             ServerError::UnableToBindPort(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -285,6 +306,7 @@ impl IntoResponse for ServerError {
             ServerError::Event(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::ChatBot(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ServerError::OpenApiDocGeneration => StatusCode::INTERNAL_SERVER_ERROR,
+            ServerError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (status, self.to_string()).into_response()
     }
@@ -292,13 +314,15 @@ impl IntoResponse for ServerError {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::TestError;
+
     use super::*;
 
     #[derive(Debug, Clone)]
     struct TestBot;
 
     impl ChatBot for TestBot {
-        type Error = std::io::Error;
+        type Error = TestError;
 
         async fn send_message(&self, _channel: Channel, _message: &str) -> Result<(), Self::Error> {
             Ok(())
@@ -314,17 +338,25 @@ mod tests {
     #[tokio::test]
     async fn test_bot() {
         let state = AppState {
-            event_processor: Arc::new(EventProcessor::default()),
+            event_processor: Arc::new(EventProcessor::test().await),
             chat_bot: Arc::new(TestBot),
         };
         let bot_input = BotInput {
             channel: Channel::Debug,
             user: "anonymous".to_string(),
-            command_input: "echo hello".to_string(),
+            event_input: "echo hello".to_string(),
+            event_type: EventType::Command,
         };
         let json = Json(bot_input);
-        let () = command(State(state), json)
+        let Json(results) = command(State(state), json)
             .await
             .expect("got an error from the test bot");
+
+        insta::assert_json_snapshot!(results, @r#"
+        [
+          "hello",
+          "echo hello"
+        ]
+        "#);
     }
 }

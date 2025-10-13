@@ -1,21 +1,35 @@
 use bon::Builder;
+use extend::ext;
 use serenity::{
     Client,
-    all::{ChannelId, Context, EventHandler, GatewayIntents, Message},
+    all::{ChannelId, Context, EventHandler, GatewayIntents, Message, Typing, UserId},
     http::Http,
 };
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::task::JoinHandle;
 use ultron_core::{
-    Channel, ChatBot, ChatInput, Event, EventError, EventProcessor, Response,
-    command::CommandParseError, dice::HELP_MESSAGE,
+    Channel, Response, User,
+    chatbot::{ChatBot, ChatInput},
+    command::CommandParseError,
+    dice::HELP_MESSAGE,
+    event_processor::{Event, EventError, EventProcessor, EventType},
 };
 
 /// ultron#ultron-test
 const DEFAULT_DEBUG_CHANNEL_ID: ChannelId = ChannelId::new(777725275856699402);
 const DEFAULT_GENERAL_CHANNEL_ID: ChannelId = ChannelId::new(777658379212161077);
 const DEFAULT_DND_CHANNEL_ID: ChannelId = ChannelId::new(874085144284258325);
+
+/// the [`UserId`] of the bot itself
+const ULTRON_USER_ID: UserId = UserId::new(777627943144652801);
+
+/// the string used to mention the bot in messages
+/// this is the bot's role mention, which is used in some servers.
+/// TODO: expand on this
+const ULTRON_USER_ID_STR: &str = "<@&777660234842898483>";
+
+const DISCORD_MAX_MESSAGE_LENGTH: usize = 2000;
 
 pub type DiscordBotResult<T> = Result<T, DiscordBotError>;
 
@@ -35,6 +49,12 @@ pub enum DiscordBotError {
     ContentTooLong,
     #[error(transparent)]
     JoinError(#[from] tokio::task::JoinError),
+}
+
+impl From<DiscordBotError> for ultron_core::error::Error {
+    fn from(value: DiscordBotError) -> Self {
+        ultron_core::error::Error::ChatBot(Box::new(value))
+    }
 }
 
 #[derive(Builder, Debug, Clone)]
@@ -105,9 +125,6 @@ impl ChatBot for DiscordBot {
     type Error = DiscordBotError;
 
     async fn send_message(&self, channel: Channel, message: &str) -> DiscordBotResult<()> {
-        if message.len() >= 2000 {
-            return Err(DiscordBotError::ContentTooLong);
-        }
         let DiscordChannel(id) = channel.into();
 
         id.say(&self.http, message).await?;
@@ -117,31 +134,6 @@ impl ChatBot for DiscordBot {
 }
 
 impl DiscordBot {
-    /// send a message to the debug channel
-    pub async fn debug(&self, message: &str) -> DiscordBotResult<()> {
-        self.send_message(DEFAULT_DEBUG_CHANNEL_ID, message).await
-    }
-
-    /// send a message to the general channel
-    pub async fn psa(&self, message: &str) -> DiscordBotResult<()> {
-        self.send_message(DEFAULT_GENERAL_CHANNEL_ID, message).await
-    }
-
-    /// send a message to the dnd channel
-    pub async fn dnd(&self, message: &str) -> DiscordBotResult<()> {
-        self.send_message(DEFAULT_DND_CHANNEL_ID, message).await
-    }
-
-    pub async fn send_message(&self, channel_id: ChannelId, message: &str) -> DiscordBotResult<()> {
-        if message.len() >= 2000 {
-            return Err(DiscordBotError::ContentTooLong);
-        }
-
-        channel_id.say(&self.http, message).await?;
-
-        Ok(())
-    }
-
     pub async fn shutdown(&self) -> DiscordBotResult<()> {
         self.client_handle.abort();
         Ok(())
@@ -153,7 +145,9 @@ pub struct Intents(GatewayIntents);
 
 impl Default for Intents {
     fn default() -> Self {
-        let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+        let intents = GatewayIntents::GUILD_MESSAGES
+            | GatewayIntents::MESSAGE_CONTENT
+            | GatewayIntents::GUILD_MESSAGE_TYPING;
         Self(intents)
     }
 }
@@ -167,12 +161,33 @@ impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
         tracing::debug!("handling message event: {:?}", msg);
 
-        let chat_input: ChatInput = ChatInput {
-            user: msg.author.name.clone(),
+        let user = if msg.author.id == ULTRON_USER_ID {
+            User::Ultron
+        } else {
+            User::from(msg.author.name.clone())
+        };
+
+        tracing::debug!(user = ?user, "message from user");
+
+        let event_type: EventType = if msg.mentions_ultron() {
+            tracing::debug!(user = ?user, "message mentions bot, treating as natural language");
+            EventType::LanguageModel
+        } else {
+            EventType::Plain
+        };
+
+        let _typing: Option<Typing> = if event_type == EventType::LanguageModel {
+            Some(ctx.http.start_typing(msg.channel_id))
+        } else {
+            None
+        };
+
+        let chat_input = ChatInput {
+            user,
             content: msg.content.clone(),
         };
 
-        let event: Event = match chat_input.try_into() {
+        let event: Event = match Event::new(chat_input, event_type) {
             Ok(event) => event,
             Err(error) => {
                 tracing::warn!(%error, "error converting chat input to event");
@@ -180,14 +195,16 @@ impl EventHandler for Handler {
             }
         };
 
-        match self.event_processor.process(event).await {
-            Ok(Response::PlainChat(response)) => {
-                if let Err(error) = msg.channel_id.say(&ctx.http, response).await {
-                    tracing::error!(%error, "error sending message");
-                }
-            }
+        let results = Box::pin(self.event_processor.process(event.clone())).await;
+
+        let results = match results {
+            Ok(results) => results,
             Err(error) => {
-                tracing::error!(%error, "error processing event");
+                tracing::error!(
+                    ?event,
+                    %error,
+                    "error processing event",
+                );
 
                 let error_message = match error {
                     EventError::CommandParse(command_parse_error) => match command_parse_error {
@@ -200,6 +217,9 @@ impl EventHandler for Handler {
                         )),
                         _ => None,
                     },
+                    EventError::Agent(agent_error) => {
+                        Some(format!("brain hurty: {agent_error}\n{HELP_MESSAGE}",))
+                    }
                     EventError::DiceRollParse(dice_roll_error) => Some(format!(
                         "ya blew it: {}\n\n{}",
                         dice_roll_error, HELP_MESSAGE
@@ -211,7 +231,108 @@ impl EventHandler for Handler {
                         tracing::error!(%error, "error sending message");
                     }
                 }
+
+                return;
+            }
+        };
+
+        tracing::debug!(?results, "processing event result");
+
+        for result in results {
+            match result {
+                Response::PlainChat(message) => {
+                    tracing::info!(?event, "processing event response",);
+
+                    let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
+
+                    tracing::debug!(?response_chunks, "response chunks");
+
+                    for chunk in response_chunks {
+                        if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
+                            tracing::error!(%error, "error sending message");
+                        }
+                    }
+                }
+                Response::Bot(bot_message) => {
+                    tracing::info!(?event, "processing bot message response",);
+
+                    let message: String = bot_message.render_without_thinking_parts();
+
+                    let response_chunks = split_message(&message, DISCORD_MAX_MESSAGE_LENGTH);
+
+                    tracing::debug!(?response_chunks, "response chunks");
+
+                    for chunk in response_chunks {
+                        if let Err(error) = msg.channel_id.say(&ctx.http, chunk).await {
+                            tracing::error!(%error, "error sending message");
+                        }
+                    }
+                }
+                Response::Ignored => {
+                    tracing::debug!(?event, "consumer ignored the event",);
+                }
             }
         }
+    }
+}
+
+#[ext]
+impl Message {
+    fn mentions_ultron(&self) -> bool {
+        self.mentions_user_id(ULTRON_USER_ID) || self.content.contains(ULTRON_USER_ID_STR)
+    }
+}
+
+/// split a message into chunks of at most `max_length` characters
+/// while preserving whole words.
+fn split_message(message: &str, max_length: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    for word in message.split_whitespace() {
+        if current_chunk.len() + word.len() + 1 > max_length {
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+            }
+            current_chunk = String::new();
+        }
+        if !current_chunk.is_empty() {
+            current_chunk.push(' ');
+        }
+        current_chunk.push_str(word);
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk.trim().to_string());
+    }
+
+    chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_message_works() {
+        let message = "This is a test message that should be split into multiple chunks.";
+        let max_length = 20;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks.len(), 4);
+        assert_eq!(chunks[0], "This is a test");
+        assert_eq!(chunks[1], "message that should");
+        assert_eq!(chunks[2], "be split into");
+        assert_eq!(chunks[3], "multiple chunks.");
+    }
+
+    #[test]
+    fn split_markdown_syntax() {
+        let message = "This is a **test** message with `code` and [link](https://example.com).";
+        let max_length = 30;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0], "This is a **test** message");
+        assert_eq!(chunks[1], "with `code` and");
+        assert_eq!(chunks[2], "[link](https://example.com).");
     }
 }
