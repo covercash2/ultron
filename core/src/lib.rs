@@ -21,7 +21,7 @@ pub enum Channel {
     Psa,
     Dnd,
     /// #bot channel in the FunZone server
-    FunZoneBot,
+    FunZoneBots,
     /// #stream channel in the FunZone server
     FunZoneStream,
 }

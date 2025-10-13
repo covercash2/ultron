@@ -22,6 +22,14 @@ const HOSTS = {
   green: $GREEN_URL
 }
 
+const CHANNELS = {
+  debug: "debug"
+  dnd: "dnd"
+  psa: "psa"
+  bots: "fun_zone_bots"
+  stream: "fun_zone_stream"
+}
+
 def state_file [] {
   $"($ULTRON_DATA_DIR)/nu_state.toml" | path expand
 }
@@ -77,12 +85,14 @@ export def ultron [
   --endpoint: string@endpoints = "command"
 ] {
   let route = ultron route --host $host --endpoint $endpoint
+  let channel = $CHANNELS | get $channel
 
-  print "POSTing to" $route
+  print $"POSTing to ($route)#($channel)"
 
   (http post
     --content-type application/json
-    $route {
+    $route
+    {
       channel: $channel
       user: "nushell"
       event_input: $event_input
@@ -140,11 +150,7 @@ export def "ultron route" [
 
 # returns a list of predefined channels for autocomplete
 def channels [] {
-  echo [
-    debug
-    dnd
-    psa
-  ]
+  $CHANNELS | columns
 }
 
 # returns a list of endpoint names for autocomplete

@@ -123,7 +123,7 @@ impl From<Channel> for DiscordChannel {
             Channel::Debug => DiscordChannel(DEFAULT_DEBUG_CHANNEL_ID),
             Channel::Psa => DiscordChannel(DEFAULT_GENERAL_CHANNEL_ID),
             Channel::Dnd => DiscordChannel(DEFAULT_DND_CHANNEL_ID),
-            Channel::FunZoneBot => DiscordChannel(FUN_ZONE_BOT_CHANNEL_ID),
+            Channel::FunZoneBots => DiscordChannel(FUN_ZONE_BOT_CHANNEL_ID),
             Channel::FunZoneStream => DiscordChannel(FUN_ZONE_STREAM_CHANNEL_ID),
         }
     }
