@@ -19,6 +19,9 @@ lint:
 test:
   cargo test --all
 
+check: format_check lint test
+  nix flake check
+
 # run the bot with info logs and parse the output as json
 run:
   cargo run -- --port {{port}} --mcp-port {{mcp_port}} --rust-log "info,rmcp=debug,ultron=debug,ultron_core=debug,ultron_discord=debug" --secrets secrets.toml | lines | each {|line| $line | try { from json } catch { $line }}

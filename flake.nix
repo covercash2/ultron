@@ -33,6 +33,7 @@
             fileset = nixpkgs.lib.fileset.unions [
               (craneLib.fileset.commonCargoSources ./.)
               (nixpkgs.lib.fileset.maybeMissing ./prompts)
+              (nixpkgs.lib.fileset.maybeMissing ./assets)
             ];
           };
 
@@ -136,6 +137,12 @@
               description = "Port to run the server on";
             };
 
+            mcp-port = mkOption {
+              type = types.port;
+              default = 25565;
+              description = "Port to run the MCP server on";
+            };
+
             rustLog = mkOption {
               type = types.str;
               default = "info";
@@ -174,6 +181,7 @@
                 # Pass CLI arguments based on configuration options
                 ExecStart = ''
                 ${cfg.package}/bin/ultron --port ${toString cfg.port} \
+                  --mcp-port ${toString cfg.mcp-port} \
                   --rust-log ${cfg.rustLog} \
                   --secrets ${cfg.secretsFile}
                 '';
