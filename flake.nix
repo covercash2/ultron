@@ -28,7 +28,13 @@
 
         # Common arguments for crane
         commonArgs = {
-          src = craneLib.cleanCargoSource self;
+          src = nixpkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = nixpkgs.lib.fileset.unions [
+              (craneLib.fileset.commonCargoSources ./.)
+              (nixpkgs.lib.fileset.maybeMissing ./prompts)
+            ];
+          };
 
           buildInputs = with pkgs; [
             openssl
