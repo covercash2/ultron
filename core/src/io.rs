@@ -24,6 +24,10 @@ pub async fn read_toml_file<T: DeserializeOwned>(path: impl AsRef<Path>) -> Resu
     })
 }
 
+pub fn parse_toml_str<T: DeserializeOwned>(contents: &str) -> Result<T> {
+    toml::from_str(contents).map_err(|source| Error::TomlParse { source })
+}
+
 pub mod sync {
     use std::{fs, path::Path};
 

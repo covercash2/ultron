@@ -90,6 +90,8 @@ export def ultron [
   print $"POSTing to ($route)#($channel)"
 
   (http post
+    --full
+    --allow-errors
     --content-type application/json
     $route
     {
@@ -119,10 +121,10 @@ export def "ultron get" [
 export def "ultron say" [
   channel: string@channels # the channel to send the message to: e.g. ``
   message: string # what ultron should say
-  --url: string@urls
+  --host: string@hosts
 ] {
   let message = $"echo ($message)"
-  ultron $channel $message
+  ultron --host $host $channel $message
 }
 
 # run the server

@@ -119,10 +119,10 @@ impl Command {
                         .into_iter()
                         .map(|name| format!("✨`{}`", name))
                         .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("types of pasta 🍝:\n{}", names)
+                        .join("\n\n");
+                    format!("types of pasta 🍝:\n\n{}", names)
                 } else {
-                    copy_pasta(&input).unwrap_or("try again loser".to_string())
+                    copy_pasta(&input).unwrap_or(format!("'{}' not found. try again loser", input))
                 }
             }
         };

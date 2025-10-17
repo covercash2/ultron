@@ -1,13 +1,13 @@
 use std::{collections::HashMap, sync::OnceLock};
 
-use crate::io::sync::read_toml_file;
+use crate::io::parse_toml_str;
 
-const COPYPASTA_FILE: &str = "../assets/copypasta.toml";
+const COPYPASTA_CONTENTS: &str = include_str!("../../assets/copypasta.toml");
 
 static COPY_PASTAS: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 fn init_map() -> HashMap<String, String> {
-    read_toml_file(COPYPASTA_FILE)
+    parse_toml_str(COPYPASTA_CONTENTS)
         .inspect_err(|error| {
             tracing::error!(
                 %error,

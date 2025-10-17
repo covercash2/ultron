@@ -25,6 +25,9 @@ pub enum Error {
         path: PathBuf,
     },
 
+    #[error("failed to parse TOML: {source}")]
+    TomlParse { source: toml::de::Error },
+
     #[error("failed to generate OpenAPI doc")]
     OpenApiDocGeneration,
 
