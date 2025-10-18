@@ -214,11 +214,12 @@ pub struct BotInput {
 
 impl From<BotInput> for Event {
     fn from(input: BotInput) -> Self {
-        Self {
-            user: input.user.into(),
-            content: LmResponse::raw(input.event_input),
-            event_type: input.event_type,
-        }
+        Event::builder()
+            .user(input.user.into())
+            .content(LmResponse::raw(input.event_input))
+            .event_type(input.event_type)
+            .channel(input.channel)
+            .build()
     }
 }
 
@@ -354,8 +355,7 @@ mod tests {
 
         insta::assert_json_snapshot!(results, @r#"
         [
-          "hello",
-          "echo hello"
+          "hello"
         ]
         "#);
     }

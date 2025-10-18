@@ -16,7 +16,7 @@ use ultron_discord::DiscordBotConfig;
 
 #[derive(Clone, serde::Deserialize)]
 pub struct Secrets {
-    pub discord_app_id: String,
+    pub discord_app_id: u64,
     pub discord_public_key: String,
     pub discord_token: String,
 }

@@ -34,11 +34,19 @@ impl Ollama {
     pub(crate) async fn chat(
         &self,
         model_name: String,
-        events: Vec<Event>,
+        events: impl AsRef<[&Event]>,
     ) -> Result<Event, LanguageModelError> {
+        let channel = events
+            .as_ref()
+            .iter()
+            .last()
+            .map(|e| e.channel)
+            .ok_or(LanguageModelError::EmptyEvent)?;
+
         let messages = events
-            .into_iter()
-            .map(|event| event.into())
+            .as_ref()
+            .iter()
+            .map(|event| (*event).clone().into())
             .collect::<Vec<_>>();
 
         tracing::debug!(?model_name, ?messages, "preparing chat messages for Ollama");
@@ -58,11 +66,12 @@ impl Ollama {
         let content: LmResponse =
             MessagePartsIterator::new(&response.message.content, "<think>", "</think>").collect();
 
-        let event = Event {
-            user,
-            content,
-            event_type: EventType::LanguageModel, // Assuming event_type is not set in this conversion
-        };
+        let event = Event::builder()
+            .user(user)
+            .content(content)
+            .event_type(EventType::LanguageModel)
+            .channel(channel)
+            .build();
 
         Ok(event)
     }

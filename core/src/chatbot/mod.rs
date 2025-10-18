@@ -32,17 +32,22 @@ pub trait ChatBot: Clone + Send + Sync {
 }
 
 /// Input from a chat interface, such as Discord
-#[derive(Debug, Clone, PartialEq)]
+#[derive(bon::Builder, Debug, Clone, PartialEq)]
 pub struct ChatInput {
+    #[builder(into)]
     pub user: User,
+    #[builder(into)]
     pub content: String,
+    #[builder(into)]
+    pub channel: Channel,
 }
 
 impl ChatInput {
-    pub fn anonymous(content: impl ToString) -> Self {
+    pub fn anonymous(content: impl ToString, channel: Channel) -> Self {
         Self {
             user: User::Anonymous,
             content: content.to_string(),
+            channel,
         }
     }
 
