@@ -52,7 +52,7 @@ const DISCORD_MAX_MESSAGE_LENGTH: usize = 2000;
 #[derive(Builder, Debug, Clone)]
 pub struct DiscordBotConfig {
     #[builder(into)]
-    application_id: String,
+    application_id: u64,
     #[builder(into)]
     token: String,
     /// TODO: i'm not sure why i need this field, but it's here
@@ -77,7 +77,7 @@ impl DiscordBotConfig {
         let spawn_channels = channels.clone();
         let client_handle = tokio::spawn(async move {
             let mut client = Client::builder(&self.token, self.intents.0)
-                .application_id(self.application_id.parse().unwrap())
+                .application_id(self.application_id.into())
                 .event_handler(Handler {
                     event_processor: self.event_processor,
                     channels: spawn_channels,
