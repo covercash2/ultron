@@ -31,7 +31,7 @@ where
         Self { dice_roller }
     }
 
-    pub async fn consume(&self, event: Event) -> Result<String, EventError> {
+    pub async fn consume(&self, event: &Event) -> Result<String, EventError> {
         let command: Command = event.try_into()?;
         let context = CommandContext {
             dice_roller: self.dice_roller.clone(),
@@ -53,8 +53,12 @@ impl<TRoller> EventConsumer for CommandConsumer<TRoller>
 where
     TRoller: RollerImpl + 'static,
 {
-    async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
+    async fn consume_event(&self, event: &Event) -> Result<Response, EventError> {
         self.consume(event).await.map(Response::PlainChat)
+    }
+
+    fn should_consume_event(&self, event: &Event) -> bool {
+        matches!(event.event_type, EventType::Command)
     }
 }
 
@@ -130,10 +134,10 @@ impl Command {
     }
 }
 
-impl TryFrom<Event> for Command {
+impl TryFrom<&Event> for Command {
     type Error = CommandParseError;
 
-    fn try_from(input: Event) -> Result<Self, Self::Error> {
+    fn try_from(input: &Event) -> Result<Self, Self::Error> {
         match input.event_type {
             EventType::Command => input.content.to_string().parse(),
             _ => Err(CommandParseError::MissingPrefix(input.content.to_string())),

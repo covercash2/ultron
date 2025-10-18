@@ -1,20 +1,18 @@
 use std::sync::Arc;
 
-use futures::StreamExt as _;
-use futures::stream;
-use serde::Deserialize;
-use serde::Serialize;
+use bon::Builder;
+use futures::{StreamExt as _, stream};
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
-use crate::Response;
-use crate::User;
-use crate::chatbot::ChatInput;
-use crate::command::CommandConsumer;
-use crate::command::CommandParseError;
-use crate::dice::DiceRoller;
-use crate::nlp::AgentError;
-use crate::nlp::ChatAgent;
-use crate::nlp::response::LmResponse;
+use crate::{
+    Channel, Response, User,
+    chatbot::ChatInput,
+    command::{CommandConsumer, CommandParseError},
+    dice::DiceRoller,
+    nlp::{AgentError, ChatAgent, response::LmResponse},
+};
 
 const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
 
@@ -39,11 +37,23 @@ pub enum EventType {
 
 /// represents an event that can be processed by the bot.
 /// stripped of any command prefix or control characters
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Builder, Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Event {
     pub user: User,
     pub content: LmResponse,
     pub event_type: EventType,
+    pub channel: Channel,
+    #[builder(default)]
+    pub timestamp: EventTimestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct EventTimestamp(OffsetDateTime);
+
+impl Default for EventTimestamp {
+    fn default() -> Self {
+        EventTimestamp(OffsetDateTime::now_utc())
+    }
 }
 
 impl Event {
@@ -62,11 +72,14 @@ impl Event {
             (chat_input.content.as_str(), event_type)
         };
 
-        Ok(Event {
-            user,
-            content: LmResponse::raw(content),
-            event_type,
-        })
+        let event = Event::builder()
+            .user(user)
+            .channel(Channel::Debug)
+            .content(LmResponse::raw(content))
+            .event_type(event_type)
+            .build();
+
+        Ok(event)
     }
 }
 
@@ -88,12 +101,15 @@ impl EventConsumers {
     }
 
     /// propagate an event to all consumers, returning a stream of results
-    pub fn propagate_event(&self, event: Event) -> impl futures::Stream<Item = EventResult> {
-        stream::iter(self.iter().map(move |consumer| {
-            let event = event.clone();
-            async move { consumer.consume_event(event).await }
-        }))
-        .buffer_unordered(4)
+    pub fn propagate_event(&self, event: &Event) -> impl futures::Stream<Item = EventResult> {
+        let futures = self
+            .iter()
+            .filter(move |consumer| consumer.should_consume_event(&event))
+            .map(move |consumer| {
+                let event = event.clone();
+                async move { consumer.consume_event(&event).await }
+            });
+        stream::iter(futures).buffer_unordered(4)
     }
 }
 
@@ -103,7 +119,11 @@ pub type EventResult = Result<Response, EventError>;
 
 #[async_trait::async_trait]
 pub trait EventConsumer: std::fmt::Debug + Send + Sync + 'static {
-    async fn consume_event(&self, event: Event) -> EventResult;
+    async fn consume_event(&self, event: &Event) -> EventResult;
+
+    fn should_consume_event(&self, _event: &Event) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -117,11 +137,12 @@ impl EventProcessor {
 
 impl EventProcessor {
     pub fn new() -> Self {
-        let system_message = Event {
-            user: User::System,
-            content: LmResponse::raw(ULTRON_SYSTEM_PROMPT),
-            event_type: EventType::LanguageModel,
-        };
+        let system_message = Event::builder()
+            .user(User::System)
+            .content(LmResponse::raw(ULTRON_SYSTEM_PROMPT))
+            .event_type(EventType::LanguageModel)
+            .channel(Channel::Debug)
+            .build();
 
         let events = EventLog::new([system_message]);
 
@@ -162,7 +183,7 @@ impl EventProcessor {
         self.events.log_event(event.clone()).await;
 
         let event_results: Vec<EventResult> =
-            Box::pin(self.consumers.propagate_event(event).collect()).await;
+            Box::pin(self.consumers.propagate_event(&event).collect()).await;
 
         let responses: Vec<Response> = event_results
             .into_iter()
@@ -220,7 +241,7 @@ mod tests {
 
     #[tokio::test]
     async fn it_works() {
-        let event: ChatInput = ChatInput::anonymous("!ultron echo hello");
+        let event: ChatInput = ChatInput::anonymous("!ultron echo hello", Channel::Debug);
         let event: Event =
             Event::new(event, EventType::Plain).expect("should parse chat input to event");
         let processor =
@@ -244,7 +265,7 @@ mod tests {
 
     #[test]
     fn strip_prefix() {
-        let chat_input: ChatInput = ChatInput::anonymous("!ultron hello");
+        let chat_input: ChatInput = ChatInput::anonymous("!ultron hello", Channel::Debug);
         let input: Event =
             Event::new(chat_input, EventType::Plain).expect("should parse chat input to api input");
         assert_eq!(input.user, User::Anonymous);

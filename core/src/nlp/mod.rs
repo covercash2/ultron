@@ -24,7 +24,7 @@ pub enum AgentError {
 }
 
 pub trait ChatAgent: Clone + std::fmt::Debug + Send + Sync {
-    fn chat(&self, events: Vec<Event>) -> impl Future<Output = Result<Event, AgentError>> + Send;
+    fn chat(&self, events: &[&Event]) -> impl Future<Output = Result<Event, AgentError>> + Send;
 }
 
 #[cfg(test)]
@@ -33,8 +33,8 @@ pub struct EchoAgent;
 
 #[cfg(test)]
 impl ChatAgent for EchoAgent {
-    async fn chat(&self, events: Vec<Event>) -> Result<Event, AgentError> {
-        let event = events.last().cloned().ok_or(AgentError::NoEvents)?;
+    async fn chat(&self, events: &[&Event]) -> Result<Event, AgentError> {
+        let event = events.last().cloned().ok_or(AgentError::NoEvents)?.clone();
 
         Ok(Event {
             user: crate::User::Ultron,
@@ -48,10 +48,10 @@ impl<TAgent> EventConsumer for TAgent
 where
     TAgent: ChatAgent + 'static,
 {
-    async fn consume_event(&self, event: Event) -> Result<Response, EventError> {
+    async fn consume_event(&self, event: &Event) -> Result<Response, EventError> {
         let events = vec![event];
 
-        let next_event = self.chat(events).await?;
+        let next_event = self.chat(events.as_slice()).await?;
 
         tracing::info!(
             user = ?next_event.user,
@@ -59,6 +59,13 @@ where
         );
 
         Ok(Response::Bot(next_event.content))
+    }
+
+    fn should_consume_event(&self, event: &Event) -> bool {
+        matches!(
+            event.event_type,
+            crate::event_processor::EventType::LanguageModel
+        )
     }
 }
 
@@ -113,7 +120,7 @@ impl LmChatAgent {
 }
 
 impl ChatAgent for LmChatAgent {
-    async fn chat(&self, events: Vec<Event>) -> Result<Event, AgentError> {
+    async fn chat(&self, events: &[&Event]) -> Result<Event, AgentError> {
         if events.is_empty() {
             return Err(AgentError::NoEvents);
         }

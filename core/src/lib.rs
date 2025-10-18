@@ -14,8 +14,21 @@ pub mod nlp;
 
 const DEFAULT_COMMAND_PREFIX: &str = "!ultron";
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::Display,
+    strum::IntoStaticStr,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Channel {
     Debug,
     Psa,

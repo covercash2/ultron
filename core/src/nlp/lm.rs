@@ -44,7 +44,7 @@ impl LanguageModel {
         })
     }
 
-    pub async fn chat(&self, events: Vec<Event>) -> Result<Event, LanguageModelError> {
+    pub async fn chat(&self, events: impl AsRef<[&Event]>) -> Result<Event, LanguageModelError> {
         match &self.backend {
             LanguageModelBackend::Ollama(ollama) => {
                 ollama.chat(self.model_name.0.clone(), events).await
@@ -55,9 +55,12 @@ impl LanguageModel {
                 tracing::debug!("Echo backend is used in tests");
 
                 let event = events
+                    .as_ref()
+                    .iter()
                     .last()
                     .cloned()
-                    .ok_or(LanguageModelError::EmptyEvent)?;
+                    .ok_or(LanguageModelError::EmptyEvent)?
+                    .clone();
 
                 let event = Event {
                     user: User::Ultron,
