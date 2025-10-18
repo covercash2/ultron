@@ -47,6 +47,10 @@ pub struct Event {
     pub timestamp: EventTimestamp,
 }
 
+/// a wrapper around [`OffsetDateTime`] to represent event timestamps
+/// and encapsulate the library behavior,
+/// timezones, etc.
+/// currently defaults to UTC time.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct EventTimestamp(OffsetDateTime);
 
@@ -59,7 +63,7 @@ impl Default for EventTimestamp {
 impl Event {
     /// Creates a new event from a chat input and an event type.
     /// If the event type is `Command`, it will strip the command prefix from the content.
-    pub fn new(chat_input: ChatInput, event_type: EventType) -> Result<Self, CommandParseError> {
+    pub fn new(chat_input: &ChatInput, event_type: EventType) -> Result<Self, CommandParseError> {
         let user = chat_input.user.clone();
         let (content, event_type) = if event_type == EventType::Plain {
             let result = chat_input.strip_prefix();
@@ -74,7 +78,7 @@ impl Event {
 
         let event = Event::builder()
             .user(user)
-            .channel(Channel::Debug)
+            .channel(chat_input.channel)
             .content(LmResponse::raw(content))
             .event_type(event_type)
             .build();
@@ -104,10 +108,10 @@ impl EventConsumers {
     pub fn propagate_event(&self, event: &Event) -> impl futures::Stream<Item = EventResult> {
         let futures = self
             .iter()
-            .filter(move |consumer| consumer.should_consume_event(&event))
+            .filter(move |consumer| consumer.should_consume_event(event))
             .map(move |consumer| {
-                let event = event.clone();
-                async move { consumer.consume_event(&event).await }
+                // let event = event.clone();
+                async move { consumer.consume_event(event).await }
             });
         stream::iter(futures).buffer_unordered(4)
     }
@@ -243,7 +247,7 @@ mod tests {
     async fn it_works() {
         let event: ChatInput = ChatInput::anonymous("!ultron echo hello", Channel::Debug);
         let event: Event =
-            Event::new(event, EventType::Plain).expect("should parse chat input to event");
+            Event::new(&event, EventType::Plain).expect("should parse chat input to event");
         let processor =
             EventProcessor::new().with_consumer(CommandConsumer::new(DiceRoller::max()));
         let responses = processor
@@ -266,9 +270,10 @@ mod tests {
     #[test]
     fn strip_prefix() {
         let chat_input: ChatInput = ChatInput::anonymous("!ultron hello", Channel::Debug);
-        let input: Event =
-            Event::new(chat_input, EventType::Plain).expect("should parse chat input to api input");
+        let input: Event = Event::new(&chat_input, EventType::Plain)
+            .expect("should parse chat input to api input");
         assert_eq!(input.user, User::Anonymous);
         assert_eq!(input.content, LmResponse::raw("hello"));
+        assert_eq!(input.channel, chat_input.channel);
     }
 }

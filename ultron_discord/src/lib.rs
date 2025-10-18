@@ -221,7 +221,7 @@ impl Handler {
             .channel(*channel)
             .build();
 
-        let event: Event = Event::new(chat_input, event_type)?;
+        let event: Event = Event::new(&chat_input, event_type)?;
 
         let results = Box::pin(self.event_processor.process(event.clone())).await;
 
