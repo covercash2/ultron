@@ -4,7 +4,6 @@
 use crate::{
     Response,
     event_processor::{Event, EventConsumer, EventError},
-    mcp::client::McpClient,
     nlp::lm::{LanguageModel, ModelName},
 };
 
@@ -67,7 +66,7 @@ where
 pub struct ChatAgentConfig {
     pub llm_uri: String,
     pub llm_model: ModelName,
-    pub mcp_uri: String,
+    // pub mcp_uri: String,
 }
 
 #[cfg(test)]
@@ -76,7 +75,7 @@ impl Default for ChatAgentConfig {
         Self {
             llm_uri: "http://localhost:11434".to_string(),
             llm_model: "llama2".into(),
-            mcp_uri: "http://localhost:8080".to_string(),
+            // mcp_uri: "http://localhost:8080".to_string(),
         }
     }
 }
@@ -85,14 +84,14 @@ impl Default for ChatAgentConfig {
 /// to process chat messages.
 #[derive(Debug, Clone)]
 pub struct LmChatAgent {
-    mcp: McpClient,
+    // mcp: McpClient,
     language_model: LanguageModel,
 }
 
 impl LmChatAgent {
-    pub fn new(mcp: McpClient, language_model: LanguageModel) -> Self {
+    pub fn new(language_model: LanguageModel) -> Self {
         Self {
-            mcp,
+            // mcp,
             language_model,
         }
     }
@@ -103,13 +102,13 @@ impl LmChatAgent {
         ChatAgentConfig {
             llm_uri,
             llm_model,
-            mcp_uri,
+            // mcp_uri,
         }: ChatAgentConfig,
     ) -> Result<Self, AgentError> {
-        let mcp = McpClient::new(&mcp_uri).await?;
+        // let mcp = McpClient::new(&mcp_uri).await?;
         let language_model = LanguageModel::ollama(&llm_uri, llm_model)?;
 
-        Ok(Self::new(mcp, language_model))
+        Ok(Self::new(language_model))
     }
 }
 

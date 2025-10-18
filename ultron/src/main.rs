@@ -52,7 +52,7 @@ impl From<&Cli> for ChatAgentConfig {
         Self {
             llm_uri: value.lm_endpoint.clone(),
             llm_model: "llama3.2:latest".into(),
-            mcp_uri: format!("http://localhost:{}", value.mcp_port),
+            // mcp_uri: format!("http://localhost:{}", value.mcp_port),
         }
     }
 }

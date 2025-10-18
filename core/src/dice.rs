@@ -74,7 +74,7 @@ impl DiceRoller<dice::roller::FastRand> {
 
 impl DiceRoller<dice::roller::Max> {
     pub fn max() -> Self {
-        Self::from(dice::roller::Max::default())
+        Self::from(dice::roller::Max)
     }
 }
 
