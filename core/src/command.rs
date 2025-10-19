@@ -102,6 +102,7 @@ impl Command {
     where
         TRoller: RollerImpl,
     {
+        // escape sequence is wrong here
         tracing::debug!(command = ?self, "executing command");
         let result: String = match self {
             Command::Echo(message) => message.to_string(),
@@ -155,8 +156,8 @@ impl FromStr for Command {
             .next()
             .ok_or(CommandParseError::MissingCommand(input.to_string()))?;
 
-        // the rest of the input joined by spaces
-        let rest = iterator.collect::<Vec<_>>().join(" ");
+        // the rest of the input
+        let rest = input.split_at(command.len()).1.trim();
 
         match command {
             "echo" => Ok(Command::Echo(rest.to_string())),
@@ -165,7 +166,11 @@ impl FromStr for Command {
             "help" => Ok(Command::Help),
             command => Err(CommandParseError::UndefinedCommand {
                 command: command.to_string(),
-                args: if rest.is_empty() { None } else { Some(rest) },
+                args: if rest.is_empty() {
+                    None
+                } else {
+                    Some(rest.to_string())
+                },
             }),
         }
     }

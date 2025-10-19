@@ -321,29 +321,75 @@ impl Message {
 }
 
 /// split a message into chunks of at most `max_length` characters
-/// while preserving whole words.
+/// while preserving whole words and newlines.
 fn split_message(message: &str, max_length: usize) -> Vec<String> {
-    let mut chunks = Vec::new();
-    let mut current_chunk = String::new();
+    SplitMessageIterator::with_max_length(message, max_length)
+        .map(|chunk| chunk.to_string())
+        .collect()
+}
 
-    for word in message.split_whitespace() {
-        if current_chunk.len() + word.len() + 1 > max_length {
-            if !current_chunk.is_empty() {
-                chunks.push(current_chunk.trim().to_string());
+/// an iterator that splits a message into chunks of at most `max_length` characters
+/// while preserving whole words and newlines.
+struct SplitMessageIterator<'msg> {
+    message: &'msg str,
+    max_length: usize,
+    cursor: usize,
+}
+
+impl<'msg> Iterator for SplitMessageIterator<'msg> {
+    type Item = &'msg str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // base case
+        if self.cursor >= self.message.len() {
+            return None;
+        }
+
+        let remaining_message = &self.message[self.cursor..];
+        let mut end_index = self.cursor + self.max_length;
+
+        // if the end index is beyond the message length, adjust it
+        if end_index >= self.message.len() {
+            end_index = self.message.len();
+        } else {
+            // backtrack to the last char boundary
+            while end_index > self.cursor && !self.message.is_char_boundary(end_index) {
+                end_index -= 1;
             }
-            current_chunk = String::new();
-        }
-        if !current_chunk.is_empty() {
-            current_chunk.push(' ');
-        }
-        current_chunk.push_str(word);
-    }
 
-    if !current_chunk.is_empty() {
-        chunks.push(current_chunk.trim().to_string());
-    }
+            if let Some(last_space) =
+                remaining_message[..end_index - self.cursor].rfind(|c: char| c.is_whitespace())
+                && last_space > 0
+            {
+                end_index = self.cursor + last_space;
+            }
+        }
 
-    chunks
+        let chunk = self.message[self.cursor..end_index].trim();
+        self.cursor = end_index;
+
+        Some(chunk)
+    }
+}
+
+impl<'msg> From<&'msg str> for SplitMessageIterator<'msg> {
+    fn from(message: &'msg str) -> Self {
+        Self {
+            message,
+            max_length: DISCORD_MAX_MESSAGE_LENGTH,
+            cursor: 0,
+        }
+    }
+}
+
+impl<'msg> SplitMessageIterator<'msg> {
+    pub fn with_max_length(message: &'msg str, max_length: usize) -> Self {
+        Self {
+            message,
+            max_length,
+            cursor: 0,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -355,11 +401,12 @@ mod tests {
         let message = "This is a test message that should be split into multiple chunks.";
         let max_length = 20;
         let chunks = split_message(message, max_length);
-        assert_eq!(chunks.len(), 4);
         assert_eq!(chunks[0], "This is a test");
-        assert_eq!(chunks[1], "message that should");
-        assert_eq!(chunks[2], "be split into");
-        assert_eq!(chunks[3], "multiple chunks.");
+        assert_eq!(chunks[1], "message that");
+        assert_eq!(chunks[2], "should be split");
+        assert_eq!(chunks[3], "into multiple");
+        assert_eq!(chunks[4], "chunks.");
+        assert_eq!(chunks.len(), 5);
     }
 
     #[test]
@@ -371,5 +418,47 @@ mod tests {
         assert_eq!(chunks[0], "This is a **test** message");
         assert_eq!(chunks[1], "with `code` and");
         assert_eq!(chunks[2], "[link](https://example.com).");
+    }
+
+    #[test]
+    fn split_preserves_newlines() {
+        let message = "This is a test message.\nIt has multiple lines.\nlike this!!\n\n\nEach line should be preserved.";
+        let max_length = 25;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks.len(), 4);
+        insta::assert_debug_snapshot!(chunks, @r#"
+        [
+            "This is a test message.",
+            "It has multiple lines.",
+            "like this!!\n\n\nEach line",
+            "should be preserved.",
+        ]
+        "#);
+
+        let joined = chunks.join("\n");
+
+        insta::assert_snapshot!(joined, @r"
+        This is a test message.
+        It has multiple lines.
+        like this!!
+
+
+        Each line
+        should be preserved.
+        ");
+    }
+
+    #[test]
+    fn split_works_with_leading_whitespace() {
+        // next can return an empty chunk and never advance cursor (infinite loop) when the only whitespace in the window is at index 0 (e.g., leading newline/space followed by a very long word). Also, trim removes leading/trailing newlines, contradicting the docstring that says newlines are preserved. Fix by not backtracking to index 0 and by removing trim: only set end_index to the last whitespace if last_space > 0; otherwise keep end_index at the max window. Then slice without trimming so newlines at boundaries are preserved.
+        let message = "\nThisIsAVeryLongWordThatExceedsTheMaxLengthLimit";
+        let max_length = 10;
+        let chunks = split_message(message, max_length);
+        assert_eq!(chunks[0], "ThisIsAVe");
+        assert_eq!(chunks[1], "ryLongWord");
+        assert_eq!(chunks[2], "ThatExceed");
+        assert_eq!(chunks[3], "sTheMaxLen");
+        assert_eq!(chunks[4], "gthLimit");
+        assert_eq!(chunks.len(), 5);
     }
 }
