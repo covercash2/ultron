@@ -21,6 +21,7 @@ use crate::{
     Channel, Response,
     chatbot::ChatBot,
     event_processor::{Event, EventError, EventProcessor, EventType},
+    grafana,
     mcp::{UltronCommands, UltronMcp},
     nlp::response::LmResponse,
 };
@@ -54,7 +55,7 @@ pub enum ServerError {
     Startup(std::io::Error),
 
     #[error("error processing event: {0}")]
-    Event(#[from] EventError),
+    Event(#[from] Box<EventError>),
 
     #[error("error invoking chat bot: {0}")]
     ChatBot(Box<dyn std::error::Error>),
@@ -124,6 +125,10 @@ impl Route {
     }
 }
 
+pub trait HttpRoute {
+    const PATH: &'static str;
+}
+
 /// Starts the HTTP server on the specified port with the given application state.
 pub async fn serve<Bot>(port: u16, state: AppState<Bot>) -> ServerResult<()>
 where
@@ -151,6 +156,7 @@ where
         .routes(routes!(command))
         .routes(routes!(api_doc))
         .routes(routes!(events))
+        .routes(routes!(grafana::webhook_handler))
         .nest_service(Route::Mcp.as_str(), state.make_ultron_commands_mcp())
         .layer(TracingMiddleware::builder().build().make_layer())
         .with_state(state)
@@ -244,7 +250,9 @@ where
 
     tracing::info!("response: {:?}", chat_input);
 
-    let responses = Box::pin(state.event_processor.process(chat_input)).await?;
+    let responses = Box::pin(state.event_processor.process(chat_input))
+        .await
+        .map_err(Box::new)?;
 
     if responses.is_empty() {
         tracing::warn!("no response from event processor");

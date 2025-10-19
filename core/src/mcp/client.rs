@@ -19,7 +19,7 @@ pub enum ClientError {
     #[error("failed to initialize client: {source}")]
     Init {
         #[from]
-        source: ClientInitializeError,
+        source: Box<ClientInitializeError>,
     },
 
     #[error("failed to list tools: {0}")]
@@ -51,7 +51,11 @@ impl McpClient {
         // let transport = StreamableHttpClientTransport::from(server_uri);
         let transport = StreamableHttpClientTransport::from_uri(server_uri);
         let client_info = ClientInfo::default();
-        let client: InnerClient = client_info.clone().serve(transport).await?;
+        let client: InnerClient = client_info
+            .clone()
+            .serve(transport)
+            .await
+            .map_err(Box::new)?;
 
         let server_info = client.peer_info();
 

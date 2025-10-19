@@ -96,7 +96,7 @@ pub enum LanguageModelError {
     Ollama(#[from] OllamaError),
 
     #[error("MCP error: {0}")]
-    McpClient(#[from] crate::mcp::client::ClientError),
+    McpClient(#[from] Box<crate::mcp::client::ClientError>),
 
     #[error("empty event provided for chat")]
     EmptyEvent,

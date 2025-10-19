@@ -7,6 +7,7 @@ pub mod copypasta;
 pub mod dice;
 pub mod error;
 pub mod event_processor;
+pub mod grafana;
 pub mod http_server;
 pub mod io;
 pub mod mcp;

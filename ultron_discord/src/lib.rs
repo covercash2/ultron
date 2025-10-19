@@ -141,12 +141,18 @@ impl ChatBot for DiscordBot {
     type Error = DiscordBotError;
 
     async fn send_message(&self, channel: Channel, message: &str) -> DiscordBotResult<()> {
+        tracing::debug!(channel = ?channel, "sending message");
+
         let id: ChannelId = *self
             .channels
             .by_name(&channel)
             .ok_or(DiscordBotError::ChannelNotConfigured { channel })?;
 
-        id.say(&self.http, message).await?;
+        let message_chunks = split_message(message, DISCORD_MAX_MESSAGE_LENGTH);
+
+        for chunk in message_chunks {
+            id.say(&self.http, chunk).await?;
+        }
 
         Ok(())
     }

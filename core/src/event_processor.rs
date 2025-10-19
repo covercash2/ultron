@@ -24,7 +24,7 @@ pub enum EventError {
     DiceRollParse(#[from] crate::dice::DiceRollError),
 
     #[error("agent error: {0}")]
-    Agent(#[from] AgentError),
+    Agent(#[from] Box<AgentError>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]

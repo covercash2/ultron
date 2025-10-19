@@ -58,7 +58,7 @@ where
     TAgent: ChatAgent + 'static,
 {
     async fn consume_event(&self, event: &Event) -> Result<Response, EventError> {
-        let next_event = self.chat(event).await?;
+        let next_event = self.chat(event).await.map_err(Box::new)?;
 
         tracing::info!(
             user = ?next_event.user,
