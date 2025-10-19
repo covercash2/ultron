@@ -43,6 +43,7 @@ pub enum EventType {
 #[derive(Builder, Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Event {
     pub user: User,
+    #[builder(into)]
     pub content: LmResponse,
     pub event_type: EventType,
     pub channel: Channel,

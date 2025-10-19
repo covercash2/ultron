@@ -6,6 +6,12 @@ pub struct LmResponse {
     parts: Vec<MessagePart>,
 }
 
+impl From<String> for LmResponse {
+    fn from(string: String) -> Self {
+        LmResponse::raw(string)
+    }
+}
+
 impl FromIterator<MessagePart> for LmResponse {
     fn from_iter<I: IntoIterator<Item = MessagePart>>(iter: I) -> Self {
         let parts = iter.into_iter().collect();
@@ -140,6 +146,31 @@ fn split_next_thinking_section<'msg>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thinking_iterator_preserves_newlines() {
+        let message =
+            "This\nis a test\n<think>thinking part</think>\nand another part.\nAnd another part";
+        let start_delim = "<think>";
+        let end_delim = "</think>";
+        let mut iterator = MessagePartsIterator::new(message, start_delim, end_delim);
+        let first_part = iterator.next().unwrap();
+        assert_eq!(
+            first_part,
+            MessagePart::Text("This\nis a test\n".to_string())
+        );
+        let thinking_part = iterator.next().unwrap();
+        assert_eq!(
+            thinking_part,
+            MessagePart::Thinking("thinking part".to_string())
+        );
+        let second_part = iterator.next().unwrap();
+        assert_eq!(
+            second_part,
+            MessagePart::Text("\nand another part.\nAnd another part".to_string())
+        );
+        assert!(iterator.next().is_none());
+    }
 
     #[test]
     fn split_next_thinking_section_works() {

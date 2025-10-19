@@ -34,7 +34,7 @@ impl Ollama {
     pub(crate) async fn chat(
         &self,
         model_name: String,
-        events: impl AsRef<[&Event]>,
+        events: impl AsRef<[Event]>,
     ) -> Result<Event, LanguageModelError> {
         let channel = events
             .as_ref()
@@ -65,6 +65,8 @@ impl Ollama {
 
         let content: LmResponse =
             MessagePartsIterator::new(&response.message.content, "<think>", "</think>").collect();
+
+        tracing::debug!(%content, "parsed response, '{content}'");
 
         let event = Event::builder()
             .user(user)

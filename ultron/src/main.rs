@@ -45,6 +45,9 @@ pub struct Cli {
     /// path to the secrets file
     #[arg(short, long)]
     pub secrets: PathBuf,
+
+    #[arg(long, default_value = "./prompts/ultron.md")]
+    pub system_prompt: PathBuf,
 }
 
 impl From<&Cli> for ChatAgentConfig {
@@ -53,6 +56,7 @@ impl From<&Cli> for ChatAgentConfig {
             llm_uri: value.lm_endpoint.clone(),
             llm_model: "llama3.2:latest".into(),
             // mcp_uri: format!("http://localhost:{}", value.mcp_port),
+            system_prompt: value.system_prompt.clone(),
         }
     }
 }
@@ -138,4 +142,35 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("bye");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_args_can_parse() {
+        let args = Cli::parse_from([
+            "ultron",
+            "--port",
+            "8080",
+            "--rust-log",
+            "debug",
+            "--lm-endpoint",
+            "https://example.com/llm/",
+            "--mcp-port",
+            "5000",
+            "--secrets",
+            "secrets.toml",
+            "--system-prompt",
+            "./prompts/ultron.md",
+        ]);
+
+        assert_eq!(args.port, 8080);
+        assert_eq!(args.rust_log, "debug");
+        assert_eq!(args.lm_endpoint, "https://example.com/llm/");
+        assert_eq!(args.mcp_port, 5000);
+        assert_eq!(args.secrets, PathBuf::from("secrets.toml"));
+        assert_eq!(args.system_prompt, PathBuf::from("./prompts/ultron.md"));
+    }
 }

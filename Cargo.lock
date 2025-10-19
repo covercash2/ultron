@@ -3387,6 +3387,7 @@ dependencies = [
  "bon",
  "derive_more",
  "extend",
+ "insta",
  "serde",
  "serenity",
  "thiserror 2.0.17",
