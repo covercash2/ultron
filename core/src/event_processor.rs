@@ -11,7 +11,7 @@ use crate::{
     chatbot::ChatInput,
     command::{CommandConsumer, CommandParseError},
     dice::DiceRoller,
-    nlp::{AgentError, ChatAgent, response::LmResponse},
+    nlp::{AgentError, ChatAgent, response::MessageParts},
 };
 
 const ULTRON_SYSTEM_PROMPT: &str = include_str!("../../prompts/ultron.md");
@@ -44,7 +44,7 @@ pub enum EventType {
 pub struct Event {
     pub user: User,
     #[builder(into)]
-    pub content: LmResponse,
+    pub content: MessageParts,
     pub event_type: EventType,
     pub channel: Channel,
     #[builder(default)]
@@ -83,7 +83,7 @@ impl Event {
         let event = Event::builder()
             .user(user)
             .channel(chat_input.channel)
-            .content(LmResponse::raw(content))
+            .content(MessageParts::raw(content))
             .event_type(event_type)
             .build();
 
@@ -147,7 +147,7 @@ impl EventProcessor {
     pub fn new() -> Self {
         let system_message = Event::builder()
             .user(User::System)
-            .content(LmResponse::raw(ULTRON_SYSTEM_PROMPT))
+            .content(MessageParts::raw(ULTRON_SYSTEM_PROMPT))
             .event_type(EventType::LanguageModel)
             .channel(Channel::Debug)
             .build();
@@ -277,7 +277,7 @@ mod tests {
         let input: Event = Event::new(&chat_input, EventType::Plain)
             .expect("should parse chat input to api input");
         assert_eq!(input.user, User::Anonymous);
-        assert_eq!(input.content, LmResponse::raw("hello"));
+        assert_eq!(input.content, MessageParts::raw("hello"));
         assert_eq!(input.channel, chat_input.channel);
     }
 }

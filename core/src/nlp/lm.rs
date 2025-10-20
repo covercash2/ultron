@@ -1,6 +1,6 @@
 use ollama_rs::error::OllamaError;
 
-use crate::{event_processor::Event, nlp::ollama::Ollama};
+use crate::{Channel, User, event_processor::Event, nlp::ollama::Ollama};
 
 const KNOWN_MODELS: &[&str] = &[
     "deepseek-r1:8b",
@@ -29,10 +29,74 @@ impl<T: Into<String>> From<T> for ModelName {
     }
 }
 
+impl ModelName {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+pub trait MessageFormat: std::fmt::Debug + Clone + Copy {
+    fn format_event(&self, event: &Event) -> String;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ChatFormatter;
+
+impl MessageFormat for ChatFormatter {
+    fn format_event(&self, event: &Event) -> String {
+        format!("{}: {}", event.user, event.content)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PlainFormatter;
+
+impl MessageFormat for PlainFormatter {
+    fn format_event(&self, event: &Event) -> String {
+        event.content.to_string()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MessageFormatter {
+    Chat(ChatFormatter),
+    Plain(PlainFormatter),
+}
+
+impl MessageFormatter {
+    pub fn chat() -> Self {
+        MessageFormatter::Chat(ChatFormatter)
+    }
+
+    pub fn plain() -> Self {
+        MessageFormatter::Plain(PlainFormatter)
+    }
+
+    pub fn format_event(&self, event: &Event) -> String {
+        match self {
+            MessageFormatter::Chat(formatter) => formatter.format_event(event),
+            MessageFormatter::Plain(formatter) => formatter.format_event(event),
+        }
+    }
+}
+
+#[derive(bon::Builder, Debug, Clone)]
+pub struct LmChatInput {
+    #[builder(into)]
+    pub model_name: ModelName,
+    #[builder(into)]
+    pub messages: Vec<(User, String)>,
+    #[builder(into)]
+    pub channel: Channel,
+    #[builder(into)]
+    pub formatter: MessageFormatter,
+}
+
 #[derive(Debug, Clone)]
 pub struct LanguageModel {
     backend: LanguageModelBackend,
     model_name: ModelName,
+    default_formatter: MessageFormatter,
 }
 
 impl LanguageModel {
@@ -41,14 +105,37 @@ impl LanguageModel {
         Ok(Self {
             backend,
             model_name,
+            default_formatter: MessageFormatter::Plain(PlainFormatter),
         })
     }
 
     pub async fn chat(&self, events: impl AsRef<[Event]>) -> Result<Event, LanguageModelError> {
+        let messages = events
+            .as_ref()
+            .iter()
+            .map(|event| {
+                (
+                    event.user.clone(),
+                    self.default_formatter.format_event(event),
+                )
+            })
+            .collect::<Vec<(User, String)>>();
+
+        let input = LmChatInput::builder()
+            .model_name(self.model_name.clone())
+            .messages(messages)
+            .channel(
+                events
+                    .as_ref()
+                    .last()
+                    .map(|event| event.channel)
+                    .ok_or(LanguageModelError::EmptyEvent)?,
+            )
+            .formatter(self.default_formatter)
+            .build();
+
         match &self.backend {
-            LanguageModelBackend::Ollama(ollama) => {
-                ollama.chat(self.model_name.0.clone(), events).await
-            }
+            LanguageModelBackend::Ollama(ollama) => ollama.chat(input).await,
             #[cfg(test)]
             LanguageModelBackend::Echo => {
                 use crate::User;
@@ -79,6 +166,7 @@ impl Default for LanguageModel {
         Self {
             backend: LanguageModelBackend::Echo,
             model_name: KNOWN_MODELS[0].into(),
+            default_formatter: MessageFormatter::plain(),
         }
     }
 }

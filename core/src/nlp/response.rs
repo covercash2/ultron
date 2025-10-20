@@ -1,29 +1,31 @@
 use serde::{Deserialize, Serialize};
 
-/// a message from a language model bot
+/// a message from a language model bot.
+/// may contain multiple [`MessagePart`]s,
+/// in case the model includes "thinking" sections.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-pub struct LmResponse {
+pub struct MessageParts {
     parts: Vec<MessagePart>,
 }
 
-impl From<String> for LmResponse {
+impl From<String> for MessageParts {
     fn from(string: String) -> Self {
-        LmResponse::raw(string)
+        MessageParts::raw(string)
     }
 }
 
-impl FromIterator<MessagePart> for LmResponse {
+impl FromIterator<MessagePart> for MessageParts {
     fn from_iter<I: IntoIterator<Item = MessagePart>>(iter: I) -> Self {
         let parts = iter.into_iter().collect();
-        LmResponse { parts }
+        MessageParts { parts }
     }
 }
 
-impl LmResponse {
+impl MessageParts {
     /// create a raw message without any thinking parts
     pub fn raw(string: impl Into<String>) -> Self {
         let part = MessagePart::Text(string.into());
-        LmResponse { parts: vec![part] }
+        MessageParts { parts: vec![part] }
     }
 
     /// render the message without any thinking parts
@@ -42,7 +44,7 @@ impl LmResponse {
     }
 }
 
-impl std::fmt::Display for LmResponse {
+impl std::fmt::Display for MessageParts {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let rendered = self
             .parts
@@ -54,6 +56,12 @@ impl std::fmt::Display for LmResponse {
             .collect::<Vec<String>>()
             .join("\n");
         write!(f, "{}", rendered)
+    }
+}
+
+impl From<String> for MessagePart {
+    fn from(string: String) -> Self {
+        MessagePart::Text(string)
     }
 }
 
@@ -244,7 +252,7 @@ mod tests {
 
     #[test]
     fn bot_message_render_without_thinking_parts() {
-        let message = LmResponse {
+        let message = MessageParts {
             parts: vec![
                 MessagePart::Text("This is a test".to_string()),
                 MessagePart::Thinking("thinking part".to_string()),
@@ -257,7 +265,7 @@ mod tests {
 
     #[test]
     fn bot_message_render_without_thinking_parts_no_thinking_parts() {
-        let message = LmResponse {
+        let message = MessageParts {
             parts: vec![MessagePart::Text("This is a test".to_string())],
         };
         let rendered = message.render_without_thinking_parts();

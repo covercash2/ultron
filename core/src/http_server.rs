@@ -23,7 +23,6 @@ use crate::{
     event_processor::{Event, EventError, EventProcessor, EventType},
     grafana,
     mcp::{UltronCommands, UltronMcp},
-    nlp::response::LmResponse,
 };
 
 mod trace_layer;
@@ -222,7 +221,7 @@ impl From<BotInput> for Event {
     fn from(input: BotInput) -> Self {
         Event::builder()
             .user(input.user.into())
-            .content(LmResponse::raw(input.event_input))
+            .content(input.event_input)
             .event_type(input.event_type)
             .channel(input.channel)
             .build()

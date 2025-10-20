@@ -8,8 +8,8 @@ use crate::{
     User,
     event_processor::{Event, EventType},
     nlp::{
-        lm::LanguageModelError,
-        response::{LmResponse, MessagePartsIterator},
+        lm::{LanguageModelError, LmChatInput},
+        response::{MessageParts, MessagePartsIterator},
     },
 };
 
@@ -31,26 +31,17 @@ impl Ollama {
         Ok(Self { inner })
     }
 
-    pub(crate) async fn chat(
-        &self,
-        model_name: String,
-        events: impl AsRef<[Event]>,
-    ) -> Result<Event, LanguageModelError> {
-        let channel = events
-            .as_ref()
-            .iter()
-            .last()
-            .map(|e| e.channel)
-            .ok_or(LanguageModelError::EmptyEvent)?;
+    pub(crate) async fn chat(&self, input: LmChatInput) -> Result<Event, LanguageModelError> {
+        let channel = input.channel;
 
-        let messages = events
-            .as_ref()
-            .iter()
-            .map(|event| (*event).clone().into())
-            .collect::<Vec<_>>();
+        tracing::debug!(
+            model_name = ?input.model_name,
+            messages = ?input.messages,
+            ?channel,
+            "preparing chat messages for Ollama",
+        );
 
-        tracing::debug!(?model_name, ?messages, "preparing chat messages for Ollama");
-        let request = ChatMessageRequest::new(model_name, messages);
+        let request = ChatMessageRequest::new(input.model_name.as_str().to_string(), input.into());
 
         tracing::debug!(?request, "sending chat messages to Ollama");
 
@@ -63,7 +54,7 @@ impl Ollama {
             _ => User::Anonymous,
         };
 
-        let content: LmResponse =
+        let content: MessageParts =
             MessagePartsIterator::new(&response.message.content, "<think>", "</think>").collect();
 
         tracing::debug!(%content, "parsed response, '{content}'");
@@ -79,14 +70,33 @@ impl Ollama {
     }
 }
 
-impl From<Event> for ChatMessage {
-    fn from(event: Event) -> Self {
-        let role: MessageRole = match event.user {
+impl From<User> for MessageRole {
+    fn from(user: User) -> Self {
+        match user {
             User::Ultron => MessageRole::Assistant,
             User::System => MessageRole::System,
             _ => MessageRole::User,
-        };
+        }
+    }
+}
+
+impl From<Event> for ChatMessage {
+    fn from(event: Event) -> Self {
+        let role: MessageRole = event.user.into();
 
         ChatMessage::new(role, event.content.to_string())
+    }
+}
+
+impl From<LmChatInput> for Vec<ChatMessage> {
+    fn from(input: LmChatInput) -> Self {
+        input
+            .messages
+            .into_iter()
+            .map(|(user, content)| {
+                let role: MessageRole = user.into();
+                ChatMessage::new(role, content)
+            })
+            .collect()
     }
 }
