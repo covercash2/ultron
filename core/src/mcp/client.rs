@@ -258,11 +258,14 @@ mod tests {
                   ]
                 },
                 "sizes": {
-                  "description": "Size specification (e.g., \"48x48\", \"any\" for SVG, or \"48x48 96x96\")",
+                  "description": "Size specification, each string should be in WxH format (e.g., `\\\"48x48\\\"`, `\\\"96x96\\\"`) or `\\\"any\\\"` for scalable formats like SVG",
                   "type": [
-                    "string",
+                    "array",
                     "null"
-                  ]
+                  ],
+                  "items": {
+                    "type": "string"
+                  }
                 }
               },
               "required": [
